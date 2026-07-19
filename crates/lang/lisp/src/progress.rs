@@ -383,6 +383,36 @@ mod tests {
     }
 
     #[test]
+    fn local_checked_theorems_are_visible_but_not_export_denominators() {
+        let report = BookReport {
+            path: "target.lisp".into(),
+            events: vec![
+                event(
+                    "target.lisp",
+                    "local defthm",
+                    "helper",
+                    EventOutcome::LocalTransported,
+                ),
+                event("target.lisp", "defthm", "public", EventOutcome::Transported),
+            ],
+            dependency_interfaces: Vec::new(),
+        };
+
+        assert_eq!(report.tally().transported, 1);
+        assert_eq!(report.tally().local_transported, 1);
+        assert_eq!(report.tally().skipped, 0);
+        assert_eq!(report.completeness().target.theorems.total, 1);
+        assert_eq!(report.completeness().target.theorems.complete, 1);
+
+        let mut progress = CorpusProgress::new("pinned");
+        progress.record_report(&report);
+        let output = progress.to_tsv();
+        assert!(output.contains(
+            "book\ttarget.lisp\ttheorems-complete\trecursive\t2/2\t0/0\t1/1\t2/2\t0/0\t1/1\t0\t0\t1\t1\t100.00"
+        ));
+    }
+
+    #[test]
     fn interfaces_are_logical_but_not_source_green() {
         let report = BookReport {
             path: "target.lisp".into(),

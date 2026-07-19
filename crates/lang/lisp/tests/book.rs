@@ -367,7 +367,10 @@ fn session() -> Acl2Session {
 /// the generic induction premise builder).
 fn check_transported(sess: &Acl2Session, report: &BookReport) {
     for e in &report.events {
-        if e.outcome == EventOutcome::Transported {
+        if matches!(
+            e.outcome,
+            EventOutcome::Transported | EventOutcome::LocalTransported
+        ) {
             let entry = sess
                 .theorem_entry(&e.label)
                 .unwrap_or_else(|| panic!("transported `{}` must be stored", e.label));
@@ -419,6 +422,7 @@ fn app_basics_book_exact_tally() {
         report.tally(),
         Tally {
             transported: 4,
+            local_transported: 0,
             admitted: 6,
             skipped: 1,
             rejected: 0,
@@ -538,6 +542,7 @@ fn mixed_book_exact_tally() {
         report.tally(),
         Tally {
             transported: 3,
+            local_transported: 0,
             admitted: 7,
             skipped: 7,
             rejected: 7,
@@ -626,6 +631,7 @@ fn empty_encapsulate_inline_defun_and_portcullis_events() {
         report.tally(),
         Tally {
             transported: 0,
+            local_transported: 0,
             admitted: 2,
             skipped: 7,
             rejected: 0,
@@ -655,6 +661,7 @@ fn safe_function_and_rule_event_aliases() {
         report.tally(),
         Tally {
             transported: 0,
+            local_transported: 0,
             admitted: 11,
             skipped: 2,
             rejected: 1,
@@ -1398,6 +1405,12 @@ fn event_wrappers_preserve_obligations_and_assertions_fail_closed() {
             report.events
         );
     }
+    assert_eq!(
+        report.event("local-supporter").unwrap().outcome,
+        EventOutcome::LocalTransported,
+        "a checked local theorem must remain distinguishable from an admitted or skipped event"
+    );
+    check_transported(&s, &report);
     let more_returns = report
         .events
         .iter()
@@ -1520,6 +1533,7 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         report.tally(),
         Tally {
             transported: 4,
+            local_transported: 0,
             admitted: 0,
             skipped: 5,
             rejected: 0,
@@ -1604,6 +1618,7 @@ fn relative_parent_include_may_cross_project_root_inside_system_root() {
         report.tally(),
         Tally {
             transported: 2,
+            local_transported: 0,
             admitted: 0,
             skipped: 2,
             rejected: 0,
@@ -1648,6 +1663,7 @@ fn common_book_containers_and_disabled_aliases_are_transparent() {
         report.tally(),
         Tally {
             transported: 1,
+            local_transported: 0,
             admitted: 2,
             skipped: 2,
             rejected: 0,
@@ -1689,6 +1705,118 @@ fn official_std_lists_append_imports_with_system_linking() {
             .iter()
             .any(|event| event.book.starts_with(":system/")),
         "expected at least one :dir :system dependency:\n{report}"
+    );
+}
+
+/// Pinned target-local APPEND frontier. This deliberately does not gate the
+/// recursive `list-fix`/`abstract`/XDOC closure: it measures the first payoff
+/// from checked built-in APPEND without calling the whole book a green island.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_lists_append_transports_builtin_append_frontier() {
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    assert_eq!(
+        sha256(&std::fs::read(books.join("std/lists/append.lisp")).unwrap()),
+        sha256_bytes("240dde02cc141e1d55e3dd6845d1995777a3d6b782e0cf9d6f24abfdcef377da"),
+        "pinned std/lists/append target changed"
+    );
+    let mut s = session();
+    let report = run_book_with_config(
+        &mut s,
+        &BookConfig::new(&books).with_dir_root("system", &books),
+        "std/lists/append",
+    )
+    .expect("official std/lists/append book parses and links");
+
+    let target_sequence: Vec<_> = report
+        .events
+        .iter()
+        .filter(|event| event.book == report.path)
+        .map(|event| (event.kind.as_str(), event.label.as_str()))
+        .collect();
+    assert_eq!(
+        target_sequence,
+        [
+            ("in-package", "\"ACL2\""),
+            ("include-book", "list-fix"),
+            ("local include-book", "std/basic/inductions"),
+            ("local defthm", "len-when-consp"),
+            ("defthm", "append-when-not-consp"),
+            ("defthm", "append-of-cons"),
+            ("defthm", "true-listp-of-append"),
+            ("defthm", "consp-of-append"),
+            ("defthm", "append-under-iff"),
+            ("defthm", "len-of-append"),
+            ("defthm", "equal-when-append-same"),
+            ("local defthm", "append-nonempty-list"),
+            ("defthm", "equal-of-append-and-append-same-arg2"),
+            ("defthm", "append-of-nil"),
+            ("in-theory", "?"),
+            ("defthm", "list-fix-of-append"),
+            ("defthm", "car-of-append"),
+            ("defthmd", "car-of-append-when-consp"),
+            ("theory-invariant", "?"),
+            ("defthmd", "cdr-of-append"),
+            ("defthm", "cdr-of-append-when-consp"),
+            ("theory-invariant", "?"),
+            ("defthm", "associativity-of-append"),
+            (
+                "defcong",
+                "element-list-equiv-implies-element-list-equiv-append-1",
+            ),
+            ("table", "listfix-rules"),
+            (
+                "defcong",
+                "element-list-equiv-implies-element-list-equiv-append-2",
+            ),
+            ("table", "listfix-rules"),
+            ("defthm", "."),
+            ("table", "listp-rules"),
+            ("progn", "progn"),
+            ("def-generic-rule", "(def-generic-rule listp-rules . …)"),
+            (
+                "def-listp-rule",
+                "(def-listp-rule element-list-p-of-append-true-list (equal (element-list-p (append a b)) (and (element-list-p (list-fix a)) (element-list-p b))) …)",
+            ),
+            ("defsection", "std/lists/append"),
+        ],
+        "pinned target normalization changed"
+    );
+
+    for label in [
+        "append-when-not-consp",
+        "append-of-cons",
+        "consp-of-append",
+        "equal-when-append-same",
+        "append-nonempty-list",
+        "car-of-append",
+        "car-of-append-when-consp",
+        "cdr-of-append",
+        "cdr-of-append-when-consp",
+        "associativity-of-append",
+    ] {
+        let event = report
+            .events
+            .iter()
+            .find(|event| event.book == report.path && event.label == label)
+            .unwrap_or_else(|| panic!("missing pinned target event `{label}`"));
+        let expected = if label == "append-nonempty-list" {
+            EventOutcome::LocalTransported
+        } else {
+            EventOutcome::Transported
+        };
+        assert!(
+            event.outcome == expected,
+            "`{label}` did not cross the checked APPEND frontier:\n{event:?}"
+        );
+    }
+    let target_theorems = report.completeness().target.theorems;
+    assert_eq!(target_theorems.total, 18);
+    assert!(
+        target_theorems.complete >= 9,
+        "at least nine public theorems belong to the APPEND-only frontier"
     );
 }
 

@@ -5,6 +5,7 @@
 //! production book replay and the measured-induction gates.
 
 use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::mk_int;
 use smol_str::SmolStr;
 
@@ -250,6 +251,21 @@ pub fn acl2_count_car_strict_fact(env: &Acl2Env) -> Result<Fact> {
 /// The checked guarded strict CDR decrease law.
 pub fn acl2_count_cdr_strict_fact(env: &Acl2Env) -> Result<Fact> {
     count_fact(env, "acl2-count-cdr-strict")
+}
+
+/// The closed model theorem behind the guarded CDR decrease row.
+///
+/// Cross-definition law packs use this theorem only to construct new checked
+/// model proofs.  Keeping the accessor crate-private avoids exposing model
+/// implementation details through the ACL2-facing fact API.
+pub(crate) fn acl2_count_cdr_strict_model(env: &Acl2Env) -> Result<Thm> {
+    let (index, _) = env.axiom("acl2-count-cdr-strict")?;
+    match &env.axioms[index].discharge {
+        Discharge::ModelImplies(model) => Ok(model.clone()),
+        _ => Err(Error::ConnectiveRule(
+            "acl2-count-cdr-strict does not have a ModelImplies discharge".into(),
+        )),
+    }
 }
 
 /// The checked unconditional weak CAR bound.

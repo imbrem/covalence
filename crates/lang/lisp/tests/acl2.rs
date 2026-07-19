@@ -16,11 +16,30 @@
 //!   rejected with a clear message (and no definition is installed).
 #![cfg(feature = "hol")]
 
+use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
 use covalence_lisp::reader::read_one;
 
 fn session() -> Acl2Session {
     Acl2Session::new().expect("session")
+}
+
+#[test]
+fn stale_generation_induction_fact_is_rejected_at_registration() {
+    let mut s = session();
+    let fact = acl2_count_natp_fact(s.induction_env()).expect("current-generation count fact");
+    s.add_induction_lemma(fact.clone())
+        .expect("a fact checked in the current generation is accepted");
+
+    s.eval_cell("(defun generation-step (x) x)")
+        .expect("admit a deep definition and advance the ACL2 generation");
+    let err = s
+        .add_induction_lemma(fact)
+        .expect_err("the old generation's checked fact must fail closed");
+    assert!(
+        err.to_string().contains("current ACL2 generation"),
+        "registration should diagnose the generation mismatch: {err}"
+    );
 }
 
 /// Reduce `src` and assert the honesty invariant: the value is the RHS of the

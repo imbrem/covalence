@@ -120,6 +120,17 @@ score.
   and explicit-cons growth from one shared carrier invariant. The complete
   pack constructs in about 1.2 seconds warm; the pinned end-to-end source gate
   passes 5/5 in about 61 seconds in a debug test build.
+- `std/lists/append.lisp` is the next bounded library frontier at the same
+  revision, pinned by SHA-256
+  `240dde02cc141e1d55e3dd6845d1995777a3d6b782e0cf9d6f24abfdcef377da`.
+  Its target has 33 normalized events and 18 public theorem obligations.
+  The first checked APPEND-facing slice covers ten target-local theorem events
+  (nine public): opening on atoms and conses, `CONSP`, shared-prefix
+  cancellation, CAR/CDR projections, and associativity.  This is deliberately
+  reported as a target-local frontier, not as closure green: the recursive
+  source closure currently contains 492 events, 46 definitions, 99 theorems,
+  and 165 blockers.  The exact frontier gate preserves that distinction while
+  making the reusable APPEND law pack available to downstream books.
 
 ## First island design: IFIX/NFIX
 

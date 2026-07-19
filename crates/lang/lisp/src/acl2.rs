@@ -89,6 +89,12 @@ use std::sync::{LazyLock, Mutex};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
+use covalence_init::init::acl2::append::{
+    append_assoc_fact, append_count_strict_fact, append_definition_fact, append_nonempty_fact,
+    append_of_cons_fact, append_when_consp_nil_fact, car_of_append_fact,
+    car_of_append_when_consp_fact, cdr_of_append_fact, cdr_of_append_when_consp_fact,
+    consp_of_append_fact, equal_when_append_same_fact, with_append, with_append_count_laws,
+};
 use covalence_init::init::acl2::count::{
     acl2_count_car_strict_fact, acl2_count_car_weak_fact, acl2_count_cdr_strict_fact,
     acl2_count_cdr_weak_fact, acl2_count_cons_greater_fact, acl2_count_consp_positive_fact,
@@ -131,7 +137,9 @@ fn shadow_env() -> covalence_core::Result<Acl2Env> {
     let ordinal = with_ordinals(&structural)?;
     let fixers = with_fixers(&ordinal)?;
     let count = with_acl2_count(&fixers)?;
-    with_arith_rules(&count)
+    let append = with_append(&count)?;
+    let append_count = with_append_count_laws(&append)?;
+    with_arith_rules(&append_count)
 }
 
 fn shadow_cache(env: &Acl2Env) -> covalence_core::Result<FactCache> {
@@ -146,6 +154,21 @@ fn shadow_cache(env: &Acl2Env) -> covalence_core::Result<FactCache> {
         acl2_count_cdr_weak_fact(env)?,
         acl2_count_consp_positive_fact(env)?,
         acl2_count_cons_greater_fact(env)?,
+        // Keep specific APPEND rules ahead of the generic defining equation:
+        // lemma selection is deliberately deterministic and first-match, so
+        // unfolding first would hide the stronger constructor/guard shapes.
+        consp_of_append_fact(env)?,
+        equal_when_append_same_fact(env)?,
+        append_nonempty_fact(env)?,
+        append_count_strict_fact(env)?,
+        car_of_append_when_consp_fact(env)?,
+        car_of_append_fact(env)?,
+        cdr_of_append_when_consp_fact(env)?,
+        cdr_of_append_fact(env)?,
+        append_assoc_fact(env)?,
+        append_of_cons_fact(env)?,
+        append_when_consp_nil_fact(env)?,
+        append_definition_fact(env)?,
     ] {
         cache.add_lemma(fact);
     }
@@ -336,9 +359,11 @@ impl Acl2Session {
     /// Add a caller-supplied derived fact as an induction/simplification hint
     /// for the current deep-environment generation.
     ///
-    /// Registration is untrusted. The simplifier's `add_lemma` path
-    /// replays every selected instance with checked `INST`/`MP`; a forged
-    /// or mismatched [`Fact`] therefore causes proof failure, never theorem
+    /// Registration is untrusted. It first checks that the theorem is closed
+    /// and states this generation's exact `Derivable` target; the
+    /// simplifier's `add_lemma` path then replays every selected instance with
+    /// checked `INST`/`MP`. A stale-generation, forged, or mismatched [`Fact`]
+    /// therefore causes registration or proof failure, never theorem
     /// production.
     ///
     /// Admitting another deep `defun` intentionally discards the hint along
@@ -347,6 +372,18 @@ impl Acl2Session {
     /// [`induction_env`](Self::induction_env) after the definition world is
     /// established.
     pub fn add_induction_lemma(&self, lemma: Fact) -> Result<(), Acl2Error> {
+        let target =
+            ladder::derivable(self.deep.env(), &lemma.phi).map_err(|e| Acl2Error::Unprovable {
+                name: "<lemma-registration>".into(),
+                reason: format!("could not form the current generation's lemma target: {e}"),
+            })?;
+        if !lemma.thm.hyps().is_empty() || *lemma.thm.concl() != target {
+            return Err(Acl2Error::Unprovable {
+                name: "<lemma-registration>".into(),
+                reason: "lemma theorem is not a closed derivation in the current ACL2 generation"
+                    .into(),
+            });
+        }
         let cache = self.deep_cache.lock().map_err(|_| Acl2Error::Unprovable {
             name: "<lemma-registration>".into(),
             reason: "kernel induction cache lock was poisoned".into(),

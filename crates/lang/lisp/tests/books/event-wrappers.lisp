@@ -9,7 +9,7 @@
           :name wrapper-id-exact)))
 
 (acl2::with-supporters
- (local (defthm local-supporter t))
+ (local (defthm local-supporter (equal 1 1)))
  :names (local-supporter)
  (defthm exported-with-supporter t))
 

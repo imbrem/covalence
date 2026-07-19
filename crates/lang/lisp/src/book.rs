@@ -12,6 +12,9 @@
 //!   proved by a closed reified derivation (direct [`Acl2Proof::Certificate`]
 //!   or generic [`Acl2Proof::Induction`]) projected through the soundness
 //!   metatheorem to the base-HOL model. Anything else is downgraded.
+//!   A checked theorem nested under `local` is reported separately as
+//!   **local-checked**: it crossed the same boundary, but is not a book export
+//!   and therefore never enters exported-theorem completeness counts.
 //! - **admitted (in dialect)** covers installed `defun`s (kernel
 //!   *hypotheses*, never axioms) and reduction-path `defthm`s (genuine kernel
 //!   theorems whose hypotheses are exactly the `defun` equations used — the
@@ -82,6 +85,14 @@ pub enum EventOutcome {
     /// model equation**, proved via a closed reified derivation —
     /// re-checked at this boundary, never taken on faith.
     Transported,
+    /// A checked, hypothesis-free theorem produced by the same replay
+    /// boundary as [`Self::Transported`], but nested under `local` and
+    /// therefore unavailable as a public export of the book.
+    ///
+    /// This remains distinct so audit/frontier tooling can recognize genuine
+    /// checked work without adding local theorems to exported-theorem
+    /// completeness numerators or denominators.
+    LocalTransported,
     /// Admitted in the dialect: a `defun` installed as a kernel hypothesis,
     /// or a reduction-path `defthm` (a genuine kernel theorem; `hyps` is the
     /// number of `defun` equations riding it).
@@ -358,6 +369,8 @@ impl fmt::Display for ImportManifest {
 pub struct Tally {
     /// Closed base-HOL theorems transported from reified derivations.
     pub transported: usize,
+    /// Closed checked theorems processed under `local`, hence not exported.
+    pub local_transported: usize,
     /// Defuns installed / dialect theorems proved by reduction.
     pub admitted: usize,
     /// Recorded no-ops (`in-package`, include deps, `local`).
@@ -369,7 +382,7 @@ pub struct Tally {
 impl Tally {
     /// Total number of events.
     pub fn total(&self) -> usize {
-        self.transported + self.admitted + self.skipped + self.rejected
+        self.transported + self.local_transported + self.admitted + self.skipped + self.rejected
     }
 }
 
@@ -380,6 +393,7 @@ impl BookReport {
         for e in &self.events {
             match e.outcome {
                 EventOutcome::Transported => t.transported += 1,
+                EventOutcome::LocalTransported => t.local_transported += 1,
                 EventOutcome::Admitted { .. } => t.admitted += 1,
                 EventOutcome::Skipped { .. }
                 | EventOutcome::DeferredLogical { .. }
@@ -589,6 +603,10 @@ impl fmt::Display for BookReport {
                     "transported",
                     "closed base-HOL model theorem (reified derivation path)".to_string(),
                 ),
+                EventOutcome::LocalTransported => (
+                    "local-checked",
+                    "closed base-HOL model theorem (local, not exported)".to_string(),
+                ),
                 EventOutcome::Admitted { hyps: 0 } => ("admitted", "in dialect, closed".into()),
                 EventOutcome::Admitted { hyps } => (
                     "admitted",
@@ -615,9 +633,10 @@ impl fmt::Display for BookReport {
         write!(
             f,
             "tally: {} of {} event(s) transported to closed base-HOL theorems, \
-             {} admitted in dialect, {} skipped, {} rejected",
+             {} local checked (not exported), {} admitted in dialect, {} skipped, {} rejected",
             t.transported,
             t.total(),
+            t.local_transported,
             t.admitted,
             t.skipped,
             t.rejected
@@ -3761,9 +3780,13 @@ impl Pipeline<'_> {
             EventOutcome::UnresolvedDependency { reason } => EventOutcome::UnresolvedDependency {
                 reason: format!("local: {reason}"),
             },
-            // Genuinely processed — but a local event is not exported, so
-            // it is tallied as skipped (see the design note: pass-1 only).
-            EventOutcome::Transported | EventOutcome::Admitted { .. } => EventOutcome::Skipped {
+            EventOutcome::LocalTransported => EventOutcome::LocalTransported,
+            // Retain structured evidence that checked replay succeeded, while
+            // keeping this local theorem outside the exported theorem counts.
+            EventOutcome::Transported => EventOutcome::LocalTransported,
+            // A locally admitted event was genuinely processed, but did not
+            // cross the checked theorem replay boundary and is not exported.
+            EventOutcome::Admitted { .. } => EventOutcome::Skipped {
                 reason: "local: processed (installed for this session), not exported".into(),
             },
         };

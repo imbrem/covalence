@@ -2628,6 +2628,97 @@ mod tests {
         assert!(emit_rw(env, &forged_cache, &mut sc, &rw).is_err());
     }
 
+    /// Two individually checked but oppositely oriented equality lemmas are
+    /// still only planning hints. A tiny shared node budget must stop their
+    /// rewrite cycle without recursive stack growth or proof emission.
+    #[test]
+    fn t_checked_equality_lemma_cycle_hits_node_budget() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let binds = vec![(b"Y".to_vec(), x.clone())];
+        let car = base.axiom_inst(env, "car-cons", &binds).unwrap();
+        let cdr = base.axiom_inst(env, "cdr-cons", &binds).unwrap();
+        let car_to_cdr = crate::init::acl2::hilbert::eq_trans(
+            env,
+            &car,
+            &crate::init::acl2::hilbert::eq_symm(env, &cdr).unwrap(),
+        )
+        .unwrap();
+        let cdr_to_car = crate::init::acl2::hilbert::eq_symm(env, &car_to_cdr).unwrap();
+
+        let cache = FactCache::default();
+        cache.add_lemma(car_to_cdr);
+        cache.add_lemma(cdr_to_car);
+        let start = tm
+            .app(b"CAR", &[tm.app(b"CONS", &[x.clone(), x]).unwrap()])
+            .unwrap();
+        let limits = Limits {
+            unfolds_per_position: 1,
+            head_steps: 1_000,
+            plan_nodes: 4,
+            holds_depth: 1,
+        };
+        let err = prove_under(
+            env,
+            &cache,
+            &[],
+            &tm.mk_equal(&start, &start).unwrap(),
+            &limits,
+        )
+        .expect_err("a checked rewrite cycle must exhaust the planner budget");
+        assert!(
+            err.to_string().contains("plan nodes"),
+            "cycle must fail specifically through the shared node budget: {err}"
+        );
+    }
+
+    /// `FactCache` is deliberately generation-unaware and accepts untrusted
+    /// hints, but using a genuinely checked fact after the environment grows
+    /// must fail when emission re-checks its old `Derivable` theorem.
+    #[test]
+    fn t_stale_generation_checked_lemma_fails_at_emission() {
+        let sess = s6_app_session();
+        let old = sess.env();
+        let tm = &*old.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let binds = vec![(b"Y".to_vec(), x.clone())];
+        let car = base.axiom_inst(old, "car-cons", &binds).unwrap();
+        let cdr = base.axiom_inst(old, "cdr-cons", &binds).unwrap();
+        let stale = crate::init::acl2::hilbert::eq_trans(
+            old,
+            &car,
+            &crate::init::acl2::hilbert::eq_symm(old, &cdr).unwrap(),
+        )
+        .unwrap();
+        let start = tm
+            .app(b"CAR", &[tm.app(b"CONS", &[x.clone(), x.clone()]).unwrap()])
+            .unwrap();
+
+        let id_spec = DefunSpec {
+            name: SmolStr::new("GENERATION-STEP"),
+            formals: vec![SmolStr::new("X")],
+            body: x,
+            rec_formal: None,
+        };
+        let next = crate::init::acl2::defun::admit_defun(old, &id_spec).unwrap();
+        let env = &next;
+        let cache = FactCache::default();
+        cache.add_lemma(stale);
+        let mut planner = Planner::new(env, &cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&start).unwrap();
+        assert!(!rw.is_refl(), "the stale hint must be selected in planning");
+        let mut script = Script::new(env, &[]);
+        assert!(
+            emit_rw(env, &cache, &mut script, &rw).is_err(),
+            "checked replay must reject a theorem from the previous generation"
+        );
+    }
+
     /// **P0 gate №2:** `build_ind_premises` returns exactly the
     /// committed `t_app_assoc_premises` statements — shapes and
     /// `Derivable` conclusions — with zero hand-built steps.

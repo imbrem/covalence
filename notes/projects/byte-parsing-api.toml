@@ -1,0 +1,8 @@
+id = "byte-parsing-api"
+title = "Relational and functional parsing over bytes"
+status = "planned"
+parent = "data-interpretation"
+depends_on = ["bits-api"]
+todos = []
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = ["crates/lang/parsing", "crates/lib/parse"]

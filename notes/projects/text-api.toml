@@ -1,0 +1,12 @@
+id = "text-api"
+title = "Characters, strings, and Unicode encodings API"
+status = "planned"
+parent = "data-interpretation"
+depends_on = ["bits-api"]
+todos = []
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = [
+  "crates/kernel/hol/logic",
+  "crates/kernel/hol/init/src/init/char.rs",
+  "crates/kernel/hol/init/src/init/string.rs",
+]

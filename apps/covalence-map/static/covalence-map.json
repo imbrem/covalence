@@ -101,6 +101,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0010",
+      "kind": "api",
+      "title": "Bits and finite bit strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -556,7 +565,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 32879,
+      "words": 33259,
       "updated": 0
     },
     {
@@ -6914,6 +6923,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "kind": "file",
+      "title": "bits_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "words": 107,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
       "kind": "file",
       "title": "bytes_api.rs",
@@ -7000,7 +7018,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 92,
+      "words": 93,
       "updated": 0
     },
     {
@@ -8597,6 +8615,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/logic/src/bits.rs",
+      "kind": "file",
+      "title": "bits.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 273,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/logic/src/bytes.rs",
       "kind": "file",
       "title": "bytes.rs",
@@ -8620,7 +8647,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 247,
+      "words": 253,
       "updated": 0
     },
     {
@@ -9020,6 +9047,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/computation/src/computability.rs",
+      "kind": "file",
+      "title": "computability.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 393,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/computation/src/encoding.rs",
       "kind": "file",
       "title": "encoding.rs",
@@ -9052,7 +9088,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/computation/src/lib.rs",
-      "words": 51,
+      "words": 61,
       "updated": 0
     },
     {
@@ -11123,6 +11159,15 @@
       "status": "tracked",
       "path": "crates/lib/parquet/src/lib.rs",
       "words": 340,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lib/parse",
+      "kind": "file",
+      "title": "crates/lib/parse",
+      "status": null,
+      "path": "crates/lib/parse",
+      "words": 0,
       "updated": 0
     },
     {
@@ -14236,7 +14281,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 32879,
+      "words": 33259,
       "updated": 0
     },
     {
@@ -14344,7 +14389,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3319,
+      "words": 3369,
       "updated": 0
     },
     {
@@ -14789,12 +14834,57 @@
       "updated": 0
     },
     {
+      "id": "file:notes/projects/automata-hol.toml",
+      "kind": "file",
+      "title": "automata-hol.toml",
+      "status": "tracked",
+      "path": "notes/projects/automata-hol.toml",
+      "words": 18,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/bits-api.toml",
+      "kind": "file",
+      "title": "bits-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/bits-api.toml",
+      "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/blc-hol.toml",
+      "kind": "file",
+      "title": "blc-hol.toml",
+      "status": "tracked",
+      "path": "notes/projects/blc-hol.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
       "id": "file:notes/projects/coinductive-conformance.toml",
       "kind": "file",
       "title": "coinductive-conformance.toml",
       "status": "tracked",
       "path": "notes/projects/coinductive-conformance.toml",
       "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/computability-api.toml",
+      "kind": "file",
+      "title": "computability-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/computability-api.toml",
+      "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/computation-foundations.toml",
+      "kind": "file",
+      "title": "computation-foundations.toml",
+      "status": "tracked",
+      "path": "notes/projects/computation-foundations.toml",
+      "words": 7,
       "updated": 0
     },
     {
@@ -16616,11 +16706,29 @@
       "updated": 0
     },
     {
+      "id": "impl:A0009:Computability vocabulary",
+      "kind": "implementation",
+      "title": "Computability vocabulary",
+      "status": "implemented",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "impl:A0009:IdentityTranslationReplay",
       "kind": "implementation",
       "title": "IdentityTranslationReplay",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0010:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs",
       "words": 0,
       "updated": 0
     },
@@ -17777,6 +17885,15 @@
       "updated": 0
     },
     {
+      "id": "task:byte-parsing-api",
+      "kind": "task",
+      "title": "Relational and functional parsing over bytes",
+      "status": "planned",
+      "path": "notes/projects/byte-parsing-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "task:coinductive-conformance",
       "kind": "task",
       "title": "First coinductive backend and conformance suite",
@@ -17912,11 +18029,47 @@
       "updated": 0
     },
     {
+      "id": "task:text-api",
+      "kind": "task",
+      "title": "Characters, strings, and Unicode encodings API",
+      "status": "planned",
+      "path": "notes/projects/text-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:text-parsing-api",
+      "kind": "task",
+      "title": "Character and string parsing over decoded text",
+      "status": "planned",
+      "path": "notes/projects/text-parsing-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "term:T0001",
       "kind": "term",
       "title": "Relational residual",
       "status": "defined",
       "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bits.abstract-bool-list-adapter",
+      "kind": "todo",
+      "title": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bits.bytes-packing-backend",
+      "kind": "todo",
+      "title": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
       "words": 0,
       "updated": 0
     },
@@ -17935,6 +18088,33 @@
       "title": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
       "status": "major",
       "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computability.compiler-transport",
+      "kind": "todo",
+      "title": "Realize PartialCompilerComputabilityFacts from concrete compiler preservation/reflection bundles.",
+      "status": "major",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computability.machine-realizations",
+      "kind": "todo",
+      "title": "Realize partial/total computability facts for concrete Machine theories without treating finite host runs as proofs.",
+      "status": "major",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computability.model-equivalences",
+      "kind": "todo",
+      "title": "Supply checked equivalences among concrete computation models; do not assume a Church-Turing thesis.",
+      "status": "major",
+      "path": "crates/lang/computation/src/computability.rs",
       "words": 0,
       "updated": 0
     },
@@ -21058,6 +21238,30 @@
       "detail": null
     },
     {
+      "source": "api:A0010",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/bits.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -22242,6 +22446,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
       "detail": null
     },
@@ -23130,6 +23340,12 @@
     {
       "source": "file:crates/kernel/hol/logic/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/bits.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/logic/src/bytes.rs",
       "detail": null
     },
@@ -23227,6 +23443,12 @@
       "source": "file:crates/lang/computation/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/computation/src/compiler.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/computability.rs",
       "detail": null
     },
     {
@@ -24898,6 +25120,18 @@
       "detail": "HOL u8 and native byte-string leaves"
     },
     {
+      "source": "impl:A0009:Computability vocabulary",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/computation/src/computability.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0009:Computability vocabulary",
+      "predicate": "implements",
+      "target": "api:A0009",
+      "detail": "logic-generic partial/total functions, sets, reductions, and supplied law bundles"
+    },
+    {
       "source": "impl:A0009:IdentityTranslationReplay",
       "predicate": "defined-in",
       "target": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
@@ -24908,6 +25142,18 @@
       "predicate": "implements",
       "target": "api:A0009",
       "detail": "native HOL replay of the closed BLC identity to SKI I translation"
+    },
+    {
+      "source": "impl:A0010:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0010:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0010",
+      "detail": "HOL List<Bool>"
     },
     {
       "source": "note:notes/README.md",
@@ -29716,6 +29962,36 @@
       "detail": null
     },
     {
+      "source": "task:byte-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/parsing",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lib/parse",
+      "detail": null
+    },
+    {
       "source": "task:coinductive-conformance",
       "predicate": "contains",
       "target": "todo:inductive.coinductive-conformance",
@@ -30137,6 +30413,90 @@
     },
     {
       "source": "task:sexpr-proof-capabilities",
+      "predicate": "touches",
+      "target": "file:crates/lang/sexpr-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/char.rs",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/string.rs",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "contains",
+      "target": "todo:sexpr.parser-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:byte-parsing-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:text-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/json-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/parsing",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
       "predicate": "touches",
       "target": "file:crates/lang/sexpr-api",
       "detail": null
@@ -30936,6 +31296,12 @@
       "title": "Models of computation",
       "status": "experimental",
       "path": "crates/lang/computation/src/lib.rs"
+    },
+    {
+      "id": "A0010",
+      "title": "Bits and finite bit strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bits.rs"
     }
   ],
   "apiImplementations": [
@@ -30975,11 +31341,25 @@
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs"
     },
     {
+      "id": "impl:A0009:Computability vocabulary",
+      "apiId": "A0009",
+      "name": "Computability vocabulary",
+      "representation": "logic-generic partial/total functions, sets, reductions, and supplied law bundles",
+      "path": "crates/lang/computation/src/computability.rs"
+    },
+    {
       "id": "impl:A0009:IdentityTranslationReplay",
       "apiId": "A0009",
       "name": "IdentityTranslationReplay",
       "representation": "native HOL replay of the closed BLC identity to SKI I translation",
       "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs"
+    },
+    {
+      "id": "impl:A0010:NativeHol",
+      "apiId": "A0010",
+      "name": "NativeHol",
+      "representation": "HOL List<Bool>",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs"
     }
   ],
   "actors": [

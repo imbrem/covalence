@@ -1,9 +1,29 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 331,
-  "structured": 331,
+  "count": 336,
+  "structured": 336,
   "items": [
+    {
+      "id": "bits.abstract-bool-list-adapter",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "line": 127,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "bits.bytes-packing-backend",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "line": 128,
+      "crate": "covalence-logic-api"
+    },
     {
       "id": "bytes.abstract-list-adapter",
       "kind": "TODO",
@@ -23,6 +43,36 @@
       "path": "crates/kernel/hol/logic/src/bytes.rs",
       "line": 244,
       "crate": "covalence-logic-api"
+    },
+    {
+      "id": "computability.compiler-transport",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Realize PartialCompilerComputabilityFacts from concrete compiler preservation/reflection bundles.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 317,
+      "crate": "covalence-computation"
+    },
+    {
+      "id": "computability.machine-realizations",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Realize partial/total computability facts for concrete Machine theories without treating finite host runs as proofs.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 316,
+      "crate": "covalence-computation"
+    },
+    {
+      "id": "computability.model-equivalences",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Supply checked equivalences among concrete computation models; do not assume a Church-Turing thesis.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 318,
+      "crate": "covalence-computation"
     },
     {
       "id": "computation.automata-accepts-iff-run",

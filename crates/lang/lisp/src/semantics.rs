@@ -45,7 +45,9 @@
 //! (`TermExt::reduce` underneath — never asserted), so integer results ride
 //! the same `⊢ program = value` equations as everything else, hypothesis-free
 //! for closed programs. Comparisons reduce to `bool` literals and print as
-//! `t` / `nil`. Numerals inside `quote`d data remain uninterpreted atoms.
+//! `t` / `nil`. The shared syntax preserves exact integers inside quoted data;
+//! the current carved carrier can compile a top-level integer but still needs
+//! a payload sum before it can embed integers inside S-expression structure.
 //!
 //! The value read off a normal form is always the RHS of a genuine kernel
 //! theorem; nothing here mints new trusted rules.
@@ -57,9 +59,10 @@ use covalence_hol_eval::mk_blob;
 use covalence_init::init::cond::{cond_false, cond_true};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, LeafKind, carved};
-use covalence_init::init::lisp::{Lisp as KernelLisp, lisp};
+use covalence_init::init::lisp::{LeafArg, Lisp as KernelLisp, lisp};
 use covalence_init::init::logic::simp;
 use covalence_init::{Term, Type};
+use covalence_kernel_lisp::{CoreExpr, Datum};
 
 use std::sync::Arc;
 
@@ -482,6 +485,29 @@ impl LispSemantics {
                     Ok(Term::app(operator, argument))
                 }
             }
+            Primitive::Integer => {
+                // TODO(cov:lisp.hol.numeric-datum-sum, major): Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement `integer?` uniformly for open terms and nested quoted data.
+                let [argument] = arguments else {
+                    return Err(HolError::Stuck(format!(
+                        "{primitive:?} expects 1 argument (got {})",
+                        arguments.len()
+                    )));
+                };
+                match argument {
+                    CoreExpr::Literal(Datum::Atom(CoreAtom::Integer(_)))
+                    | CoreExpr::Quote(Datum::Atom(CoreAtom::Integer(_))) => {
+                        Ok(covalence_hol_eval::mk_bool(true))
+                    }
+                    CoreExpr::Literal(_) | CoreExpr::Quote(_) | CoreExpr::Truth(_) => {
+                        Ok(covalence_hol_eval::mk_bool(false))
+                    }
+                    _ => Err(HolError::Stuck(
+                        "`integer?` over an open value requires the numeric S-expression payload \
+                         sum backend"
+                            .into(),
+                    )),
+                }
+            }
             Primitive::Equal => {
                 require_arity(2)?;
                 let left = self.compile_core(&arguments[0])?;
@@ -493,6 +519,18 @@ impl LispSemantics {
                     ));
                 }
                 Ok(Term::app(Term::app(Term::eq_op(ty), left), right))
+            }
+            Primitive::Append => {
+                require_arity(2)?;
+                let left = self.compile_core(&arguments[0])?;
+                let right = self.compile_core(&arguments[1])?;
+                self.l
+                    .append
+                    .clone()
+                    .apply(left)
+                    .map_err(kernel_err)?
+                    .apply(right)
+                    .map_err(kernel_err)
             }
             Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
                 require_arity(2)?;
@@ -851,6 +889,9 @@ impl LispSemantics {
         {
             return self.eval_eq_leaf(&a, &b).map(Some);
         }
+        if let Some((left, right)) = self.as_append_redex(t) {
+            return self.step_append(t, &left, &right).map(Some);
+        }
         // `not p` — a unary spine on the `not` head.
         if let Some(p) = self.as_not(t) {
             return self.step_not(t, &p);
@@ -1184,6 +1225,82 @@ impl LispSemantics {
         Some((op, a.clone(), b.clone()))
     }
 
+    fn as_append_redex(&self, t: &Term) -> Option<(Term, Term)> {
+        let (inner, right) = t.as_app()?;
+        let (head, left) = inner.as_app()?;
+        (*head == self.l.append).then(|| (left.clone(), right.clone()))
+    }
+
+    fn step_append(&self, redex: &Term, left: &Term, right: &Term) -> Result<LispStep, HolError> {
+        if !self.is_data_value(left) {
+            let inner = self.step_term(left)?.ok_or_else(|| {
+                HolError::Stuck(format!("append left operand is stuck: `{left}`"))
+            })?;
+            let thm = inner
+                .thm
+                .clone()
+                .cong_arg(self.l.append.clone())
+                .map_err(kernel_err)?
+                .cong_fn(right.clone())
+                .map_err(kernel_err)?;
+            let to = self
+                .l
+                .append
+                .clone()
+                .apply(inner.to)
+                .map_err(kernel_err)?
+                .apply(right.clone())
+                .map_err(kernel_err)?;
+            return Ok(LispStep { to, thm });
+        }
+        if !self.is_data_value(right) {
+            let inner = self.step_term(right)?.ok_or_else(|| {
+                HolError::Stuck(format!("append right operand is stuck: `{right}`"))
+            })?;
+            let spine = self
+                .l
+                .append
+                .clone()
+                .apply(left.clone())
+                .map_err(kernel_err)?;
+            let thm = inner
+                .thm
+                .clone()
+                .cong_arg(spine.clone())
+                .map_err(kernel_err)?;
+            let to = spine.apply(inner.to).map_err(kernel_err)?;
+            return Ok(LispStep { to, thm });
+        }
+        let law = if *left == self.cs.snil {
+            self.l
+                .append_leaf(LeafArg::Nil, right)
+                .map_err(kernel_err)?
+        } else if let Some(blob) = self.as_atom(left) {
+            self.l
+                .append_leaf(LeafArg::Atom(&blob), right)
+                .map_err(kernel_err)?
+        } else if let Some((head, tail)) = self.as_scons(left) {
+            self.l
+                .append_scons(&head, &tail, right)
+                .map_err(kernel_err)?
+        } else {
+            return Err(HolError::Stuck(format!(
+                "append expected S-expression data, got `{left}`"
+            )));
+        };
+        let (lhs, _) = law
+            .concl()
+            .as_eq()
+            .ok_or_else(|| HolError::Kernel("append law is not an equation".into()))?;
+        if lhs != redex {
+            return Err(HolError::Kernel(format!(
+                "append law `{}` does not match redex `{redex}`",
+                law.concl()
+            )));
+        }
+        self.package(redex, law)
+    }
+
     /// One step of an integer-op redex `int.<op> a b`:
     ///
     /// 1. If `a` (then `b`) is not yet an `int` literal, step inside it and
@@ -1451,15 +1568,20 @@ mod core_backend_tests {
     }
 
     #[test]
-    fn scheme_quote_keeps_numerals_as_symbol_data() {
+    fn scheme_quote_preserves_exact_integer_data() {
         let semantics = LispSemantics::new().unwrap();
         let surface = one("(quote 42)");
         let core = Frontend::new(SurfaceDialect::Scheme)
             .lower(&surface)
             .unwrap();
+        assert!(matches!(
+            core,
+            CoreExpr::Quote(Datum::Atom(CoreAtom::Integer(ref value)))
+                if value == &Int::from(42)
+        ));
         assert_eq!(
             semantics.compile_core(&core).unwrap(),
-            semantics.compile(&surface).unwrap()
+            covalence_hol_eval::mk_int(Int::from(42))
         );
     }
 }

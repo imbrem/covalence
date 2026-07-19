@@ -336,6 +336,50 @@ type ConfigOf<P> = HostConfiguration<
 >;
 
 impl<P: CorePrimitive> CoreMachine<P> {
+    /// Extend an environment with an atomic mutually recursive lambda group.
+    ///
+    /// All names and cells are allocated before any closure is built, so
+    /// forward and mutual references observe the same lexical generation.
+    pub fn bind_recursive(
+        &self,
+        parent: &Environment<P::Symbol, P::Atom, P::Primitive>,
+        bindings: Vec<(P::Symbol, Expr<P::Symbol, P::Atom, P::Primitive>)>,
+    ) -> Result<Environment<P::Symbol, P::Atom, P::Primitive>, CoreMachineError<P::Symbol, P::Error>>
+    {
+        for (index, (name, expression)) in bindings.iter().enumerate() {
+            if bindings[..index].iter().any(|(earlier, _)| earlier == name) {
+                return Err(CoreMachineError::DuplicateRecursiveBinding(name.clone()));
+            }
+            if !matches!(expression, CoreExpr::Lambda { .. }) {
+                return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
+            }
+        }
+        let cells: Vec<_> = bindings
+            .iter()
+            .map(|(name, _)| (name.clone(), HostBindingCell::uninitialized()))
+            .collect();
+        let environment = parent.extend_cells(cells.clone());
+        for ((_, expression), (_, cell)) in bindings.into_iter().zip(cells) {
+            let CoreExpr::Lambda {
+                name,
+                parameters,
+                body,
+            } = expression
+            else {
+                unreachable!("recursive initializers validated above")
+            };
+            let closure = HostValue::Closure(Arc::new(HostClosure {
+                name,
+                parameters,
+                body: *body,
+                environment: environment.clone(),
+            }));
+            cell.initialize(closure)
+                .expect("fresh recursive binding cell");
+        }
+        Ok(environment)
+    }
+
     fn argument_choices(&self, count: usize) -> Vec<usize> {
         match self.strategy.order {
             EvaluationOrder::ApplicativeLeftToRight => vec![0],
@@ -632,44 +676,13 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         });
                     }
                     CoreExpr::LetRec { bindings, body } => {
-                        for (index, binding) in bindings.iter().enumerate() {
-                            if bindings[..index]
-                                .iter()
-                                .any(|earlier| earlier.name == binding.name)
-                            {
-                                return Err(CoreMachineError::DuplicateRecursiveBinding(
-                                    binding.name.clone(),
-                                ));
-                            }
-                            if !matches!(binding.value, CoreExpr::Lambda { .. }) {
-                                return Err(CoreMachineError::InvalidRecursiveInitializer(
-                                    binding.name.clone(),
-                                ));
-                            }
-                        }
-                        let cells: Vec<_> = bindings
-                            .iter()
-                            .map(|binding| (binding.name.clone(), HostBindingCell::uninitialized()))
-                            .collect();
-                        let environment = next.environment.extend_cells(cells.clone());
-                        for (binding, (_, cell)) in bindings.into_iter().zip(cells) {
-                            let CoreExpr::Lambda {
-                                name,
-                                parameters,
-                                body,
-                            } = binding.value
-                            else {
-                                unreachable!("recursive initializers validated above")
-                            };
-                            let closure = HostValue::Closure(Arc::new(HostClosure {
-                                name,
-                                parameters,
-                                body: *body,
-                                environment: environment.clone(),
-                            }));
-                            cell.initialize(closure)
-                                .expect("fresh recursive binding cell");
-                        }
+                        let environment = self.bind_recursive(
+                            &next.environment,
+                            bindings
+                                .into_iter()
+                                .map(|binding| (binding.name, binding.value))
+                                .collect(),
+                        )?;
                         next.environment = environment;
                         next.control = HostControl::Expression(*body);
                     }

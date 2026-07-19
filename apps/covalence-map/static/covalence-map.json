@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35660,
+      "words": 35687,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1223,
+      "words": 1236,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 728,
+      "words": 817,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 1894,
+      "words": 1907,
       "updated": 0
     },
     {
@@ -10825,7 +10825,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1466,
+      "words": 1588,
       "updated": 0
     },
     {
@@ -15307,7 +15307,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35660,
+      "words": 35687,
       "updated": 0
     },
     {
@@ -15415,7 +15415,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3519,
+      "words": 3549,
       "updated": 0
     },
     {
@@ -22075,6 +22075,33 @@
       "title": "Add a proof-producing Forsp backend and cross-check it against the host stack machine.",
       "status": "major",
       "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.numeric-datum-sum",
+      "kind": "todo",
+      "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.relational.append",
+      "kind": "todo",
+      "title": "Add append redex and congruence clauses to the proof-producing relational backend, sharing the kernel Lisp append laws used by the equational backend.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/relation.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.relational.numeric-datum-sum",
+      "kind": "todo",
+      "title": "Add an exact-integer branch to the relational S-expression carrier and derive integer? clauses for both closed and open terms.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/relation.rs",
       "words": 0,
       "updated": 0
     },

@@ -1104,6 +1104,13 @@ impl LispRel {
                     _ => unreachable!(),
                 }
             }
+            Primitive::Integer => {
+                // TODO(cov:lisp.relational.numeric-datum-sum, major): Add an exact-integer branch to the relational S-expression carrier and derive `integer?` clauses for both closed and open terms.
+                Err(HolError::Stuck(
+                    "`integer?` requires the relational numeric S-expression payload sum backend"
+                        .into(),
+                ))
+            }
             Primitive::Equal => {
                 require_arity(2)?;
                 let left = self.compile_core(&arguments[0])?;
@@ -1117,6 +1124,12 @@ impl LispRel {
                 } else {
                     self.eq_of(left, right)
                 }
+            }
+            Primitive::Append => {
+                // TODO(cov:lisp.relational.append, major): Add append redex and congruence clauses to the proof-producing relational backend, sharing the kernel Lisp append laws used by the equational backend.
+                Err(HolError::Stuck(
+                    "append is not yet available in the proof-producing relational backend".into(),
+                ))
             }
             Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
                 require_arity(2)?;

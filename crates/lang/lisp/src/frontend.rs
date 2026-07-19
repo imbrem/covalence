@@ -40,11 +40,13 @@ pub enum Primitive {
     Atom,
     Consp,
     Null,
+    Integer,
     Equal,
     Add,
     Subtract,
     Multiply,
     LessEqual,
+    Append,
 }
 
 /// Concrete surface dialects targeting the common core.
@@ -74,12 +76,14 @@ impl SurfaceDialect {
             "atom?" | "atom" => Primitive::Atom,
             "consp" | "pair?" => Primitive::Consp,
             "null?" | "null" => Primitive::Null,
+            "integer?" | "integerp" => Primitive::Integer,
             "eq?" | "equal" => Primitive::Equal,
             "=" if self.parses_integers() => Primitive::Equal,
             "+" => Primitive::Add,
             "-" => Primitive::Subtract,
             "*" => Primitive::Multiply,
             "<=" => Primitive::LessEqual,
+            "append" => Primitive::Append,
             _ => return None,
         })
     }
@@ -159,15 +163,15 @@ impl Frontend {
             return Ok(None);
         };
         let (name, parameters, body) = match kind {
-            "define" if items.len() == 3 => {
-                let name = self.symbol(&items[1], "define", "name")?;
+            "define" | "label" if items.len() == 3 => {
+                let name = self.symbol(&items[1], "definition", "name")?;
                 let lambda = items[2].as_list().ok_or_else(|| LowerError::Malformed {
-                    form: "define",
+                    form: "definition",
                     detail: "value is not a lambda".to_owned(),
                 })?;
                 if lambda.len() != 3 || lambda[0].as_symbol() != Some("lambda") {
                     return Err(LowerError::Malformed {
-                        form: "define",
+                        form: "definition",
                         detail: "value is not a lambda".to_owned(),
                     });
                 }
@@ -178,7 +182,7 @@ impl Frontend {
                 &items[2],
                 &items[3],
             ),
-            "define" | "defun" => {
+            "define" | "label" | "defun" => {
                 return Err(LowerError::Malformed {
                     form: "definition",
                     detail: "wrong number of fields".to_owned(),
@@ -199,7 +203,7 @@ impl Frontend {
 
     fn datum_atom(&self, atom: &Atom) -> CoreAtom {
         match atom {
-            Atom::Symbol(text) if self.dialect == SurfaceDialect::Acl2Core => Int::from_str(text)
+            Atom::Symbol(text) if self.dialect.parses_integers() => Int::from_str(text)
                 .map_or_else(|_| CoreAtom::symbol(text.as_bytes()), CoreAtom::Integer),
             Atom::Symbol(text) => CoreAtom::symbol(text.as_bytes()),
             Atom::Str { format, bytes } => CoreAtom::String {
@@ -424,6 +428,7 @@ pub enum PrimitiveError {
     ExpectedDatum,
     ExpectedCons,
     ExpectedInteger,
+    ExpectedList,
 }
 
 impl CorePrimitive for StandardPrimitives {
@@ -468,6 +473,10 @@ impl CorePrimitive for StandardPrimitives {
                 let [value] = self.datums::<1>(arguments)?;
                 Ok(self.truth(matches!(value, Datum::Nil)))
             }
+            Primitive::Integer => {
+                let [value] = self.datums::<1>(arguments)?;
+                Ok(self.truth(matches!(value, Datum::Atom(CoreAtom::Integer(_)))))
+            }
             Primitive::Equal => {
                 let [left, right] = self.datums::<2>(arguments)?;
                 Ok(self.truth(left == right))
@@ -479,6 +488,10 @@ impl CorePrimitive for StandardPrimitives {
                 let [left, right] = self.integers(arguments)?;
                 Ok(self.truth(left <= right))
             }
+            Primitive::Append => {
+                let [left, right] = self.datums::<2>(arguments)?;
+                Ok(HostValue::Datum(Self::append(left, right)?))
+            }
         }
     }
 
@@ -488,6 +501,17 @@ impl CorePrimitive for StandardPrimitives {
 }
 
 impl StandardPrimitives {
+    fn append(
+        left: Datum<CoreAtom>,
+        right: Datum<CoreAtom>,
+    ) -> Result<Datum<CoreAtom>, PrimitiveError> {
+        match left {
+            Datum::Nil => Ok(right),
+            Datum::Cons(head, tail) => Ok(Datum::cons(*head, Self::append(*tail, right)?)),
+            Datum::Atom(_) => Err(PrimitiveError::ExpectedList),
+        }
+    }
+
     fn truth(&self, value: bool) -> FrontendValue {
         HostValue::Datum(if value {
             Datum::Atom(CoreAtom::symbol("t"))
@@ -562,6 +586,8 @@ pub struct HostSession {
 pub enum HostSessionError {
     Lower(LowerError),
     Execute(ExecutionError<CoreMachineError<String, PrimitiveError>>),
+    Machine(CoreMachineError<String, PrimitiveError>),
+    ExpectedDefinition { index: usize },
     DefinitionDidNotProduceClosure,
 }
 
@@ -570,6 +596,10 @@ impl Display for HostSessionError {
         match self {
             Self::Lower(error) => Display::fmt(error, f),
             Self::Execute(error) => Display::fmt(error, f),
+            Self::Machine(error) => Display::fmt(error, f),
+            Self::ExpectedDefinition { index } => {
+                write!(f, "form {index} is not a Lisp definition")
+            }
             Self::DefinitionDidNotProduceClosure => {
                 f.write_str("definition did not evaluate to a closure")
             }
@@ -611,6 +641,31 @@ impl HostSession {
         }
         self.environment = self.environment.extend([(name.clone(), value)]);
         Ok(Some(name))
+    }
+
+    /// Atomically install a mutually recursive group of `define`, `label`, or
+    /// `defun` forms.
+    ///
+    /// Every closure captures the same newly allocated lexical generation, so
+    /// definitions may refer forward as well as backward within the group.
+    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, HostSessionError> {
+        let mut names = Vec::with_capacity(forms.len());
+        let mut bindings = Vec::with_capacity(forms.len());
+        for (index, form) in forms.iter().enumerate() {
+            let Some((name, expression)) = self
+                .frontend
+                .definition(form)
+                .map_err(HostSessionError::Lower)?
+            else {
+                return Err(HostSessionError::ExpectedDefinition { index });
+            };
+            names.push(name.clone());
+            bindings.push((name, expression));
+        }
+        self.environment = host_machine()
+            .bind_recursive(&self.environment, bindings)
+            .map_err(HostSessionError::Machine)?;
+        Ok(names)
     }
 
     fn evaluate_core(&self, expression: FrontendExpr) -> Result<FrontendValue, HostSessionError> {
@@ -677,6 +732,40 @@ mod tests {
                     (even-list? (quote (a b))))"
             ),
             HostValue::Datum(Datum::Atom(CoreAtom::symbol("t")))
+        );
+    }
+
+    #[test]
+    fn host_append_preserves_list_order() {
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(append (quote (a b)) (quote (c d)))"
+            ),
+            HostValue::Datum(Datum::list([
+                Datum::Atom(CoreAtom::symbol("a")),
+                Datum::Atom(CoreAtom::symbol("b")),
+                Datum::Atom(CoreAtom::symbol("c")),
+                Datum::Atom(CoreAtom::symbol("d")),
+            ]))
+        );
+    }
+
+    #[test]
+    fn definition_groups_allow_forward_references() {
+        let mut session = HostSession::new(SurfaceDialect::Scheme, 256);
+        let forms = crate::reader::read(
+            "(label first (lambda (x) (second x)))
+             (label second (lambda (x) (cons x (quote ()))))",
+        )
+        .unwrap();
+        assert_eq!(
+            session.define_group(&forms).unwrap(),
+            vec!["first".to_owned(), "second".to_owned()]
+        );
+        assert_eq!(
+            session.evaluate(&one("(first (quote value))")).unwrap(),
+            HostValue::Datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
         );
     }
 

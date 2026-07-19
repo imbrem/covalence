@@ -61,6 +61,25 @@ pub struct ClauseMeta {
     pub metavars: Vec<String>,
 }
 
+/// Exact address of one explicitly opaque premise in the combined set.
+///
+/// This turns the opacity bound into an auditable source-facing inventory:
+/// consumers need not reverse-engineer clause terms or rely on aggregate tags
+/// to learn which rule remains blocked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpaquePremiseSite {
+    /// Combined-set clause index (the authoritative ordering contract).
+    pub clause_index: usize,
+    /// Premise index within [`Clause::prems`].
+    pub premise_index: usize,
+    /// Conclusion relation identity from the parallel [`ClauseMeta`].
+    pub relation: String,
+    /// Source rule name when this is a rule clause.
+    pub rule_name: String,
+    /// Opaque reason tag, without the `opaque.` relation prefix.
+    pub reason: String,
+}
+
 /// The one report for the combined set (headline numbers first; the per-leg
 /// censuses ride along in full).
 #[derive(Debug, Clone)]
@@ -88,6 +107,8 @@ pub struct TotalReport {
     /// Opaque premises actually present in the combined clause list, by
     /// reason tag with counts — the exact honest-residue census.
     pub opaque_tags: BTreeMap<String, usize>,
+    /// Every opaque premise at its exact combined-set/source address.
+    pub opaque_sites: Vec<OpaquePremiseSite>,
     /// Per-clause addressing metadata, in clause order.
     pub metas: Vec<ClauseMeta>,
 }
@@ -204,12 +225,21 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
 
     // The honest-residue census: every opaque premise in the final list.
     let mut opaque_tags = BTreeMap::new();
-    for c in &clauses {
-        for p in &c.prems {
+    let mut opaque_sites = Vec::new();
+    for (clause_index, c) in clauses.iter().enumerate() {
+        for (premise_index, p) in c.prems.iter().enumerate() {
             if let LowerPrem::Judgement(j) = p
                 && let Some(reason) = opaque_reason(j)
             {
-                *opaque_tags.entry(reason).or_default() += 1;
+                *opaque_tags.entry(reason.clone()).or_default() += 1;
+                let meta = &metas[clause_index];
+                opaque_sites.push(OpaquePremiseSite {
+                    clause_index,
+                    premise_index,
+                    relation: meta.relation.clone(),
+                    rule_name: meta.name.clone(),
+                    reason,
+                });
             }
         }
     }
@@ -226,6 +256,7 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
         neq_pairs,
         total_clauses: clauses.len(),
         opaque_tags,
+        opaque_sites,
         metas,
     };
     Ok((clauses, report))

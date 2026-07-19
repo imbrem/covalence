@@ -285,6 +285,16 @@ mod tests {
             for (k, c) in &report.opaque_tags {
                 println!("  {c:>4}  {k}");
             }
+            for site in &report.opaque_sites {
+                println!(
+                    "         clause {} premise {}  {}/{}  {}",
+                    site.clause_index,
+                    site.premise_index,
+                    site.relation,
+                    site.rule_name,
+                    site.reason
+                );
+            }
             println!("lowering: {lowered_in:?}; kernel layout of {n} clauses: {kernel_in:?}");
             println!("types rendered to HOL standalone (leg B, strict): {typ_ok} / {typ_total}");
             println!("types renderable (standalone or at use sites): {rdr_ok} / {rdr_total}");
@@ -332,7 +342,7 @@ mod tests {
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 3766,
+                report.total_clauses >= 3771,
                 "combined clauses = {}",
                 report.total_clauses
             );
@@ -341,19 +351,50 @@ mod tests {
             // 91 zero-clause tags (shift/count, exact bit structure,
             // serialization, integer SIMD lanes, and integer conversions).
             assert!(
-                report.n_builtin_clauses >= 304,
+                report.n_builtin_clauses >= 309,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 35, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 36, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 24,
+                report.builtins.zero_clause_ops, 25,
                 "zero-clause builtin tags filled"
             );
             assert!(
                 report.opaque_total() <= 7,
                 "opaque premises regressed: {}",
                 report.opaque_total()
+            );
+            assert_eq!(
+                report.opaque_sites.len(),
+                report.opaque_total(),
+                "opaque site inventory is exact"
+            );
+            let opaque_sites: Vec<_> = report
+                .opaque_sites
+                .iter()
+                .map(|site| {
+                    (
+                        site.clause_index,
+                        site.premise_index,
+                        site.relation.as_str(),
+                        site.rule_name.as_str(),
+                        site.reason.as_str(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                opaque_sites,
+                [
+                    (366, 0, "Step_read", "br_on_cast-fail", "else"),
+                    (368, 0, "Step_read", "br_on_cast_fail-fail", "else"),
+                    (431, 0, "Step_read", "ref.test-false", "else"),
+                    (433, 0, "Step_read", "ref.cast-fail", "else"),
+                    (466, 0, "Step_read", "array.init_data-zero", "else"),
+                    (1773, 11, "fn.vcvtop__", "", "dec.order"),
+                    (1996, 0, "fn.NotImmutReachable", "", "dec.else-nonif-guard",),
+                ],
+                "opaque source addresses or clause order changed"
             );
             // The write families are live (measured: 54 clauses / 27 path
             // families incl. `ev.upd.root.dot.LOCALS.idx` and the

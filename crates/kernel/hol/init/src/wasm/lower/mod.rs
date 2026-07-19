@@ -82,6 +82,7 @@ pub mod decs;
 pub mod else_;
 pub mod evalrel;
 pub mod flatten;
+pub mod official;
 pub mod slice;
 pub mod sortguard;
 pub mod star;

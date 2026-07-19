@@ -39,6 +39,7 @@ pub mod nat;
 pub mod omega;
 pub mod order;
 pub mod succ;
+pub mod wasm;
 
 /// Dependency-free logic carriers, capabilities, and relational algebra.
 ///
@@ -120,7 +121,8 @@ pub use covalence_init::wasm::lower::decision::{
     DecisionRequest, OpaqueDecisions,
 };
 pub use covalence_init::wasm::lower::total::{
-    ClauseMeta, TotalReport, total_rule_set, total_spec_clauses, with_total_stack,
+    ClauseMeta, OpaquePremiseSite, TotalReport, total_rule_set, total_spec_clauses,
+    with_total_stack,
 };
 // Lossless source-type layer: refinement-preserving shapes plus deterministic
 // dependency/SCC analysis, ready for semantic HOL-sort backends.

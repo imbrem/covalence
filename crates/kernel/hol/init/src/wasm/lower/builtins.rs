@@ -115,7 +115,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Integer ops given defining clauses by this leg.
-pub const OPS: [&str; 35] = [
+pub const OPS: [&str; 36] = [
     "isub_",
     "ieq_",
     "ine_",
@@ -151,6 +151,7 @@ pub const OPS: [&str; 35] = [
     "iextend_",
     "narrow__",
     "iavgr_",
+    "iq15mulr_sat_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -158,7 +159,7 @@ pub const OPS: [&str; 35] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 24;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 25;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -321,6 +322,88 @@ fn unsigned_average(w: u64) -> Result<Clause> {
         ],
         sx_concl("iavgr_", w, "U", "a", "b", ival(mv("r"))?)?,
     ))
+}
+
+/// Exact `i16x8.q15mulr_sat_s` lane primitive.
+///
+/// For signed 16-bit inputs this is the saturated Q15 product
+/// `sat_s16((a * b + 2^14) >> 15)`.  We stay entirely in natural arithmetic:
+/// same-sign products round to `(mag(a)·mag(b)+2^14) div 2^15`, while
+/// opposite-sign products have magnitude
+/// `ceil(max(mag(a)·mag(b)-2^14, 0)/2^15)`.  The sole overflowing rounded
+/// result is `(-2^15)·(-2^15)`, which saturates to `2^15-1`.
+///
+/// Only the instruction-reachable `(N,sx)=(16,S)` specialization receives
+/// clauses. Invented widths and `U` remain underivable.
+fn q15mulr_sat() -> Result<Vec<Clause>> {
+    const W: u64 = 16;
+    let half = p2(14)?;
+    let scale = p2(15)?;
+    let conclusion = || sx_concl("iq15mulr_sat_", W, "S", "a", "b", ival(mv("r"))?);
+    let carrier = || -> Result<Vec<Term>> {
+        Ok(vec![
+            in_carrier(mv("a"), W)?,
+            in_carrier(mv("b"), W)?,
+            in_carrier(mv("r"), W)?,
+        ])
+    };
+    let sign_guard = |x: &str, negative: bool| -> Result<Term> {
+        if negative {
+            le(scale.clone(), mv(x))
+        } else {
+            lt(mv(x), scale.clone())
+        }
+    };
+    let magnitude = |x: &str, negative: bool| -> Result<Term> {
+        if negative {
+            neg_mag(mv(x), W)
+        } else {
+            Ok(mv(x))
+        }
+    };
+
+    let mut out = Vec::new();
+    for (a_neg, b_neg) in [(false, false), (false, true), (true, false), (true, true)] {
+        let product = mul(magnitude("a", a_neg)?, magnitude("b", b_neg)?)?;
+        let mut sides = carrier()?;
+        sides.push(sign_guard("a", a_neg)?);
+        sides.push(sign_guard("b", b_neg)?);
+        if a_neg == b_neg {
+            let rounded = div(add(product, half.clone())?, scale.clone())?;
+            sides.push(lt(rounded.clone(), scale.clone())?);
+            sides.push(mv("r").equals(rounded)?);
+        } else {
+            // Nat subtraction is truncated, so products at or below the
+            // half-way point correctly round to signed zero.
+            let magnitude = div(
+                add(
+                    sub(product, half.clone())?,
+                    sub(scale.clone(), mk_nat(1u64))?,
+                )?,
+                scale.clone(),
+            )?;
+            sides.push(mv("r").equals(neg_result(magnitude, W)?)?);
+        }
+        out.push(clause(&["a", "b", "r"], sides, conclusion()?));
+    }
+
+    // The only same-sign rounded magnitude outside the signed carrier:
+    // INT16_MIN × INT16_MIN rounds to 2^15 and saturates to 2^15−1.
+    out.push(clause(
+        &[],
+        vec![],
+        fn_graph(
+            "iq15mulr_sat_",
+            &[
+                w_lit(W)?,
+                sx_case("S")?,
+                ival(mk_nat(1u64 << 15))?,
+                ival(mk_nat(1u64 << 15))?,
+            ],
+            &ival(mk_nat((1u64 << 15) - 1))?,
+        )?,
+    ));
+    Ok(out)
 }
 
 /// Exact unsigned/sign extension of the low `m` bits into an `n`-bit
@@ -1134,6 +1217,7 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     for w in [8, 16] {
         out.push(unsigned_average(w)?);
     }
+    out.extend(q15mulr_sat()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -1472,8 +1556,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 35);
-        assert_eq!(report.zero_clause_ops, 24);
+        assert_eq!(report.ops, 36);
+        assert_eq!(report.zero_clause_ops, 25);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -1747,9 +1831,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 304);
-        assert_eq!(report.ops, 35);
-        assert_eq!(report.zero_clause_ops, 24);
+        assert_eq!(report.clauses, 309);
+        assert_eq!(report.ops, 36);
+        assert_eq!(report.zero_clause_ops, 25);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2040,8 +2124,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 35);
-        assert_eq!(report.zero_clause_ops, 24);
+        assert_eq!(report.ops, 36);
+        assert_eq!(report.zero_clause_ops, 25);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -2077,6 +2161,56 @@ mod tests {
         assert!(!derivable_at(
             &clauses,
             &sx_fact("iavgr_", 8, "U", 256, 0, 128)
+        ));
+    }
+
+    #[test]
+    fn signed_q15mulr_sat_is_exact_and_fail_closed() {
+        let (clauses, _) = builtin_clauses().unwrap();
+        let encode = |x: i32| -> u64 { (x as i16) as u16 as u64 };
+        let oracle = |a: i32, b: i32| -> u64 {
+            let product = a * b;
+            let rounded = (product + (1 << 14)) >> 15;
+            encode(rounded.clamp(i16::MIN as i32, i16::MAX as i32))
+        };
+
+        // Cross every sign class, both half-way boundaries, ordinary extrema,
+        // and the unique saturating product.
+        for (a, b) in [
+            (0, 0),
+            (1, 16384),
+            (1, 16385),
+            (-1, 16384),
+            (-1, 16385),
+            (12345, 23456),
+            (-12345, 23456),
+            (12345, -23456),
+            (-12345, -23456),
+            (i16::MAX as i32, i16::MAX as i32),
+            (i16::MIN as i32, i16::MAX as i32),
+            (i16::MIN as i32, i16::MIN as i32),
+        ] {
+            let expected = oracle(a, b);
+            let fact = |r| sx_fact("iq15mulr_sat_", 16, "S", encode(a), encode(b), r);
+            assert!(derivable_at(&clauses, &fact(expected)), "{a} × {b}");
+            assert!(
+                !derivable_at(&clauses, &fact((expected + 1) & 0xffff)),
+                "wrong result accepted for {a} × {b}"
+            );
+        }
+
+        // This SpecTec primitive is instruction-reachable only at I16/S.
+        assert!(!derivable_at(
+            &clauses,
+            &sx_fact("iq15mulr_sat_", 16, "U", 1, 1, 0)
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &sx_fact("iq15mulr_sat_", 8, "S", 1, 1, 0)
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &sx_fact("iq15mulr_sat_", 16, "S", 65536, 1, 2)
         ));
     }
 }

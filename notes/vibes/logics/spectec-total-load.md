@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3766 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **3771 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,7 +36,7 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 304 integer-builtin
+  expanded Dec-star sites / 12 defining clauses) + 309 integer-builtin
   clauses over 35 operations + 1462
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
@@ -45,7 +45,14 @@ API. `wasm::spec::coverage_report` pins:
 - **7 opaque premises** total, censused by tag (`dec.order` 1,
   rule-`else` 5, and one
   `dec.else-nonif-guard`). Exact per-tag counts are pinned in
-  `coverage_report`.
+  `coverage_report`. `TotalReport::opaque_sites` also pins their exact
+  combined-set addresses: `Step_read/{br_on_cast-fail,
+  br_on_cast_fail-fail,ref.test-false,ref.cast-fail,array.init_data-zero}`,
+  `fn.vcvtop__`, and `fn.NotImmutReachable`. The first five require open
+  composite applicability decisions, `vcvtop__` requires the complement of
+  existential partial computations, and `NotImmutReachable` is the source
+  specification's explicit emulation of relation negation. None is silently
+  approximated.
 - **Wave G — encoded integer ordering.** `ev.int.lt`/`ev.int.le` compare the
   canonical sign/magnitude integer encoding and reduce same-sign magnitudes to
   real HOL-natural side conditions; exact Nat→Int conversion in condition
@@ -573,6 +580,36 @@ zero-clause tags and leaving a frontier of **68**.
 `lower/builtins.rs` now defines `iavgr_` at exactly the two instruction-reachable
 integer lane widths, I8 and I16. The builtin leg is **304 clauses over 35 ops**,
 filling **24 of 91** zero-clause tags and leaving a frontier of **67**.
+
+## Landed (Wave AB — exact signed Q15 multiplication and frontier audit)
+
+`lower/builtins.rs` now defines the instruction-reachable
+`iq15mulr_sat_(16,S,...)` graph by five disjoint natural-arithmetic clauses.
+They cover all four input sign classes and the unique saturating
+`INT16_MIN × INT16_MIN` point. Oracle tests cross the rounding half-way
+boundaries, sign classes, extrema, saturation, perturbed results, invented
+widths/signs, and erased-carrier junk. The builtin leg is therefore **309
+clauses over 36 ops**, filling **25 of 91** zero-clause declarations and
+leaving **66 declarations**.
+
+The remaining frontier is not honestly “all floats”. Its 61 distinct names
+(five names have multiple source declarations) split as follows:
+
+- **42 float-dependent names**: scalar float arithmetic/comparison,
+  float bits/bytes and inverses, float/int conversions, reinterpretation, and
+  the float-related relaxed choice relations;
+- **7 explicitly relaxed/nondeterministic names**: `ND`, `R_idot`,
+  `R_iq15mulr`, `R_laneselect`, `R_swizzle`,
+  `irelaxed_q15mulr_`, and `irelaxed_laneselect_`;
+- **10 representation/generic sequence names**: the composite
+  `nbytes_`/`vbytes_`/`zbytes_`/`cbytes_` families and inverses plus
+  `inv_concat_`/`inv_concatn_`;
+- **2 exact-rational host primitives**, `truncz` and `ceilz`.
+
+The relaxed declarations deliberately remain clause-less: replacing their
+specified result sets by one deterministic answer would be a coverage score
+improvement but a semantic regression. The generic representation and rational
+families are separately actionable; they are no longer mislabeled as floats.
 
 - The result is the WebAssembly unsigned rounded average
   `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before

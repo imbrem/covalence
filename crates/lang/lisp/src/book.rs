@@ -43,6 +43,7 @@ use std::path::{Component, Path, PathBuf};
 use covalence_sexp::SExpr;
 
 use crate::acl2::{Acl2Proof, Acl2Session};
+use crate::acl2_api::{Acl2EventWorld, WorldEventStatus};
 use crate::reader::read_book;
 use crate::world::{Acl2World, GeneratedEventData};
 
@@ -799,8 +800,8 @@ impl Pipeline<'_> {
             "defconst" | "defconsts" => self.process_constant(book, head, form, items),
             "table" => {
                 let label = summarize_arg(items);
-                match self.world.process_event(form) {
-                    Ok(true) => Ok(EventRecord {
+                match self.world.process_world_event(form) {
+                    Ok(WorldEventStatus::Handled) => Ok(EventRecord {
                         book: book.into(),
                         kind: head.into(),
                         label,
@@ -812,7 +813,7 @@ impl Pipeline<'_> {
                             format!("form: {}", render_form(form)),
                         ],
                     }),
-                    Ok(false) => Ok(rec(
+                    Ok(WorldEventStatus::Unhandled) => Ok(rec(
                         head,
                         label,
                         EventOutcome::Rejected {
@@ -852,7 +853,7 @@ impl Pipeline<'_> {
             "define" => self.process_define(book, file, lookup, items),
             "defun" | "defund" | "defun-inline" | "defund-inline" | "defun-nx" | "defn" => {
                 let label = event_name(items);
-                if let Err(error) = self.world.process_event(form) {
+                if let Err(error) = self.world.process_world_event(form) {
                     return Ok(rec(
                         head,
                         label,
@@ -1143,11 +1144,11 @@ impl Pipeline<'_> {
         } else {
             event_name(items)
         };
-        let outcome = match self.world.process_event(form) {
-            Ok(true) => EventOutcome::Skipped {
+        let outcome = match self.world.process_world_event(form) {
+            Ok(WorldEventStatus::Handled) => EventOutcome::Skipped {
                 reason: "read-time constant evaluated and installed; no theorem authority".into(),
             },
-            Ok(false) => EventOutcome::Rejected {
+            Ok(WorldEventStatus::Unhandled) => EventOutcome::Rejected {
                 reason: format!("internal: `{kind}` was not recognized by the ACL2 world"),
             },
             Err(error) => EventOutcome::Rejected {
@@ -1246,12 +1247,12 @@ impl Pipeline<'_> {
         items: &[SExpr],
     ) -> Result<EventRecord, BookError> {
         let label = event_name(items);
-        let outcome = match self.world.process_event(form) {
-            Ok(true) => EventOutcome::Skipped {
+        let outcome = match self.world.process_world_event(form) {
+            Ok(WorldEventStatus::Handled) => EventOutcome::Skipped {
                 reason: "ordinary quasiquoted macro template installed for untrusted expansion"
                     .into(),
             },
-            Ok(false) => EventOutcome::Rejected {
+            Ok(WorldEventStatus::Unhandled) => EventOutcome::Rejected {
                 reason: "internal: defmacro was not recognized by the ACL2 world".into(),
             },
             Err(error) => EventOutcome::Rejected {
@@ -2912,7 +2913,7 @@ impl Pipeline<'_> {
         // Logical inventory may support a wider lambda list than the bounded
         // read-time evaluator. Failure to install it computationally must not
         // panic or grant authority; later make-event use reports the boundary.
-        let _ = self.world.process_event(&world_form);
+        let _ = self.world.process_world_event(&world_form);
         self.logical_functions.insert(label.clone());
         let record = if program_mode {
             notes.push("no theorem authority from expansion".into());

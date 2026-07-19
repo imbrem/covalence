@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
+use crate::acl2_api::{Acl2EventWorld, Acl2WorldView, WorldEventStatus};
+
 /// A small ACL2 value universe sufficient for ordered read-time constants.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorldValue {
@@ -2776,6 +2778,29 @@ impl Acl2World {
 
     fn is_24bits(&self, value: &Int) -> bool {
         !value.is_negative() && value < &Int::from(2u64).pow(24)
+    }
+}
+
+impl Acl2WorldView for Acl2World {
+    type Value = WorldValue;
+
+    fn constant(&self, name: &str) -> Option<&Self::Value> {
+        Acl2World::constant(self, name)
+    }
+}
+
+impl Acl2EventWorld for Acl2World {
+    type Form = SExpr;
+    type Error = WorldError;
+
+    fn process_world_event(&mut self, event: &Self::Form) -> Result<WorldEventStatus, Self::Error> {
+        self.process_event(event).map(|handled| {
+            if handled {
+                WorldEventStatus::Handled
+            } else {
+                WorldEventStatus::Unhandled
+            }
+        })
     }
 }
 

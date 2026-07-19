@@ -254,6 +254,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0026",
+      "kind": "api",
+      "title": "Lisp runtime values and environments",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/runtime.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -709,7 +718,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35687,
+      "words": 35762,
       "updated": 0
     },
     {
@@ -9349,7 +9358,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1299,
+      "words": 1640,
       "updated": 0
     },
     {
@@ -9358,7 +9367,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 57,
+      "words": 60,
       "updated": 0
     },
     {
@@ -9368,6 +9377,15 @@
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
       "words": 474,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/runtime.rs",
+      "kind": "file",
+      "title": "runtime.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/runtime.rs",
+      "words": 164,
       "updated": 0
     },
     {
@@ -9385,7 +9403,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 174,
+      "words": 197,
       "updated": 0
     },
     {
@@ -10771,7 +10789,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 912,
+      "words": 1166,
       "updated": 0
     },
     {
@@ -10816,7 +10834,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2353,
+      "words": 2362,
       "updated": 0
     },
     {
@@ -10825,7 +10843,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1594,
+      "words": 1616,
       "updated": 0
     },
     {
@@ -11176,7 +11194,7 @@
       "title": "metacircular_host.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/metacircular_host.rs",
-      "words": 87,
+      "words": 86,
       "updated": 0
     },
     {
@@ -15325,7 +15343,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35687,
+      "words": 35762,
       "updated": 0
     },
     {
@@ -15433,7 +15451,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3529,
+      "words": 3559,
       "updated": 0
     },
     {
@@ -22088,6 +22106,24 @@
       "updated": 0
     },
     {
+      "id": "todo:lisp.hol.apply-list",
+      "kind": "todo",
+      "title": "Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.first-class-primitives",
+      "kind": "todo",
+      "title": "Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:lisp.hol.numeric-datum-sum",
       "kind": "todo",
       "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
@@ -22100,6 +22136,15 @@
       "id": "todo:lisp.hol.strict-sequence",
       "kind": "todo",
       "title": "Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.variadic-closures",
+      "kind": "todo",
+      "title": "Represent variadic closures in the equational HOL backend using the shared inductive proper-list carrier, without assuming total application.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
       "words": 0,
@@ -22939,6 +22984,24 @@
       "source": "api:A0025",
       "predicate": "depends-on",
       "target": "api:A0023",
+      "detail": null
+    },
+    {
+      "source": "api:A0026",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/lisp/src/runtime.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0026",
+      "predicate": "depends-on",
+      "target": "api:A0005",
+      "detail": null
+    },
+    {
+      "source": "api:A0026",
+      "predicate": "depends-on",
+      "target": "api:A0022",
       "detail": null
     },
     {
@@ -25291,6 +25354,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/runtime.rs",
       "detail": null
     },
     {
@@ -33594,6 +33663,12 @@
       "title": "Lisp effect suspension and handling",
       "status": "experimental",
       "path": "crates/kernel/lisp/src/effect.rs"
+    },
+    {
+      "id": "A0026",
+      "title": "Lisp runtime values and environments",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/runtime.rs"
     }
   ],
   "apiImplementations": [

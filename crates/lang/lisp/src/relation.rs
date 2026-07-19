@@ -57,7 +57,7 @@ use std::sync::Arc;
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
 use crate::carrier::{CarvedCarrier, exact_datum_carved};
-use crate::frontend::{CoreAtom, FrontendExpr, Primitive};
+use crate::frontend::{CoreAtom, FrontendExpr, Primitive, SurfaceDialect};
 use crate::hol::HolError;
 use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
 
@@ -1370,6 +1370,9 @@ impl LispRel {
                 operator,
                 arguments,
             } => self.compile_core_primitive(*operator, arguments),
+            CoreExpr::PrimitiveValue(_) | CoreExpr::ApplyListProcedure => Err(HolError::Stuck(
+                "first-class procedures need higher-order relational closures".into(),
+            )),
             CoreExpr::If {
                 condition,
                 consequent,
@@ -1404,6 +1407,9 @@ impl LispRel {
                 arguments,
             } => {
                 if let CoreExpr::Variable(name) = operator.as_ref() {
+                    if let Some(primitive) = SurfaceDialect::Scheme.primitive(name) {
+                        return self.compile_core_primitive(primitive, arguments);
+                    }
                     if matches!(name.as_str(), "defun" | "define" | "label") {
                         return Err(HolError::Stuck(format!(
                             "`{name}` needs recursion, which this relational dialect does not \
@@ -1427,6 +1433,9 @@ impl LispRel {
                     ))
                 }
             }
+            CoreExpr::ApplyList { .. } => Err(HolError::Stuck(
+                "runtime-list application needs higher-order relational closures".into(),
+            )),
             CoreExpr::Lambda { .. } | CoreExpr::Let { .. } | CoreExpr::LetRec { .. } => {
                 Err(HolError::Stuck(
                     "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),

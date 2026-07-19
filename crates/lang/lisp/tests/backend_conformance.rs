@@ -9,10 +9,10 @@ use covalence_lisp::reader::read_one;
 use covalence_lisp::relation::{Dialect, LispRel};
 
 fn render_host(value: &HostValue<String, CoreAtom, covalence_lisp::frontend::Primitive>) -> String {
-    let HostValue::Datum(datum) = value else {
+    let Some(datum) = value.as_datum() else {
         return "<closure>".to_owned();
     };
-    render_datum(datum)
+    render_datum(&datum)
 }
 
 fn render_datum(datum: &Datum<CoreAtom>) -> String {

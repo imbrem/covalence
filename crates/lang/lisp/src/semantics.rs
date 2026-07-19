@@ -275,8 +275,17 @@ impl LispSemantics {
                 ))
             }
             CoreExpr::Lambda {
-                parameters, body, ..
+                parameters,
+                rest,
+                body,
+                ..
             } => {
+                if rest.is_some() {
+                    // TODO(cov:lisp.hol.variadic-closures, major): Represent variadic closures in the equational HOL backend using the shared inductive proper-list carrier, without assuming total application.
+                    return Err(HolError::Stuck(
+                        "variadic closures need a proper-list application semantics".into(),
+                    ));
+                }
                 let mut lambda = self.compile_core(body)?;
                 for parameter in parameters.iter().rev() {
                     let closed = covalence_core::subst::close(&lambda, &parameter.name);
@@ -300,6 +309,12 @@ impl LispSemantics {
                 }
                 Ok(term)
             }
+            CoreExpr::ApplyList { .. } => {
+                // TODO(cov:lisp.hol.apply-list, major): Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.
+                Err(HolError::Stuck(
+                    "runtime-list application needs the partial higher-order HOL semantics".into(),
+                ))
+            }
             CoreExpr::Let { bindings, body } => {
                 let lambda = CoreExpr::Lambda {
                     name: None,
@@ -307,6 +322,7 @@ impl LispSemantics {
                         .iter()
                         .map(|binding| covalence_kernel_lisp::Parameter::new(binding.name.clone()))
                         .collect(),
+                    rest: None,
                     body: body.clone(),
                 };
                 self.compile_core(&CoreExpr::Apply {
@@ -329,6 +345,12 @@ impl LispSemantics {
                 operator,
                 arguments,
             } => self.compile_core_primitive(*operator, arguments),
+            CoreExpr::PrimitiveValue(_) | CoreExpr::ApplyListProcedure => {
+                // TODO(cov:lisp.hol.first-class-primitives, major): Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.
+                Err(HolError::Stuck(
+                    "first-class procedures need the partial higher-order HOL semantics".into(),
+                ))
+            }
         }
     }
 

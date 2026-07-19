@@ -85,11 +85,21 @@ pub enum CoreExpr<S, D, P> {
         /// world or making recursion total.
         name: Option<S>,
         parameters: Vec<Parameter<S>>,
+        /// Optional binding for all arguments after `parameters`, represented
+        /// as a proper list in the backend's shared S-expression carrier.
+        rest: Option<Parameter<S>>,
         body: Box<Self>,
     },
     Apply {
         operator: Box<Self>,
         arguments: Vec<Self>,
+    },
+    /// Apply a function to explicit prefix arguments followed by the values in
+    /// a runtime proper list.
+    ApplyList {
+        operator: Box<Self>,
+        arguments: Vec<Self>,
+        tail: Box<Self>,
     },
     Let {
         bindings: Vec<Binding<S, Self>>,
@@ -107,6 +117,10 @@ pub enum CoreExpr<S, D, P> {
         operator: P,
         arguments: Vec<Self>,
     },
+    /// A primitive procedure as a first-class callable value.
+    PrimitiveValue(P),
+    /// The first-class runtime-list application procedure.
+    ApplyListProcedure,
 }
 
 /// Construction capability for a backend-specific Lisp syntax carrier.
@@ -138,12 +152,19 @@ pub trait LispSyntax {
         &self,
         name: Option<Self::Symbol>,
         parameters: Vec<Self::Symbol>,
+        rest: Option<Self::Symbol>,
         body: Self::Expr,
     ) -> Result<Self::Expr, Self::Error>;
     fn apply(
         &self,
         operator: Self::Expr,
         arguments: Vec<Self::Expr>,
+    ) -> Result<Self::Expr, Self::Error>;
+    fn apply_list(
+        &self,
+        operator: Self::Expr,
+        arguments: Vec<Self::Expr>,
+        tail: Self::Expr,
     ) -> Result<Self::Expr, Self::Error>;
     fn let_bind(
         &self,
@@ -160,6 +181,8 @@ pub trait LispSyntax {
         operator: Self::Primitive,
         arguments: Vec<Self::Expr>,
     ) -> Result<Self::Expr, Self::Error>;
+    fn primitive_value(&self, operator: Self::Primitive) -> Result<Self::Expr, Self::Error>;
+    fn apply_list_procedure(&self) -> Result<Self::Expr, Self::Error>;
 }
 
 /// Policy supplied by a concrete Lisp frontend.

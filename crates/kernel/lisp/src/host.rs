@@ -4,11 +4,13 @@
 //! trace discovery, differential testing, and as an executable specification
 //! for proof-producing backends.
 
+use core::convert::Infallible;
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
+use crate::runtime::{LispEnvironment, LispValue, RuntimeBinding, RuntimeValueView};
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
 /// The direct inductive S-expression representation
@@ -163,6 +165,7 @@ type Environment<S, A, P> = HostEnvironment<S, Value<S, A, P>>;
 pub struct HostClosure<S, A, P> {
     pub name: Option<S>,
     pub parameters: Vec<Parameter<S>>,
+    pub rest: Option<Parameter<S>>,
     pub body: Expr<S, A, P>,
     pub environment: Environment<S, A, P>,
 }
@@ -170,17 +173,145 @@ pub struct HostClosure<S, A, P> {
 /// Runtime values of the host realization.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostValue<S, A, P> {
-    Datum(Datum<A>),
+    Atom(A),
+    Nil,
+    Cons(Box<Self>, Box<Self>),
     Closure(Arc<HostClosure<S, A, P>>),
+    Primitive(P),
+    ApplyListProcedure,
 }
 
 impl<S, A, P> HostValue<S, A, P> {
-    pub fn datum(datum: Datum<A>) -> Self {
-        Self::Datum(datum)
+    pub fn cons(head: Self, tail: Self) -> Self {
+        Self::Cons(Box::new(head), Box::new(tail))
+    }
+
+    pub fn list(values: impl IntoIterator<Item = Self>) -> Self {
+        let values: Vec<_> = values.into_iter().collect();
+        values
+            .into_iter()
+            .rev()
+            .fold(Self::Nil, |tail, head| Self::cons(head, tail))
     }
 
     pub fn is_false(&self) -> bool {
-        matches!(self, Self::Datum(Datum::Nil))
+        matches!(self, Self::Nil)
+    }
+}
+
+impl<S, A: Clone, P> HostValue<S, A, P> {
+    pub fn datum(datum: Datum<A>) -> Self {
+        match datum {
+            Datum::Atom(atom) => Self::Atom(atom),
+            Datum::Nil => Self::Nil,
+            Datum::Cons(head, tail) => Self::cons(Self::datum(*head), Self::datum(*tail)),
+        }
+    }
+
+    /// Project a runtime value back to quoted data when it contains no
+    /// procedures.
+    pub fn as_datum(&self) -> Option<Datum<A>> {
+        match self {
+            Self::Atom(atom) => Some(Datum::Atom(atom.clone())),
+            Self::Nil => Some(Datum::Nil),
+            Self::Cons(head, tail) => Some(Datum::cons(head.as_datum()?, tail.as_datum()?)),
+            Self::Closure(_) | Self::Primitive(_) | Self::ApplyListProcedure => None,
+        }
+    }
+}
+
+/// Runtime-value capability backed by the direct Rust [`HostValue`] domain.
+#[derive(Clone, Copy, Debug)]
+pub struct HostValues<S, A, P>(PhantomData<(S, A, P)>);
+
+impl<S, A, P> Default for HostValues<S, A, P> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone, A: Clone, P: Clone> LispValue for HostValues<S, A, P> {
+    type Atom = A;
+    type Primitive = P;
+    type Value = HostValue<S, A, P>;
+    type Error = Infallible;
+
+    fn atom(&self, atom: A) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::Atom(atom))
+    }
+
+    fn nil(&self) -> Self::Value {
+        HostValue::Nil
+    }
+
+    fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::cons(head, tail))
+    }
+
+    fn primitive(&self, primitive: P) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::Primitive(primitive))
+    }
+
+    fn apply_list_procedure(&self) -> Self::Value {
+        HostValue::ApplyListProcedure
+    }
+
+    fn view(
+        &self,
+        value: &Self::Value,
+    ) -> Result<RuntimeValueView<A, P, Self::Value>, Self::Error> {
+        Ok(match value {
+            HostValue::Atom(atom) => RuntimeValueView::Atom(atom.clone()),
+            HostValue::Nil => RuntimeValueView::Nil,
+            HostValue::Cons(head, tail) => RuntimeValueView::Cons {
+                head: (**head).clone(),
+                tail: (**tail).clone(),
+            },
+            HostValue::Closure(_) => RuntimeValueView::Closure,
+            HostValue::Primitive(primitive) => RuntimeValueView::Primitive(primitive.clone()),
+            HostValue::ApplyListProcedure => RuntimeValueView::ApplyListProcedure,
+        })
+    }
+}
+
+/// Persistent-environment capability backed by [`HostEnvironment`].
+#[derive(Clone, Copy, Debug)]
+pub struct HostEnvironments<S, V>(PhantomData<(S, V)>);
+
+impl<S, V> Default for HostEnvironments<S, V> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone + PartialEq, V: Clone> LispEnvironment for HostEnvironments<S, V> {
+    type Symbol = S;
+    type Value = V;
+    type Environment = HostEnvironment<S, V>;
+    type Error = Infallible;
+
+    fn empty(&self) -> Self::Environment {
+        HostEnvironment::default()
+    }
+
+    fn lookup(
+        &self,
+        environment: &Self::Environment,
+        symbol: &S,
+    ) -> Result<Option<V>, Self::Error> {
+        Ok(environment.lookup(symbol))
+    }
+
+    fn extend(
+        &self,
+        environment: &Self::Environment,
+        bindings: Vec<RuntimeBinding<S, V>>,
+    ) -> Result<Self::Environment, Self::Error> {
+        Ok(environment.extend(
+            bindings
+                .into_iter()
+                .map(|binding| (binding.symbol, binding.value)),
+        ))
     }
 }
 
@@ -206,6 +337,7 @@ pub enum HostFrame<S, A, P> {
     ApplyParts {
         function: Option<Value<S, A, P>>,
         evaluated: Vec<Option<Value<S, A, P>>>,
+        splice_tail: bool,
         current: HostApplicationPosition,
         remaining: Vec<HostApplicationPart<S, A, P>>,
         environment: Environment<S, A, P>,
@@ -269,14 +401,26 @@ impl<S, A, P> HostConfiguration<S, A, P> {
 }
 
 /// Errors from the executable host machine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArityExpectation {
+    Exactly(usize),
+    AtLeast(usize),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CoreMachineError<S, E> {
     UnboundVariable(S),
     DuplicateRecursiveBinding(S),
     InvalidRecursiveInitializer(S),
-    NondeterministicSuccessors { count: usize },
+    NondeterministicSuccessors {
+        count: usize,
+    },
     NotCallable,
-    Arity { expected: usize, actual: usize },
+    Arity {
+        expected: ArityExpectation,
+        actual: usize,
+    },
+    ImproperArgumentList,
     Primitive(E),
 }
 
@@ -295,8 +439,19 @@ impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
                 "deterministic execution requested for a state with {count} legal successors"
             ),
             Self::NotCallable => f.write_str("attempted to apply a non-closure value"),
-            Self::Arity { expected, actual } => {
-                write!(f, "arity mismatch: expected {expected}, got {actual}")
+            Self::Arity { expected, actual } => match expected {
+                ArityExpectation::Exactly(expected) => {
+                    write!(f, "arity mismatch: expected {expected}, got {actual}")
+                }
+                ArityExpectation::AtLeast(expected) => {
+                    write!(
+                        f,
+                        "arity mismatch: expected at least {expected}, got {actual}"
+                    )
+                }
+            },
+            Self::ImproperArgumentList => {
+                f.write_str("apply-list tail did not evaluate to a proper list")
             }
             Self::Primitive(error) => write!(f, "primitive operation failed: {error:?}"),
         }
@@ -367,6 +522,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             let CoreExpr::Lambda {
                 name,
                 parameters,
+                rest,
                 body,
             } = expression
             else {
@@ -375,6 +531,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             let closure = HostValue::Closure(Arc::new(HostClosure {
                 name,
                 parameters,
+                rest,
                 body: *body,
                 environment: environment.clone(),
             }));
@@ -397,6 +554,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
         configuration: ConfigOf<P>,
         function: Option<Value<P::Symbol, P::Atom, P::Primitive>>,
         evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
+        splice_tail: bool,
         remaining: Vec<HostApplicationPart<P::Symbol, P::Atom, P::Primitive>>,
         environment: Environment<P::Symbol, P::Atom, P::Primitive>,
     ) -> Vec<ConfigOf<P>> {
@@ -416,6 +574,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 next.continuation.push(HostFrame::ApplyParts {
                     function: function.clone(),
                     evaluated: evaluated.clone(),
+                    splice_tail,
                     current,
                     remaining: pending,
                     environment: environment.clone(),
@@ -505,6 +664,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             HostFrame::ApplyParts {
                 mut function,
                 mut evaluated,
+                splice_tail,
                 current,
                 remaining,
                 environment,
@@ -515,12 +675,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 }
                 if remaining.is_empty() {
                     let function = function.expect("the application operator was evaluated");
+                    let mut arguments = Self::completed_arguments(evaluated);
+                    if splice_tail {
+                        let tail = arguments
+                            .pop()
+                            .expect("apply-list always schedules its tail");
+                        arguments.extend(Self::proper_list(tail)?);
+                    }
                     return Ok(self
-                        .apply(
-                            configuration,
-                            function,
-                            Self::completed_arguments(evaluated),
-                        )?
+                        .apply(configuration, function, arguments)?
                         .into_iter()
                         .collect());
                 }
@@ -528,6 +691,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     configuration,
                     function,
                     evaluated,
+                    splice_tail,
                     remaining,
                     environment,
                 ));
@@ -568,11 +732,43 @@ impl<P: CorePrimitive> CoreMachine<P> {
         arguments: Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
     ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
         let HostValue::Closure(closure) = function.clone() else {
-            return Err(CoreMachineError::NotCallable);
+            return match function {
+                HostValue::Primitive(primitive) => {
+                    let value = self
+                        .primitives
+                        .apply(&primitive, &arguments)
+                        .map_err(CoreMachineError::Primitive)?;
+                    configuration.control = HostControl::Value(value);
+                    Ok(Some(configuration))
+                }
+                HostValue::ApplyListProcedure => {
+                    if arguments.len() < 2 {
+                        return Err(CoreMachineError::Arity {
+                            expected: ArityExpectation::AtLeast(2),
+                            actual: arguments.len(),
+                        });
+                    }
+                    let mut arguments = arguments;
+                    let function = arguments.remove(0);
+                    let tail = arguments.pop().expect("at least two apply arguments");
+                    arguments.extend(Self::proper_list(tail)?);
+                    self.apply(configuration, function, arguments)
+                }
+                HostValue::Atom(_) | HostValue::Nil | HostValue::Cons(_, _) => {
+                    Err(CoreMachineError::NotCallable)
+                }
+                HostValue::Closure(_) => unreachable!("matched above"),
+            };
         };
-        if closure.parameters.len() != arguments.len() {
+        if closure.rest.is_none() && closure.parameters.len() != arguments.len() {
             return Err(CoreMachineError::Arity {
-                expected: closure.parameters.len(),
+                expected: ArityExpectation::Exactly(closure.parameters.len()),
+                actual: arguments.len(),
+            });
+        }
+        if closure.rest.is_some() && arguments.len() < closure.parameters.len() {
+            return Err(CoreMachineError::Arity {
+                expected: ArityExpectation::AtLeast(closure.parameters.len()),
                 actual: arguments.len(),
             });
         }
@@ -586,8 +782,14 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 .parameters
                 .iter()
                 .map(|parameter| parameter.name.clone())
-                .zip(arguments),
+                .zip(arguments.iter().cloned()),
         );
+        if let Some(rest) = &closure.rest {
+            bindings.push((
+                rest.name.clone(),
+                HostValue::list(arguments.into_iter().skip(closure.parameters.len())),
+            ));
+        }
         let parent = if self.strategy.lexical_scope {
             &closure.environment
         } else {
@@ -596,6 +798,28 @@ impl<P: CorePrimitive> CoreMachine<P> {
         configuration.environment = parent.extend(bindings);
         configuration.control = HostControl::Expression(closure.body.clone());
         Ok(Some(configuration))
+    }
+
+    fn proper_list(
+        mut value: Value<P::Symbol, P::Atom, P::Primitive>,
+    ) -> Result<Vec<Value<P::Symbol, P::Atom, P::Primitive>>, CoreMachineError<P::Symbol, P::Error>>
+    {
+        let mut values = Vec::new();
+        loop {
+            match value {
+                HostValue::Nil => return Ok(values),
+                HostValue::Cons(head, tail) => {
+                    values.push(*head);
+                    value = *tail;
+                }
+                HostValue::Atom(_)
+                | HostValue::Closure(_)
+                | HostValue::Primitive(_)
+                | HostValue::ApplyListProcedure => {
+                    return Err(CoreMachineError::ImproperArgumentList);
+                }
+            }
+        }
     }
 }
 
@@ -611,7 +835,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             HostControl::Expression(expression) => {
                 match expression {
                     CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => {
-                        next.control = HostControl::Value(HostValue::Datum(datum));
+                        next.control = HostControl::Value(HostValue::datum(datum));
                     }
                     CoreExpr::Truth(value) => {
                         next.control = HostControl::Value(self.primitives.truth(value));
@@ -660,12 +884,14 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     CoreExpr::Lambda {
                         name,
                         parameters,
+                        rest,
                         body,
                     } => {
                         next.control =
                             HostControl::Value(HostValue::Closure(Arc::new(HostClosure {
                                 name,
                                 parameters,
+                                rest,
                                 body: *body,
                                 environment: next.environment.clone(),
                             })));
@@ -687,6 +913,31 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             next.clone(),
                             None,
                             vec![None; argument_count],
+                            false,
+                            parts,
+                            next.environment,
+                        ));
+                    }
+                    CoreExpr::ApplyList {
+                        operator,
+                        mut arguments,
+                        tail,
+                    } => {
+                        arguments.push(*tail);
+                        let argument_count = arguments.len();
+                        let mut parts = Vec::with_capacity(argument_count + 1);
+                        parts.push(HostApplicationPart::Operator(*operator));
+                        parts.extend(arguments.into_iter().enumerate().map(
+                            |(index, expression)| HostApplicationPart::Argument {
+                                index,
+                                expression,
+                            },
+                        ));
+                        return Ok(self.schedule_application_part(
+                            next.clone(),
+                            None,
+                            vec![None; argument_count],
+                            true,
                             parts,
                             next.environment,
                         ));
@@ -701,6 +952,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             operator: Box::new(CoreExpr::Lambda {
                                 name: None,
                                 parameters,
+                                rest: None,
                                 body,
                             }),
                             arguments,
@@ -737,6 +989,12 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 next.environment,
                             ));
                         }
+                    }
+                    CoreExpr::PrimitiveValue(primitive) => {
+                        next.control = HostControl::Value(HostValue::Primitive(primitive));
+                    }
+                    CoreExpr::ApplyListProcedure => {
+                        next.control = HostControl::Value(HostValue::ApplyListProcedure);
                     }
                 }
                 Ok(vec![next])
@@ -835,11 +1093,13 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
         &self,
         name: Option<Self::Symbol>,
         parameters: Vec<Self::Symbol>,
+        rest: Option<Self::Symbol>,
         body: Self::Expr,
     ) -> Result<Self::Expr, Self::Error> {
         Ok(CoreExpr::Lambda {
             name,
             parameters: parameters.into_iter().map(Parameter::new).collect(),
+            rest: rest.map(Parameter::new),
             body: Box::new(body),
         })
     }
@@ -852,6 +1112,19 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
         Ok(CoreExpr::Apply {
             operator: Box::new(operator),
             arguments,
+        })
+    }
+
+    fn apply_list(
+        &self,
+        operator: Self::Expr,
+        arguments: Vec<Self::Expr>,
+        tail: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::ApplyList {
+            operator: Box::new(operator),
+            arguments,
+            tail: Box::new(tail),
         })
     }
 
@@ -893,12 +1166,22 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
             arguments,
         })
     }
+
+    fn primitive_value(&self, operator: Self::Primitive) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::PrimitiveValue(operator))
+    }
+
+    fn apply_list_procedure(&self) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::ApplyListProcedure)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::relation::{Evaluation, ExplorationBounds, evaluate, execute, explore};
+    use crate::relation::{
+        Evaluation, ExecutionError, ExplorationBounds, evaluate, execute, explore,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum Primitive {
@@ -923,24 +1206,20 @@ mod tests {
             arguments: &[HostValue<&'static str, &'static str, Primitive>],
         ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
             match (primitive, arguments) {
-                (Primitive::Cons, [HostValue::Datum(head), HostValue::Datum(tail)]) => {
-                    Ok(HostValue::Datum(Datum::cons(head.clone(), tail.clone())))
-                }
-                (Primitive::Car, [HostValue::Datum(Datum::Cons(head, _))]) => {
-                    Ok(HostValue::Datum((**head).clone()))
-                }
-                (Primitive::Cdr, [HostValue::Datum(Datum::Cons(_, tail))]) => {
-                    Ok(HostValue::Datum((**tail).clone()))
-                }
-                (Primitive::Null, [HostValue::Datum(datum)]) => {
-                    Ok(self.truth(matches!(datum, Datum::Nil)))
-                }
+                (Primitive::Cons, [head, tail]) => Ok(HostValue::cons(head.clone(), tail.clone())),
+                (Primitive::Car, [HostValue::Cons(head, _)]) => Ok((**head).clone()),
+                (Primitive::Cdr, [HostValue::Cons(_, tail)]) => Ok((**tail).clone()),
+                (Primitive::Null, [value]) => Ok(self.truth(matches!(value, HostValue::Nil))),
                 _ => Err("bad primitive application"),
             }
         }
 
         fn truth(&self, value: bool) -> HostValue<&'static str, &'static str, Primitive> {
-            HostValue::Datum(if value { Datum::Atom("t") } else { Datum::Nil })
+            if value {
+                HostValue::Atom("t")
+            } else {
+                HostValue::Nil
+            }
         }
     }
 
@@ -958,10 +1237,7 @@ mod tests {
         };
         let machine = CoreMachine::new(Sector);
         let trace = execute(&machine, HostConfiguration::initial(expression), 16).unwrap();
-        assert_eq!(
-            trace.end().terminal_value(),
-            Some(&HostValue::Datum(Datum::Atom("head")))
-        );
+        assert_eq!(trace.end().terminal_value(), Some(&HostValue::Atom("head")));
     }
 
     fn pair_expression() -> Expr<&'static str, &'static str, Primitive> {
@@ -979,6 +1255,7 @@ mod tests {
             operator: Box::new(CoreExpr::Lambda {
                 name: None,
                 parameters: vec![Parameter::new("x"), Parameter::new("y")],
+                rest: None,
                 body: Box::new(CoreExpr::Variable("x")),
             }),
             arguments: vec![
@@ -1028,10 +1305,10 @@ mod tests {
         .unwrap();
         assert_eq!(
             trace.end().terminal_value(),
-            Some(&HostValue::Datum(Datum::cons(
-                Datum::Atom("left"),
-                Datum::Atom("right")
-            ))),
+            Some(&HostValue::cons(
+                HostValue::Atom("left"),
+                HostValue::Atom("right")
+            )),
             "evaluation order must not permute argument positions"
         );
     }
@@ -1078,7 +1355,7 @@ mod tests {
             "both legal operand orders retain distinct trace provenance"
         );
         assert!(exploration.values.iter().all(|result| {
-            result.value == HostValue::Datum(Datum::cons(Datum::Atom("left"), Datum::Atom("right")))
+            result.value == HostValue::cons(HostValue::Atom("left"), HostValue::Atom("right"))
         }));
     }
 
@@ -1108,7 +1385,7 @@ mod tests {
         let Evaluation::Value(result) = result else {
             panic!("right-to-left application must return")
         };
-        assert_eq!(result.value, HostValue::Datum(Datum::Atom("left")));
+        assert_eq!(result.value, HostValue::Atom("left"));
 
         let relational = CoreMachine::with_strategy(
             Sector,
@@ -1134,6 +1411,7 @@ mod tests {
                     CoreExpr::Lambda {
                         name: None,
                         parameters: Vec::new(),
+                        rest: None,
                         body: Box::new(CoreExpr::Variable("x")),
                     },
                 )],
@@ -1167,8 +1445,8 @@ mod tests {
         let Evaluation::Value(dynamic) = dynamic else {
             panic!("dynamic program must return")
         };
-        assert_eq!(lexical.value, HostValue::Datum(Datum::Atom("lexical")));
-        assert_eq!(dynamic.value, HostValue::Datum(Datum::Atom("dynamic")));
+        assert_eq!(lexical.value, HostValue::Atom("lexical"));
+        assert_eq!(dynamic.value, HostValue::Atom("dynamic"));
     }
 
     #[test]
@@ -1181,7 +1459,7 @@ mod tests {
         };
         assert_eq!(
             result.value,
-            HostValue::Datum(Datum::Atom("answer")),
+            HostValue::Atom("answer"),
             "the observed value comes from the terminal machine configuration"
         );
         assert_eq!(result.trace.steps(), 1);
@@ -1204,7 +1482,7 @@ mod tests {
         .unwrap() else {
             panic!("finite sequence must return")
         };
-        assert_eq!(result.value, HostValue::Datum(Datum::Atom("answer")));
+        assert_eq!(result.value, HostValue::Atom("answer"));
         assert_eq!(result.trace.steps(), 6);
     }
 
@@ -1213,6 +1491,7 @@ mod tests {
         let identity = CoreExpr::Lambda {
             name: Some("self"),
             parameters: vec![Parameter::new("x")],
+            rest: None,
             body: Box::new(CoreExpr::Variable("x")),
         };
         let expression = CoreExpr::Apply {
@@ -1223,8 +1502,68 @@ mod tests {
         let trace = execute(&machine, HostConfiguration::initial(expression), 16).unwrap();
         assert_eq!(
             trace.end().terminal_value(),
-            Some(&HostValue::Datum(Datum::Atom("value")))
+            Some(&HostValue::Atom("value"))
         );
+    }
+
+    #[test]
+    fn rest_binding_is_a_runtime_list_that_can_contain_closures() {
+        let identity = CoreExpr::Lambda {
+            name: None,
+            parameters: vec![Parameter::new("x")],
+            rest: None,
+            body: Box::new(CoreExpr::Variable("x")),
+        };
+        let choose_rest_procedure = CoreExpr::Lambda {
+            name: None,
+            parameters: Vec::new(),
+            rest: Some(Parameter::new("procedures")),
+            body: Box::new(CoreExpr::Primitive {
+                operator: Primitive::Car,
+                arguments: vec![CoreExpr::Variable("procedures")],
+            }),
+        };
+        let expression = CoreExpr::Apply {
+            operator: Box::new(CoreExpr::Apply {
+                operator: Box::new(choose_rest_procedure),
+                arguments: vec![identity],
+            }),
+            arguments: vec![CoreExpr::Literal(Datum::Atom("answer"))],
+        };
+        let result = evaluate(
+            &CoreMachine::new(Sector),
+            HostConfiguration::initial(expression),
+            32,
+        )
+        .unwrap();
+        let Evaluation::Value(result) = result else {
+            panic!("rest-list procedure must be callable")
+        };
+        assert_eq!(result.value, HostValue::Atom("answer"));
+    }
+
+    #[test]
+    fn apply_list_rejects_an_improper_tail() {
+        let expression = CoreExpr::ApplyList {
+            operator: Box::new(CoreExpr::Lambda {
+                name: None,
+                parameters: Vec::new(),
+                rest: Some(Parameter::new("arguments")),
+                body: Box::new(CoreExpr::Variable("arguments")),
+            }),
+            arguments: Vec::new(),
+            tail: Box::new(CoreExpr::Literal(Datum::Atom("not-a-list"))),
+        };
+        assert!(matches!(
+            execute(
+                &CoreMachine::new(Sector),
+                HostConfiguration::initial(expression),
+                16
+            ),
+            Err(ExecutionError::Relation(
+                CoreMachineError::ImproperArgumentList
+            ))
+        ));
     }
 
     #[test]
@@ -1244,6 +1583,7 @@ mod tests {
         let even = CoreExpr::Lambda {
             name: None,
             parameters: vec![Parameter::new("xs")],
+            rest: None,
             body: Box::new(CoreExpr::If {
                 condition: Box::new(null(CoreExpr::Variable("xs"))),
                 consequent: Box::new(CoreExpr::Truth(true)),
@@ -1253,6 +1593,7 @@ mod tests {
         let odd = CoreExpr::Lambda {
             name: None,
             parameters: vec![Parameter::new("xs")],
+            rest: None,
             body: Box::new(CoreExpr::If {
                 condition: Box::new(null(CoreExpr::Variable("xs"))),
                 consequent: Box::new(CoreExpr::Truth(false)),
@@ -1273,7 +1614,7 @@ mod tests {
         .unwrap() else {
             panic!("mutually recursive parity program must return")
         };
-        assert_eq!(result.value, HostValue::Datum(Datum::Atom("t")));
+        assert_eq!(result.value, HostValue::Atom("t"));
     }
 
     #[test]

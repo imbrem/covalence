@@ -12,7 +12,8 @@ use std::str::FromStr;
 
 use covalence_kernel_lisp::{
     CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, ExecutionError,
-    HostConfiguration, HostEnvironment, HostValue, execute,
+    HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues, LispEnvironment,
+    LispValue, RuntimeBinding, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -68,7 +69,7 @@ impl SurfaceDialect {
         matches!(self, Self::SectorInt | Self::Scheme | Self::Acl2Core)
     }
 
-    fn primitive(self, name: &str) -> Option<Primitive> {
+    pub(crate) fn primitive(self, name: &str) -> Option<Primitive> {
         Some(match name {
             "cons" => Primitive::Cons,
             "car" => Primitive::Car,
@@ -118,6 +119,11 @@ pub struct Frontend {
     dialect: SurfaceDialect,
 }
 
+struct ParsedFormals {
+    required: Vec<covalence_kernel_lisp::Parameter<String>>,
+    rest: Option<covalence_kernel_lisp::Parameter<String>>,
+}
+
 impl Frontend {
     pub fn new(dialect: SurfaceDialect) -> Self {
         Self { dialect }
@@ -162,7 +168,41 @@ impl Frontend {
         let Some(kind) = items.first().and_then(SExpr::as_symbol) else {
             return Ok(None);
         };
-        let (name, parameters, body) = match kind {
+        if kind == "define"
+            && self.dialect == SurfaceDialect::Scheme
+            && items.len() >= 3
+            && let Some(signature) = items[1].as_list()
+        {
+            let (name, parameters) =
+                signature
+                    .split_first()
+                    .ok_or_else(|| LowerError::Malformed {
+                        form: "define",
+                        detail: "procedure signature is empty".to_owned(),
+                    })?;
+            let name = self.symbol(name, "define", "name")?;
+            let formals = self.parameters(&SExpr::List(parameters.to_vec()), "define")?;
+            let body = self.lower_body("define", &items[2..])?;
+            return Ok(Some((
+                name.clone(),
+                CoreExpr::Lambda {
+                    name: Some(name),
+                    parameters: formals.required,
+                    rest: formals.rest,
+                    body: Box::new(body),
+                },
+            )));
+        }
+        if kind == "define" && self.dialect == SurfaceDialect::Scheme && items.len() == 3 {
+            let name = self.symbol(&items[1], "define", "name")?;
+            let is_lambda = items[2]
+                .as_list()
+                .is_some_and(|value| value.first().and_then(SExpr::as_symbol) == Some("lambda"));
+            if !is_lambda {
+                return Ok(Some((name, self.lower(&items[2])?)));
+            }
+        }
+        let (name, formals, body) = match kind {
             "define" | "label" if items.len() == 3 => {
                 let name = self.symbol(&items[1], "definition", "name")?;
                 let lambda = items[2].as_list().ok_or_else(|| LowerError::Malformed {
@@ -183,11 +223,14 @@ impl Frontend {
             }
             "defun" if items.len() == 4 => {
                 let name = self.symbol(&items[1], "defun", "name")?;
-                (
-                    name,
-                    self.parameters(&items[2], "definition")?,
-                    self.lower(&items[3])?,
-                )
+                let formals = self.parameters(&items[2], "definition")?;
+                if formals.rest.is_some() {
+                    return Err(LowerError::Malformed {
+                        form: "defun",
+                        detail: "ACL2 logical functions have fixed arity".to_owned(),
+                    });
+                }
+                (name, formals, self.lower(&items[3])?)
             }
             "define" | "label" | "defun" => {
                 return Err(LowerError::Malformed {
@@ -201,7 +244,8 @@ impl Frontend {
             name.clone(),
             CoreExpr::Lambda {
                 name: Some(name),
-                parameters,
+                parameters: formals.required,
+                rest: formals.rest,
                 body: Box::new(body),
             },
         )))
@@ -265,6 +309,13 @@ impl Frontend {
             Some("cond") => Ok(CoreExpr::Cond {
                 clauses: self.lower_cond(&items[1..])?,
             }),
+            Some(name) if self.dialect == SurfaceDialect::Scheme => Ok(CoreExpr::Apply {
+                operator: Box::new(CoreExpr::Variable(name.to_owned())),
+                arguments: items[1..]
+                    .iter()
+                    .map(|argument| self.lower(argument))
+                    .collect::<Result<_, _>>()?,
+            }),
             Some(name) if self.dialect.primitive(name).is_some() => Ok(CoreExpr::Primitive {
                 operator: self.dialect.primitive(name).expect("matched"),
                 arguments: items[1..]
@@ -296,9 +347,11 @@ impl Frontend {
                 detail: "expected parameters and at least one body expression".to_owned(),
             });
         }
+        let formals = self.parameters(&items[1], "lambda")?;
         Ok(CoreExpr::Lambda {
             name: None,
-            parameters: self.parameters(&items[1], "lambda")?,
+            parameters: formals.required,
+            rest: formals.rest,
             body: Box::new(self.lower_body("lambda", &items[2..])?),
         })
     }
@@ -340,27 +393,84 @@ impl Frontend {
         }
     }
 
-    fn parameters(
-        &self,
-        form: &SExpr,
-        owner: &'static str,
-    ) -> Result<Vec<covalence_kernel_lisp::Parameter<String>>, LowerError> {
+    fn parameters(&self, form: &SExpr, owner: &'static str) -> Result<ParsedFormals, LowerError> {
+        if let Some(rest) = form.as_symbol() {
+            if self.dialect != SurfaceDialect::Scheme || rest == "." {
+                return Err(LowerError::Malformed {
+                    form: owner,
+                    detail: "rest-only formals are Scheme syntax".to_owned(),
+                });
+            }
+            return Ok(ParsedFormals {
+                required: Vec::new(),
+                rest: Some(covalence_kernel_lisp::Parameter::new(rest.to_owned())),
+            });
+        }
+
         let parameters = form.as_list().ok_or_else(|| LowerError::Malformed {
             form: owner,
             detail: "parameter declaration is not a list".to_owned(),
         })?;
-        parameters
+        let dot = parameters
+            .iter()
+            .position(|parameter| parameter.as_symbol() == Some("."));
+        let (required, rest) = match dot {
+            None => (parameters, None),
+            Some(index)
+                if self.dialect == SurfaceDialect::Scheme
+                    && index > 0
+                    && index + 2 == parameters.len() =>
+            {
+                let rest =
+                    parameters[index + 1]
+                        .as_symbol()
+                        .ok_or_else(|| LowerError::Malformed {
+                            form: owner,
+                            detail: "rest parameter is not a symbol".to_owned(),
+                        })?;
+                (&parameters[..index], Some(rest))
+            }
+            Some(_) => {
+                return Err(LowerError::Malformed {
+                    form: owner,
+                    detail: "dotted formals must end in exactly one Scheme rest parameter"
+                        .to_owned(),
+                });
+            }
+        };
+        let required = required
             .iter()
             .map(|parameter| {
                 parameter
                     .as_symbol()
+                    .filter(|name| *name != ".")
                     .map(|name| covalence_kernel_lisp::Parameter::new(name.to_owned()))
                     .ok_or_else(|| LowerError::Malformed {
                         form: owner,
                         detail: "parameter is not a symbol".to_owned(),
                     })
             })
-            .collect()
+            .collect::<Result<_, _>>()?;
+        let parsed = ParsedFormals {
+            required,
+            rest: rest.map(|name| covalence_kernel_lisp::Parameter::new(name.to_owned())),
+        };
+        for (index, parameter) in parsed.required.iter().enumerate() {
+            if parsed.required[..index]
+                .iter()
+                .any(|earlier| earlier.name == parameter.name)
+                || parsed
+                    .rest
+                    .as_ref()
+                    .is_some_and(|rest| rest.name == parameter.name)
+            {
+                return Err(LowerError::Malformed {
+                    form: owner,
+                    detail: format!("duplicate formal `{}`", parameter.name),
+                });
+            }
+        }
+        Ok(parsed)
     }
 
     fn symbol(&self, form: &SExpr, owner: &'static str, field: &str) -> Result<String, LowerError> {
@@ -499,41 +609,52 @@ impl CorePrimitive for StandardPrimitives {
     ) -> Result<FrontendValue, PrimitiveError> {
         match primitive {
             Primitive::Cons => {
-                let [head, tail] = self.datums::<2>(arguments)?;
-                Ok(HostValue::Datum(Datum::cons(head, tail)))
+                let [head, tail] = self.values::<2>(arguments)?;
+                Ok(self
+                    .runtime()
+                    .cons(head, tail)
+                    .expect("the direct host value backend is infallible"))
             }
             Primitive::Car => {
-                let [value] = self.datums::<1>(arguments)?;
+                let [value] = self.values::<1>(arguments)?;
                 match value {
-                    Datum::Cons(head, _) => Ok(HostValue::Datum(*head)),
-                    Datum::Atom(_) | Datum::Nil => Ok(HostValue::Datum(Datum::Nil)),
+                    HostValue::Cons(head, _) => Ok(*head),
+                    HostValue::Atom(_)
+                    | HostValue::Nil
+                    | HostValue::Closure(_)
+                    | HostValue::Primitive(_)
+                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
                 }
             }
             Primitive::Cdr => {
-                let [value] = self.datums::<1>(arguments)?;
+                let [value] = self.values::<1>(arguments)?;
                 match value {
-                    Datum::Cons(_, tail) => Ok(HostValue::Datum(*tail)),
-                    Datum::Atom(_) | Datum::Nil => Ok(HostValue::Datum(Datum::Nil)),
+                    HostValue::Cons(_, tail) => Ok(*tail),
+                    HostValue::Atom(_)
+                    | HostValue::Nil
+                    | HostValue::Closure(_)
+                    | HostValue::Primitive(_)
+                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
                 }
             }
             Primitive::Atom => {
-                let [value] = self.datums::<1>(arguments)?;
-                Ok(self.truth(!matches!(value, Datum::Cons(_, _))))
+                let [value] = self.values::<1>(arguments)?;
+                Ok(self.truth(!matches!(value, HostValue::Cons(_, _))))
             }
             Primitive::Consp => {
-                let [value] = self.datums::<1>(arguments)?;
-                Ok(self.truth(matches!(value, Datum::Cons(_, _))))
+                let [value] = self.values::<1>(arguments)?;
+                Ok(self.truth(matches!(value, HostValue::Cons(_, _))))
             }
             Primitive::Null => {
-                let [value] = self.datums::<1>(arguments)?;
-                Ok(self.truth(matches!(value, Datum::Nil)))
+                let [value] = self.values::<1>(arguments)?;
+                Ok(self.truth(matches!(value, HostValue::Nil)))
             }
             Primitive::Integer => {
-                let [value] = self.datums::<1>(arguments)?;
-                Ok(self.truth(matches!(value, Datum::Atom(CoreAtom::Integer(_)))))
+                let [value] = self.values::<1>(arguments)?;
+                Ok(self.truth(matches!(value, HostValue::Atom(CoreAtom::Integer(_)))))
             }
             Primitive::Equal => {
-                let [left, right] = self.datums::<2>(arguments)?;
+                let [left, right] = self.values::<2>(arguments)?;
                 Ok(self.truth(left == right))
             }
             Primitive::Add => self.integer_binary(arguments, |left, right| left + right),
@@ -544,8 +665,8 @@ impl CorePrimitive for StandardPrimitives {
                 Ok(self.truth(left <= right))
             }
             Primitive::Append => {
-                let [left, right] = self.datums::<2>(arguments)?;
-                Ok(HostValue::Datum(Self::append(left, right)?))
+                let [left, right] = self.values::<2>(arguments)?;
+                Ok(Self::append(left, right))
             }
         }
     }
@@ -556,55 +677,55 @@ impl CorePrimitive for StandardPrimitives {
 }
 
 impl StandardPrimitives {
-    fn append(
-        left: Datum<CoreAtom>,
-        right: Datum<CoreAtom>,
-    ) -> Result<Datum<CoreAtom>, PrimitiveError> {
+    fn append(left: FrontendValue, right: FrontendValue) -> FrontendValue {
         match left {
-            Datum::Nil => Ok(right),
-            Datum::Cons(head, tail) => Ok(Datum::cons(*head, Self::append(*tail, right)?)),
+            HostValue::Nil => right,
+            HostValue::Cons(head, tail) => HostValue::cons(*head, Self::append(*tail, right)),
             // ACL2's `binary-append` and the existing kernel Lisp theory use
             // this total extension. Scheme programs should still pass proper
             // lists; the shared primitive remains defined on every datum.
-            Datum::Atom(_) => Ok(right),
+            HostValue::Atom(_)
+            | HostValue::Closure(_)
+            | HostValue::Primitive(_)
+            | HostValue::ApplyListProcedure => right,
         }
     }
 
     fn truth(&self, value: bool) -> FrontendValue {
-        HostValue::Datum(if value {
-            Datum::Atom(CoreAtom::symbol("t"))
+        if value {
+            self.runtime()
+                .atom(CoreAtom::symbol("t"))
+                .expect("the direct host value backend is infallible")
         } else {
-            Datum::Nil
-        })
+            self.runtime().nil()
+        }
     }
 
-    fn datums<const N: usize>(
+    fn runtime(&self) -> HostValues<String, CoreAtom, Primitive> {
+        HostValues::default()
+    }
+
+    fn values<const N: usize>(
         &self,
         arguments: &[FrontendValue],
-    ) -> Result<[Datum<CoreAtom>; N], PrimitiveError> {
+    ) -> Result<[FrontendValue; N], PrimitiveError> {
         if arguments.len() != N {
             return Err(PrimitiveError::Arity {
                 expected: N,
                 actual: arguments.len(),
             });
         }
-        let values = arguments
-            .iter()
-            .map(|value| match value {
-                HostValue::Datum(datum) => Ok(datum.clone()),
-                HostValue::Closure(_) => Err(PrimitiveError::ExpectedDatum),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        values
+        arguments
+            .to_vec()
             .try_into()
             .map_err(|_| unreachable!("length checked"))
     }
 
     fn integers(&self, arguments: &[FrontendValue]) -> Result<[Int; 2], PrimitiveError> {
-        let datums = self.datums::<2>(arguments)?;
-        datums
-            .map(|datum| match datum {
-                Datum::Atom(CoreAtom::Integer(value)) => Ok(value),
+        let values = self.values::<2>(arguments)?;
+        values
+            .map(|value| match value {
+                HostValue::Atom(CoreAtom::Integer(value)) => Ok(value),
                 _ => Err(PrimitiveError::ExpectedInteger),
             })
             .into_iter()
@@ -619,14 +740,62 @@ impl StandardPrimitives {
         operation: impl FnOnce(Int, Int) -> Int,
     ) -> Result<FrontendValue, PrimitiveError> {
         let [left, right] = self.integers(arguments)?;
-        Ok(HostValue::Datum(Datum::Atom(CoreAtom::Integer(operation(
-            left, right,
-        )))))
+        Ok(HostValue::Atom(CoreAtom::Integer(operation(left, right))))
     }
 }
 
 pub fn host_machine() -> CoreMachine<StandardPrimitives> {
     CoreMachine::new(StandardPrimitives)
+}
+
+const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
+    ("cons", Primitive::Cons),
+    ("car", Primitive::Car),
+    ("cdr", Primitive::Cdr),
+    ("atom?", Primitive::Atom),
+    ("atom", Primitive::Atom),
+    ("pair?", Primitive::Consp),
+    ("consp", Primitive::Consp),
+    ("null?", Primitive::Null),
+    ("null", Primitive::Null),
+    ("integer?", Primitive::Integer),
+    ("integerp", Primitive::Integer),
+    ("eq?", Primitive::Equal),
+    ("equal", Primitive::Equal),
+    ("=", Primitive::Equal),
+    ("+", Primitive::Add),
+    ("-", Primitive::Subtract),
+    ("*", Primitive::Multiply),
+    ("<=", Primitive::LessEqual),
+    ("append", Primitive::Append),
+];
+
+/// Initial lexical bindings supplied by a concrete host frontend.
+///
+/// Kernel evaluation itself has no distinguished names: Scheme chooses these
+/// bindings as language policy, making primitives ordinary shadowable values
+/// rather than syntax.
+pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
+    let environments = HostEnvironments::<String, FrontendValue>::default();
+    let environment = environments.empty();
+    if dialect != SurfaceDialect::Scheme {
+        return environment;
+    }
+    environments
+        .extend(
+            &environment,
+            SCHEME_PRIMITIVES
+                .iter()
+                .map(|(name, primitive)| {
+                    RuntimeBinding::new((*name).to_owned(), HostValue::Primitive(*primitive))
+                })
+                .chain([RuntimeBinding::new(
+                    "apply".to_owned(),
+                    HostValue::ApplyListProcedure,
+                )])
+                .collect(),
+        )
+        .expect("the direct host environment is infallible")
 }
 
 /// Stateful proof-free frontend execution.
@@ -671,7 +840,7 @@ impl HostSession {
     pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {
         Self {
             frontend: Frontend::new(dialect),
-            environment: HostEnvironment::default(),
+            environment: initial_environment(dialect),
             fuel,
         }
     }
@@ -694,9 +863,6 @@ impl HostSession {
             return Ok(None);
         };
         let value = self.evaluate_core(&expression)?;
-        if !matches!(value, HostValue::Closure(_)) {
-            return Err(HostSessionError::DefinitionDidNotProduceClosure);
-        }
         self.environment = self.environment.extend([(name.clone(), value)]);
         Ok(Some(name))
     }
@@ -752,23 +918,22 @@ impl HostSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::execute;
 
     fn one(source: &str) -> SExpr {
         crate::reader::read(source).unwrap().pop().unwrap()
     }
 
     fn run(dialect: SurfaceDialect, source: &str) -> FrontendValue {
-        let expression = Frontend::new(dialect).lower(&one(source)).unwrap();
-        let trace = execute(&host_machine(), HostConfiguration::initial(expression), 128).unwrap();
-        trace.end().terminal_value().unwrap().clone()
+        HostSession::new(dialect, 128)
+            .evaluate(&one(source))
+            .unwrap()
     }
 
     #[test]
     fn sector_pairs_lower_to_the_common_core() {
         assert_eq!(
             run(SurfaceDialect::Sector, "(car (cons (quote head) ()))"),
-            HostValue::Datum(Datum::Atom(CoreAtom::symbol("head")))
+            HostValue::datum(Datum::Atom(CoreAtom::symbol("head")))
         );
     }
 
@@ -779,7 +944,7 @@ mod tests {
                 SurfaceDialect::Scheme,
                 "(let ((twice (lambda (x) (+ x x)))) (twice 21))"
             ),
-            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
     }
 
@@ -790,7 +955,7 @@ mod tests {
                 SurfaceDialect::Scheme,
                 "(begin (+ 100 200) (let ((x 40)) (+ x 1) (+ x 2)))"
             ),
-            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
 
         let lowered = Frontend::new(SurfaceDialect::Scheme)
@@ -803,6 +968,95 @@ mod tests {
                 ..
             } if matches!(body.as_ref(), CoreExpr::Sequence { rest, .. } if rest.len() == 1)
         ));
+    }
+
+    #[test]
+    fn scheme_rest_formals_hold_first_class_values() {
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(((lambda args (car args)) (lambda (x) x)) 42)"
+            ),
+            HostValue::Atom(CoreAtom::Integer(Int::from(42)))
+        );
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "((lambda (head . tail) (car tail)) 1 2 3)"
+            ),
+            HostValue::Atom(CoreAtom::Integer(Int::from(2)))
+        );
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(let ((f (lambda (x) x)))
+                   (apply (car (cons f nil)) (quote (42))))"
+            ),
+            HostValue::Atom(CoreAtom::Integer(Int::from(42)))
+        );
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(apply (lambda (a b . rest) (car rest))
+                        1
+                        (quote (2 42)))"
+            ),
+            HostValue::Atom(CoreAtom::Integer(Int::from(42)))
+        );
+    }
+
+    #[test]
+    fn scheme_formals_reject_duplicates_and_malformed_dots() {
+        let frontend = Frontend::new(SurfaceDialect::Scheme);
+        for source in [
+            "(lambda (x x) x)",
+            "(lambda (x . x) x)",
+            "(lambda (. rest) rest)",
+            "(lambda (x . rest extra) x)",
+        ] {
+            assert!(
+                frontend.lower(&one(source)).is_err(),
+                "{source} must not lower"
+            );
+        }
+    }
+
+    #[test]
+    fn scheme_primitives_and_apply_are_first_class_shadowable_values() {
+        for source in [
+            "(let ((plus +)) (plus 20 22))",
+            "((car (cons + nil)) 20 22)",
+            "(let ((invoke apply)) (invoke + (quote (20 22))))",
+            "(let ((+ (lambda (left right) left))) (+ 42 0))",
+        ] {
+            assert_eq!(
+                run(SurfaceDialect::Scheme, source),
+                HostValue::Atom(CoreAtom::Integer(Int::from(42))),
+                "{source}"
+            );
+        }
+
+        let mut session = HostSession::new(SurfaceDialect::Scheme, 128);
+        assert_eq!(
+            session.define(&one("(define plus +)")).unwrap(),
+            Some("plus".to_owned())
+        );
+        assert_eq!(
+            session.evaluate(&one("(plus 20 22)")).unwrap(),
+            HostValue::Atom(CoreAtom::Integer(Int::from(42)))
+        );
+        assert_eq!(
+            session
+                .define(&one("(define (sum-with-rest first . rest)
+                       0
+                       (+ first (car rest)))"))
+                .unwrap(),
+            Some("sum-with-rest".to_owned())
+        );
+        assert_eq!(
+            session.evaluate(&one("(sum-with-rest 20 22)")).unwrap(),
+            HostValue::Atom(CoreAtom::Integer(Int::from(42)))
+        );
     }
 
     #[test]
@@ -819,7 +1073,7 @@ mod tests {
                          (if (null? xs) nil (even-list? (cdr xs))))))
                     (even-list? (quote (a b))))"
             ),
-            HostValue::Datum(Datum::Atom(CoreAtom::symbol("t")))
+            HostValue::datum(Datum::Atom(CoreAtom::symbol("t")))
         );
     }
 
@@ -830,7 +1084,7 @@ mod tests {
                 SurfaceDialect::Scheme,
                 "(append (quote (a b)) (quote (c d)))"
             ),
-            HostValue::Datum(Datum::list([
+            HostValue::datum(Datum::list([
                 Datum::Atom(CoreAtom::symbol("a")),
                 Datum::Atom(CoreAtom::symbol("b")),
                 Datum::Atom(CoreAtom::symbol("c")),
@@ -842,7 +1096,7 @@ mod tests {
                 SurfaceDialect::Acl2Core,
                 "(append (quote ignored) (quote (tail)))"
             ),
-            HostValue::Datum(Datum::list([Datum::Atom(CoreAtom::symbol("tail"))]))
+            HostValue::datum(Datum::list([Datum::Atom(CoreAtom::symbol("tail"))]))
         );
     }
 
@@ -860,7 +1114,7 @@ mod tests {
         );
         assert_eq!(
             session.evaluate(&one("(first (quote value))")).unwrap(),
-            HostValue::Datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
+            HostValue::datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
         );
     }
 
@@ -871,7 +1125,7 @@ mod tests {
                 SurfaceDialect::Scheme,
                 "(cond ((null? (quote (x))) 0) (else 1))"
             ),
-            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(1))))
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(1))))
         );
     }
 
@@ -879,7 +1133,7 @@ mod tests {
     fn acl2_expression_fragment_uses_acl2_primitive_names() {
         assert_eq!(
             run(SurfaceDialect::Acl2Core, "(equal (+ 2 3) 5)"),
-            HostValue::Datum(Datum::Atom(CoreAtom::symbol("t")))
+            HostValue::datum(Datum::Atom(CoreAtom::symbol("t")))
         );
     }
 
@@ -895,7 +1149,7 @@ mod tests {
         );
         assert_eq!(
             session.evaluate(&one("(fact 5)")).unwrap(),
-            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(120))))
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(120))))
         );
     }
 
@@ -905,7 +1159,7 @@ mod tests {
         session.define(&one("(defun add1 (x) (+ x 1))")).unwrap();
         assert_eq!(
             session.evaluate(&one("(add1 41)")).unwrap(),
-            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
     }
 }

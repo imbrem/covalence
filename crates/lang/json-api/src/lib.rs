@@ -18,7 +18,15 @@ use covalence_parsing_api::{
 use covalence_types::Int;
 use std::{collections::HashMap, collections::HashSet, convert::Infallible};
 
+pub mod api;
 pub mod corpus;
+
+pub use api::{
+    InductiveJsonLayer, InductiveJsonScalar, JsonAggregateConstructors, JsonArrays,
+    JsonConstructorLaws, JsonDecidableEquality, JsonPer, JsonRepresentation,
+    JsonScalarConstructors, JsonSemanticObjects, JsonSyntaxAggregates, JsonSyntaxRepresentation,
+    JsonSyntaxView, JsonView, ReferenceJson,
+};
 
 /// A JSON string code point.
 ///

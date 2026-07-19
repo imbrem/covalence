@@ -32,6 +32,10 @@ disable-model-invocation: true
     backend whose nonzero literals use the derived binary double/successor
     encoding. It still shares native carriers and theory operations; it is a
     representation stress test, not yet complete leaf elimination.
+  - `covalence-init::init::inductive::UnaryNat` is the corresponding
+    linear-depth successor-tower backend. The representation adapters share
+    their native-theory capability delegation in `nat_backend_common.rs`;
+    neither advertises decision or normalization capabilities.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

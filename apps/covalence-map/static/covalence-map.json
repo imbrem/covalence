@@ -128,6 +128,33 @@
       "updated": 0
     },
     {
+      "id": "api:A0013",
+      "kind": "api",
+      "title": "Parsing over raw bytes",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0014",
+      "kind": "api",
+      "title": "Characters and strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0015",
+      "kind": "api",
+      "title": "Text parsing and interpretation",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -385,7 +412,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7338,
+      "words": 7342,
       "updated": 0
     },
     {
@@ -583,7 +610,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33259,
+      "words": 33462,
       "updated": 0
     },
     {
@@ -6271,7 +6298,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 50,
+      "words": 51,
       "updated": 0
     },
     {
@@ -7054,7 +7081,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 93,
+      "words": 94,
       "updated": 0
     },
     {
@@ -7118,6 +7145,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/sig.rs",
       "words": 152,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "kind": "file",
+      "title": "text_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "words": 186,
       "updated": 0
     },
     {
@@ -7297,7 +7333,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/mod.rs",
-      "words": 254,
+      "words": 255,
       "updated": 0
     },
     {
@@ -7469,6 +7505,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/option.rs",
       "words": 692,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "kind": "file",
+      "title": "parsing_bytes.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "words": 80,
       "updated": 0
     },
     {
@@ -8683,7 +8728,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 253,
+      "words": 261,
       "updated": 0
     },
     {
@@ -8702,6 +8747,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/relation.rs",
       "words": 1030,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/logic/src/text.rs",
+      "kind": "file",
+      "title": "text.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 326,
       "updated": 0
     },
     {
@@ -10433,12 +10487,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/parsing/src/bytes.rs",
+      "kind": "file",
+      "title": "bytes.rs",
+      "status": "tracked",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 321,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/parsing/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
-      "words": 148,
+      "words": 382,
       "updated": 0
     },
     {
@@ -14326,7 +14389,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33259,
+      "words": 33462,
       "updated": 0
     },
     {
@@ -14344,7 +14407,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 264,
+      "words": 265,
       "updated": 0
     },
     {
@@ -14353,7 +14416,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 875,
+      "words": 879,
       "updated": 0
     },
     {
@@ -14362,7 +14425,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 195,
+      "words": 196,
       "updated": 0
     },
     {
@@ -14371,7 +14434,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1562,
+      "words": 1568,
       "updated": 0
     },
     {
@@ -14434,7 +14497,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3379,
+      "words": 3419,
       "updated": 0
     },
     {
@@ -16819,6 +16882,24 @@
       "title": "NativeHolBoundedStepReplay",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0013:NativeHol closed-byte witness reflection",
+      "kind": "implementation",
+      "title": "NativeHol closed-byte witness reflection",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0014:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs",
       "words": 0,
       "updated": 0
     },
@@ -20855,6 +20936,24 @@
       "updated": 0
     },
     {
+      "id": "todo:parsing.bytes.cfg-integration",
+      "kind": "todo",
+      "title": "Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.",
+      "status": "major",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:parsing.bytes.regex-integration",
+      "kind": "todo",
+      "title": "Interpret regular-expression relations through A0013 and replay derivative witnesses without conflating bounded evaluation with completeness.",
+      "status": "major",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:proof.alethe.content-addressed-proof-cache",
       "kind": "todo",
       "title": "Content-addressed proof cache: discharge::ProofCache is an in-memory /",
@@ -21134,6 +21233,24 @@
       "updated": 0
     },
     {
+      "id": "todo:text.abstract-list-integration",
+      "kind": "todo",
+      "title": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:text.unicode-tables",
+      "kind": "todo",
+      "title": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:vscode.macos-native-server",
       "kind": "todo",
       "title": "Enable the native macOS server path once tested.",
@@ -21394,6 +21511,60 @@
       "source": "api:A0012",
       "predicate": "depends-on",
       "target": "api:A0010",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parsing/src/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/text.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
+      "source": "api:A0015",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0015",
+      "predicate": "depends-on",
+      "target": "api:A0014",
       "detail": null
     },
     {
@@ -22695,6 +22866,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/uniqueness.rs",
       "detail": null
     },
@@ -22912,6 +23089,12 @@
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/option.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
       "detail": null
     },
     {
@@ -23515,6 +23698,12 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/text.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/traits/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/traits/src/hol_light_ctx.rs",
@@ -24016,6 +24205,12 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/parsing/src/bytes.rs",
       "detail": null
     },
     {
@@ -25331,6 +25526,30 @@
       "predicate": "implements",
       "target": "api:A0012",
       "detail": "A0010 HOL List<Bool> endpoint relation"
+    },
+    {
+      "source": "impl:A0013:NativeHol closed-byte witness reflection",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0013:NativeHol closed-byte witness reflection",
+      "predicate": "implements",
+      "target": "api:A0013",
+      "detail": "A0003 native byte-string leaves"
+    },
+    {
+      "source": "impl:A0014:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0014:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0014",
+      "detail": "Unicode-scalar subtype and list-backed abstract strings"
     },
     {
       "source": "note:notes/README.md",
@@ -31491,6 +31710,24 @@
       "title": "Binary lambda calculus",
       "status": "experimental",
       "path": "crates/lang/computation/src/blc.rs"
+    },
+    {
+      "id": "A0013",
+      "title": "Parsing over raw bytes",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/bytes.rs"
+    },
+    {
+      "id": "A0014",
+      "title": "Characters and strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/text.rs"
+    },
+    {
+      "id": "A0015",
+      "title": "Text parsing and interpretation",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -31563,6 +31800,20 @@
       "name": "NativeHolBoundedStepReplay",
       "representation": "A0010 HOL List<Bool> endpoint relation",
       "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs"
+    },
+    {
+      "id": "impl:A0013:NativeHol closed-byte witness reflection",
+      "apiId": "A0013",
+      "name": "NativeHol closed-byte witness reflection",
+      "representation": "A0003 native byte-string leaves",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs"
+    },
+    {
+      "id": "impl:A0014:NativeHol",
+      "apiId": "A0014",
+      "name": "NativeHol",
+      "representation": "Unicode-scalar subtype and list-backed abstract strings",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs"
     }
   ],
   "actors": [

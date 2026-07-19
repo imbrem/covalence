@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 337,
-  "structured": 337,
+  "count": 341,
+  "structured": 341,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -2975,6 +2975,26 @@
       "crate": "covalence-spectec"
     },
     {
+      "id": "parsing.bytes.cfg-integration",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.",
+      "structured": true,
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "line": 258,
+      "crate": "covalence-parsing-api"
+    },
+    {
+      "id": "parsing.bytes.regex-integration",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Interpret regular-expression relations through A0013 and replay derivative witnesses without conflating bounded evaluation with completeness.",
+      "structured": true,
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "line": 257,
+      "crate": "covalence-parsing-api"
+    },
+    {
       "id": "proof.alethe.content-addressed-proof-cache",
       "kind": "TODO",
       "severity": "major",
@@ -3263,6 +3283,26 @@
       "path": "crates/lang/sexpr-api/src/lib.rs",
       "line": 506,
       "crate": "covalence-sexpr-api"
+    },
+    {
+      "id": "text.abstract-list-integration",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "line": 274,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "text.unicode-tables",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "line": 275,
+      "crate": "covalence-logic-api"
     },
     {
       "id": "vscode.macos-native-server",

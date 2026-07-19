@@ -409,10 +409,15 @@ impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironmen
         })
     }
 
-    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value) {
+    fn initialize_recursive(
+        &self,
+        cell: Self::Cell,
+        value: Self::Value,
+    ) -> Result<(), Self::Error> {
         cell.0
             .initialize(value)
             .unwrap_or_else(|_| unreachable!("single-use recursive cell was already initialized"));
+        Ok(())
     }
 }
 
@@ -782,7 +787,9 @@ where
                 .values()
                 .roll(RuntimeValueLayer::Closure(closure))
                 .map_err(CoreMachineError::Runtime)?;
-            environments.initialize_recursive(cell, closure);
+            environments
+                .initialize_recursive(cell, closure)
+                .map_err(CoreMachineError::Runtime)?;
         }
         Ok(environment)
     }

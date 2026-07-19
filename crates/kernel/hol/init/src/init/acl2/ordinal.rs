@@ -51,7 +51,7 @@ use crate::init::acl2::derivable::{
 use crate::init::acl2::prims::{Prims, eqf_intro, prims};
 use crate::init::acl2::term::Terms;
 use crate::init::coprod::{cases as coprod_cases, inl, inr};
-use crate::init::eq::{beta_expand, beta_reduce};
+use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::carved::apply_def;
 use crate::init::int;
@@ -591,6 +591,698 @@ impl Ordinals {
     fn natp_nonint_at(&self, v: &Term, iv: &Thm) -> Result<Thm> {
         let acc = apply_def(&self.natp_eq, std::slice::from_ref(v))?;
         self.fire_if(self.rw_rhs(acc, &[iv])?)
+    }
+
+    /// The small proof-facing introduction rule for the model of ACL2
+    /// `NATP`:
+    ///
+    /// `⊢ ∀x. ¬(INTEGERP x = nil) ⟹ (< x 0 = nil)
+    ///          ⟹ ¬(NATP x = nil)`.
+    ///
+    /// This is deliberately a theorem rather than an evaluator hook.  It
+    /// lets checked model proofs for recursive arithmetic functions establish
+    /// `NATP` without depending on the large test-only Hilbert scripts.
+    pub(crate) fn natp_intro_thm(&self) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let intp = ap1(&self.pr.intp, &x)?;
+        let lt0 = ap2(&self.pr.lt, &x, &self.a0()?)?;
+        let hi = intp.clone().equals(self.anil())?.not()?;
+        let hn = lt0.clone().equals(self.anil())?;
+        let inner = self
+            .pr
+            .aif
+            .clone()
+            .apply(lt0.clone())?
+            .apply(self.anil())?
+            .apply(self.pr.t.clone())?;
+        let outer = self
+            .pr
+            .if_t()?
+            .all_elim(intp)?
+            .all_elim(inner.clone())?
+            .all_elim(self.anil())?
+            .imp_elim(Thm::assume(hi.clone())?)?;
+        let inner_nil = Thm::assume(hn.clone())?
+            .cong_arg(self.pr.aif.clone())?
+            .cong_fn(self.anil())?
+            .cong_fn(self.pr.t.clone())?
+            .trans(
+                self.pr
+                    .if_nil()?
+                    .all_elim(self.anil())?
+                    .all_elim(self.pr.t.clone())?,
+            )?;
+        let chain = apply_def(&self.natp_eq, std::slice::from_ref(&x))?
+            .trans(outer)?
+            .trans(inner_nil)?;
+        self.holds_of_eq_t(chain)?
+            .imp_intro(&hn)?
+            .imp_intro(&hi)?
+            .all_intro("X", a)
+    }
+
+    /// Prove total `NATP`-ness of the admitted ACL2-COUNT model.
+    ///
+    /// `count_def` must be the checked model defining equation
+    /// `⊢ ∀x. count x = ...`.  The proof establishes the stronger
+    /// carrier-inductive invariant that every result is both integer-valued
+    /// and nonnegative, then applies [`Self::natp_intro_thm`].
+    pub(crate) fn acl2_count_invariant_thm(&self, count: &Term, count_def: &Thm) -> Result<Thm> {
+        let a = self.a();
+        let a0 = self.a0()?;
+        let qnil = self.anil();
+        let intp_holds =
+            |v: &Term| -> Result<Term> { ap1(&self.pr.intp, v)?.equals(qnil.clone())?.not() };
+        let nonneg = |v: &Term| -> Result<Term> { ap2(&self.pr.lt, v, &a0)?.equals(qnil.clone()) };
+        let inv_at = |v: &Term| -> Result<Term> { intp_holds(v)?.and(nonneg(v)?) };
+        let cv = |v: &Term| count.clone().apply(v.clone());
+
+        // Transport the two value invariants back along `count x = value`.
+        let at_value = |eq: Thm, hi: Thm, hn: Thm| -> Result<Thm> {
+            let lhs = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone();
+            let ieq = eq.clone().cong_arg(self.pr.intp.clone())?;
+            let hi_lhs = self.ne_nil_transport(&hi, &ieq.sym()?)?;
+            let leq = eq.cong_arg(self.pr.lt.clone())?.cong_fn(a0.clone())?;
+            let hn_lhs = leq.trans(hn)?;
+            debug_assert_eq!(hi_lhs.concl(), &intp_holds(&lhs)?);
+            debug_assert_eq!(hn_lhs.concl(), &nonneg(&lhs)?);
+            hi_lhs.and_intro(hn_lhs)
+        };
+        let int_lit = |n: i64| -> Result<(Term, Thm, Thm)> {
+            let i = mk_int(n);
+            let ai = self.th.aint_at(&i)?;
+            let hi = self.holds_of_eq_t(self.pr.intp_int()?.all_elim(i.clone())?)?;
+            let hn = self.pr.lt_lit(i128::from(n), 0)?;
+            Ok((ai, hi, hn))
+        };
+        // Turn a direct `(< v 0) = nil` equation into the holds-form
+        // antecedent consumed by the already checked plus-nonnegative law.
+        let equal_holds = |eq: Thm| -> Result<Thm> {
+            let r = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            let chain = eq
+                .clone()
+                .cong_arg(self.pr.equal.clone())?
+                .cong_fn(r.clone())?
+                .trans(self.pr.equal_refl()?.all_elim(r.clone())?)?;
+            self.holds_of_eq_t(chain)
+        };
+        let plus_inv = |x: &Term, y: &Term, ix: Thm, iy: Thm| -> Result<(Term, Thm, Thm)> {
+            let nx = ix.and_elim_r()?;
+            let ny = iy.and_elim_r()?;
+            let sum = ap2(&self.pr.plus, x, y)?;
+            let hi = self
+                .intp_plus_thm()?
+                .all_elim(x.clone())?
+                .all_elim(y.clone())?;
+            let hn = self
+                .plus_nonneg_thm()?
+                .all_elim(x.clone())?
+                .all_elim(y.clone())?
+                .imp_elim(equal_holds(nx)?)?
+                .imp_elim(equal_holds(ny)?)?;
+            Ok((sum, hi, hn))
+        };
+
+        let mvar = Term::free("__cm", a.clone());
+        let motive = Term::abs(a.clone(), subst::close(&inv_at(&cv(&mvar)?)?, "__cm"));
+
+        // Atom case, split the payload into integer and symbol atoms.
+        let case_atom = {
+            let b = Term::free("b", acl2_payload());
+            let atom = self.th.atom.clone().apply(b.clone())?;
+            let goal = inv_at(&cv(&atom)?)?;
+            let disj = coprod_cases(&Type::int(), &Type::bytes(), &b)?;
+            let bad = || Error::ConnectiveRule("acl2 count invariant: bad payload cases".into());
+            let (or_l, dr) = disj.concl().as_app().ok_or_else(bad)?;
+            let (_, dl) = or_l.as_app().ok_or_else(bad)?;
+            let (dl, dr) = (dl.clone(), dr.clone());
+            let br_int = {
+                let pred = dl.as_app().ok_or_else(bad)?.1.clone();
+                let w = Term::free("__ci", Type::int());
+                let hyp = Term::app(pred, w.clone());
+                let beq = beta_reduce(Thm::assume(hyp.clone())?)?;
+                let ai = self.th.aint_at(&w)?;
+                let atom_eq = beq
+                    .cong_arg(self.th.atom.clone())?
+                    .trans(self.th.int_unfold(&w)?.sym()?)?;
+                let mut ceq = count_def.clone().all_elim(atom.clone())?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.consp_atom()?.all_elim(b.clone())?))?;
+                ceq = self.fire_if(ceq)?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&atom_eq))?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.intp_int()?.all_elim(w.clone())?))?;
+                ceq = self.fire_if(ceq)?;
+                let lt = ap2(&self.pr.lt, &ai, &a0)?;
+                let c = lt.clone().equals(qnil.clone())?;
+                let nc = c.clone().not()?;
+                let pos = {
+                    let eq = self.fire_if(
+                        ceq.clone()
+                            .rhs_conv(|u| u.rw_all(&Thm::assume(c.clone())?))?,
+                    )?;
+                    let hi = self.holds_of_eq_t(self.pr.intp_int()?.all_elim(w.clone())?)?;
+                    at_value(eq, hi, Thm::assume(c.clone())?)?
+                };
+                let neg = {
+                    let neg_ai = ap1(&self.pr.neg, &ai)?;
+                    let fired = self
+                        .pr
+                        .if_t()?
+                        .all_elim(lt.clone())?
+                        .all_elim(neg_ai.clone())?
+                        .all_elim(ai.clone())?
+                        .imp_elim(Thm::assume(nc.clone())?)?;
+                    let eq = ceq.clone().trans(fired)?;
+                    let hi = self.intp_neg_thm()?.all_elim(ai.clone())?;
+                    let hn = self
+                        .neg_nonneg_thm()?
+                        .all_elim(ai)?
+                        .imp_elim(Thm::assume(nc.clone())?)?;
+                    at_value(eq, hi, hn)?
+                };
+                Thm::lem(c.clone())?
+                    .or_elim(pos.imp_intro(&c)?, neg.imp_intro(&nc)?)?
+                    .imp_intro(&hyp)?
+                    .all_intro("__ci", Type::int())?
+            };
+            let br_sym = {
+                let pred = dr.as_app().ok_or_else(bad)?.1.clone();
+                let s = Term::free("__cs", Type::bytes());
+                let hyp = Term::app(pred, s.clone());
+                let beq = beta_reduce(Thm::assume(hyp.clone())?)?;
+                let atom_eq = beq
+                    .cong_arg(self.th.atom.clone())?
+                    .trans(self.th.sym_unfold(&s)?.sym()?)?;
+                let mut ceq = count_def.clone().all_elim(atom.clone())?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.consp_atom()?.all_elim(b.clone())?))?;
+                ceq = self.fire_if(ceq)?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&atom_eq))?;
+                ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.intp_sym()?.all_elim(s.clone())?))?;
+                ceq = self.fire_if(ceq)?;
+                let (_, hi0, hn0) = int_lit(0)?;
+                at_value(ceq, hi0, hn0)?
+                    .imp_intro(&hyp)?
+                    .all_intro("__cs", Type::bytes())?
+            };
+            let l = exists_elim(Thm::assume(dl.clone())?, goal.clone(), br_int)?.imp_intro(&dl)?;
+            let r = exists_elim(Thm::assume(dr.clone())?, goal.clone(), br_sym)?.imp_intro(&dr)?;
+            beta_expand(&motive, atom, disj.or_elim(l, r)?)?
+        };
+
+        let case_nil = {
+            let mut ceq = count_def.clone().all_elim(qnil.clone())?;
+            ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.consp_nil()?))?;
+            ceq = self.fire_if(ceq)?;
+            ceq = ceq.rhs_conv(|u| u.rw_all(&self.pr.intp_nil()?))?;
+            ceq = self.fire_if(ceq)?;
+            let (_, hi0, hn0) = int_lit(0)?;
+            beta_expand(&motive, qnil.clone(), at_value(ceq, hi0, hn0)?)?
+        };
+
+        let case_cons = {
+            let h = Term::free("h", a.clone());
+            let t = Term::free("t", a.clone());
+            let cons = self.acons_t(&h, &t)?;
+            let ph = motive.clone().apply(h.clone())?;
+            let pt = motive.clone().apply(t.clone())?;
+            let ih = beta_reduce(Thm::assume(ph.clone())?)?;
+            let it = beta_reduce(Thm::assume(pt.clone())?)?;
+            let ch = cv(&h)?;
+            let ct = cv(&t)?;
+            let (sum, hi_sum, hn_sum) = plus_inv(&ch, &ct, ih, it)?;
+            let (one, hi1, hn1) = int_lit(1)?;
+            let one_inv = hi1.and_intro(hn1)?;
+            let sum_inv = hi_sum.and_intro(hn_sum)?;
+            let (_step, hi, hn) = plus_inv(&one, &sum, one_inv, sum_inv)?;
+            let mut ceq = count_def.clone().all_elim(cons.clone())?;
+            ceq = ceq.rhs_conv(|u| {
+                u.rw_all(
+                    &self
+                        .pr
+                        .consp_cons()?
+                        .all_elim(h.clone())?
+                        .all_elim(t.clone())?,
+                )
+            })?;
+            ceq = self.fire_if(ceq)?;
+            ceq = ceq.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(false, &h, &t)?))?;
+            ceq = ceq.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(true, &h, &t)?))?;
+            beta_expand(&motive, cons, at_value(ceq, hi, hn)?)?
+                .imp_intro(&pt)?
+                .imp_intro(&ph)?
+        };
+
+        self.th
+            .induct(&motive, vec![case_atom, case_nil, case_cons])
+    }
+
+    /// Project the checked NATP law from a previously constructed count
+    /// invariant, so a law pack performs carrier induction only once.
+    pub(crate) fn acl2_count_natp_from_invariant(
+        &self,
+        count: &Term,
+        inv_all: &Thm,
+    ) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let inv_x = beta_reduce(inv_all.clone().all_elim(x.clone())?)?;
+        let hi = inv_x.clone().and_elim_l()?;
+        let hn = inv_x.and_elim_r()?;
+        self.natp_intro_thm()?
+            .all_elim(count.clone().apply(x)?)?
+            .imp_elim(hi)?
+            .imp_elim(hn)?
+            .all_intro("X", a)
+    }
+
+    /// `⊢ ∀x. ¬(x < 1+x = nil)` in the ACL2 model.
+    fn successor_strict_thm(&self) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let one = self.a1()?;
+        let lit1 = mk_int(1i64);
+        let vx = self.iv(&x)?;
+        let zero = mk_int(0i64);
+        let zero_lt_one = int::int_lt()
+            .apply(zero.clone())?
+            .apply(lit1.clone())?
+            .reduce()?
+            .eqt_elim()?;
+        let hlt = int::lt_add_cancel_left_at(&vx, &zero, &lit1)?
+            .sym()?
+            .eq_mp(zero_lt_one)?
+            .rewrite(&int::add_zero().all_elim(vx.clone())?)?
+            .rewrite(
+                &int::add_comm()
+                    .all_elim(vx.clone())?
+                    .all_elim(lit1.clone())?,
+            )?;
+        let successor = ap2(&self.pr.plus, &one, &x)?;
+        let iv_successor = self
+            .pr
+            .intval_plus()?
+            .all_elim(one)?
+            .all_elim(x.clone())?
+            .rewrite(&self.pr.intval_int()?.all_elim(lit1)?)?;
+        let hlt = Thm::refl(int::int_lt())?
+            .cong_app(Thm::refl(vx)?)?
+            .cong_app(iv_successor.sym()?)?
+            .eq_mp(hlt)?;
+        self.pr
+            .alt_iff_at(&x, &successor)?
+            .sym()?
+            .eq_mp(hlt)?
+            .all_intro("X", a)
+    }
+
+    /// `⊢ ∀x. (1+x < x) = nil` in the ACL2 model.
+    fn reverse_successor_nil_thm(&self) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let successor = ap2(&self.pr.plus, &self.a1()?, &x)?;
+        let forward_holds = self.successor_strict_thm()?.all_elim(x.clone())?;
+        let forward = self.pr.alt_iff_at(&x, &successor)?.eq_mp(forward_holds)?;
+        let reverse = int::int_lt()
+            .apply(self.iv(&successor)?)?
+            .apply(self.iv(&x)?)?;
+        let looped = int::lt_trans()
+            .all_elim(self.iv(&x)?)?
+            .all_elim(self.iv(&successor)?)?
+            .all_elim(self.iv(&x)?)?
+            .imp_elim(forward)?
+            .imp_elim(Thm::assume(reverse.clone())?)?;
+        let not_reverse = int::lt_irrefl()
+            .all_elim(self.iv(&x)?)?
+            .not_elim(looped)?
+            .imp_intro(&reverse)?
+            .not_intro()?;
+        self.alt_nil_of_not_lt(&successor, &x, not_reverse)?
+            .all_intro("X", a)
+    }
+
+    /// Convert checked strict order into the reverse weak-order equation.
+    fn reverse_nil_of_strict(&self, x: &Term, y: &Term, forward_holds: Thm) -> Result<Thm> {
+        let forward = self.pr.alt_iff_at(x, y)?.eq_mp(forward_holds)?;
+        let reverse = int::int_lt().apply(self.iv(y)?)?.apply(self.iv(x)?)?;
+        let looped = int::lt_trans()
+            .all_elim(self.iv(x)?)?
+            .all_elim(self.iv(y)?)?
+            .all_elim(self.iv(x)?)?
+            .imp_elim(forward)?
+            .imp_elim(Thm::assume(reverse.clone())?)?;
+        let not_reverse = int::lt_irrefl()
+            .all_elim(self.iv(x)?)?
+            .not_elim(looped)?
+            .imp_intro(&reverse)?
+            .not_intro()?;
+        self.alt_nil_of_not_lt(y, x, not_reverse)
+    }
+
+    /// Unconditional weak structural bound:
+    ///
+    /// `⊢ ∀x. (count x < count(car x)+count(cdr x)) = nil`.
+    pub(crate) fn acl2_count_sum_weak_thm(
+        &self,
+        count: &Term,
+        count_def: &Thm,
+        invariant: &Thm,
+    ) -> Result<Thm> {
+        let a = self.a();
+        let cv = |v: &Term| count.clone().apply(v.clone());
+        let sum_at = |v: &Term| -> Result<Term> {
+            ap2(
+                &self.pr.plus,
+                &cv(&self.th.car.clone().apply(v.clone())?)?,
+                &cv(&self.th.cdr.clone().apply(v.clone())?)?,
+            )
+        };
+        let mvar = Term::free("__cwm", a.clone());
+        let motive_body = ap2(&self.pr.lt, &cv(&mvar)?, &sum_at(&mvar)?)?.equals(self.anil())?;
+        let motive = Term::abs(a.clone(), subst::close(&motive_body, "__cwm"));
+
+        let mut count_nil = count_def.clone().all_elim(self.anil())?;
+        count_nil = count_nil.rhs_conv(|u| u.rw_all(&self.pr.consp_nil()?))?;
+        count_nil = self.fire_if(count_nil)?;
+        count_nil = count_nil.rhs_conv(|u| u.rw_all(&self.pr.intp_nil()?))?;
+        count_nil = self.fire_if(count_nil)?;
+
+        let leaf = |v: &Term, car_nil: Thm, cdr_nil: Thm| -> Result<Thm> {
+            let count_car = car_nil.cong_arg(count.clone())?.trans(count_nil.clone())?;
+            let count_cdr = cdr_nil.cong_arg(count.clone())?.trans(count_nil.clone())?;
+            let sum_eq = Thm::refl(self.pr.plus.clone())?
+                .cong_app(count_car)?
+                .cong_app(count_cdr)?
+                .trans(self.pr.plus_lit(0, 0)?)?;
+            let inv = beta_reduce(invariant.clone().all_elim(v.clone())?)?;
+            let nonneg = inv.and_elim_r()?;
+            let raw = sum_eq
+                .cong_arg(self.pr.lt.clone().apply(cv(v)?)?)?
+                .trans(nonneg)?;
+            beta_expand(&motive, v.clone(), raw)
+        };
+        let case_atom = {
+            let b = Term::free("b", acl2_payload());
+            let v = self.th.atom.clone().apply(b.clone())?;
+            leaf(
+                &v,
+                self.pr.car_atom()?.all_elim(b.clone())?,
+                self.pr.cdr_atom()?.all_elim(b)?,
+            )?
+        };
+        let case_nil = leaf(&self.anil(), self.pr.car_nil()?, self.pr.cdr_nil()?)?;
+        let case_cons = {
+            let h = Term::free("h", a.clone());
+            let t = Term::free("t", a.clone());
+            let v = self.acons_t(&h, &t)?;
+            let ph = motive.clone().apply(h.clone())?;
+            let pt = motive.clone().apply(t.clone())?;
+            let mut unfold = count_def.clone().all_elim(v.clone())?;
+            unfold = unfold.rhs_conv(|u| {
+                u.rw_all(
+                    &self
+                        .pr
+                        .consp_cons()?
+                        .all_elim(h.clone())?
+                        .all_elim(t.clone())?,
+                )
+            })?;
+            unfold = self.fire_if(unfold)?;
+            unfold = unfold.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(false, &h, &t)?))?;
+            unfold = unfold.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(true, &h, &t)?))?;
+            let sum_ht = ap2(&self.pr.plus, &cv(&h)?, &cv(&t)?)?;
+            let reverse = self.reverse_successor_nil_thm()?.all_elim(sum_ht.clone())?;
+            let at_sum = unfold
+                .cong_arg(self.pr.lt.clone())?
+                .cong_fn(sum_ht)?
+                .trans(reverse)?;
+            let car_eq = self.th.cs.proj_scons(false, &h, &t)?;
+            let cdr_eq = self.th.cs.proj_scons(true, &h, &t)?;
+            let sum_proj = Thm::refl(sum_at(&v)?)?
+                .rhs_conv(|u| u.rw_all(&car_eq))?
+                .rhs_conv(|u| u.rw_all(&cdr_eq))?;
+            let raw = sum_proj
+                .cong_arg(self.pr.lt.clone().apply(cv(&v)?)?)?
+                .trans(at_sum)?;
+            beta_expand(&motive, v, raw)?
+                .imp_intro(&pt)?
+                .imp_intro(&ph)?
+        };
+        let raw = self
+            .th
+            .induct(&motive, vec![case_atom, case_nil, case_cons])?;
+        beta_nf_concl(raw.all_elim(self.avar("X"))?)?.all_intro("X", a)
+    }
+
+    /// The structural ACL2-COUNT step law:
+    ///
+    /// `⊢ ∀x. ¬(consp x = nil) ⟹
+    ///   ¬((count(car x)+count(cdr x)) < count x = nil)`.
+    pub(crate) fn acl2_count_sum_strict_thm(&self, count: &Term, count_def: &Thm) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let car_x = self.th.car.clone().apply(x.clone())?;
+        let cdr_x = self.th.cdr.clone().apply(x.clone())?;
+        let a_count = count.clone().apply(car_x)?;
+        let d_count = count.clone().apply(cdr_x)?;
+        let sum = ap2(&self.pr.plus, &a_count, &d_count)?;
+        let guard = ap1(&self.pr.consp, &x)?.equals(self.anil())?.not()?;
+
+        let mut unfold = count_def.clone().all_elim(x.clone())?;
+        let body = unfold
+            .concl()
+            .as_eq()
+            .ok_or(Error::NotAnEquation)?
+            .1
+            .clone();
+        // Fire the admitted count definition's CONSP guard.  The exact step
+        // is read from the theorem; no source theorem is assumed.
+        let (cy, base) = body.as_app().ok_or(Error::NotAnEquation)?;
+        let (cc, step) = cy.as_app().ok_or(Error::NotAnEquation)?;
+        let (_, consp_x) = cc.as_app().ok_or(Error::NotAnEquation)?;
+        let fired = self
+            .pr
+            .if_t()?
+            .all_elim(consp_x.clone())?
+            .all_elim(step.clone())?
+            .all_elim(base.clone())?
+            .imp_elim(Thm::assume(guard.clone())?)?;
+        unfold = unfold.trans(fired)?;
+
+        let strict_step = self.successor_strict_thm()?.all_elim(sum.clone())?;
+        let alt_sum = self.pr.lt.clone().apply(sum)?.clone();
+        let eq = unfold.sym()?.cong_arg(alt_sum)?;
+        self.ne_nil_transport(&strict_step, &eq)?
+            .imp_intro(&guard)?
+            .all_intro("X", a)
+    }
+
+    /// Checked guarded strict-decrease laws for the CAR and CDR recursive
+    /// calls, returned in that order.
+    pub(crate) fn acl2_count_projection_strict_thms(
+        &self,
+        count: &Term,
+        count_def: &Thm,
+        invariant: &Thm,
+    ) -> Result<[Thm; 2]> {
+        let prove = |car_side: bool| -> Result<Thm> {
+            let a = self.a();
+            let x = self.avar("X");
+            let car_x = self.th.car.clone().apply(x.clone())?;
+            let cdr_x = self.th.cdr.clone().apply(x.clone())?;
+            let ca = count.clone().apply(car_x.clone())?;
+            let cd = count.clone().apply(cdr_x.clone())?;
+            let (chosen, other, other_arg) = if car_side {
+                (ca.clone(), cd.clone(), cdr_x)
+            } else {
+                (cd.clone(), ca.clone(), car_x)
+            };
+            let guard = ap1(&self.pr.consp, &x)?.equals(self.anil())?.not()?;
+            let other_inv = beta_reduce(invariant.clone().all_elim(other_arg)?)?;
+            let premise = self.aequal_holds_of_eq(other_inv.and_elim_r()?)?;
+            let mut strict = self
+                .lt_plus_one_thm()?
+                .all_elim(other.clone())?
+                .all_elim(chosen.clone())?
+                .imp_elim(premise)?;
+            if car_side {
+                strict = strict.rewrite(&self.pr.plus_comm()?.all_elim(cd)?.all_elim(ca)?)?;
+            }
+
+            let mut unfold = count_def.clone().all_elim(x.clone())?;
+            let body = unfold
+                .concl()
+                .as_eq()
+                .ok_or(Error::NotAnEquation)?
+                .1
+                .clone();
+            let (cy, base) = body.as_app().ok_or(Error::NotAnEquation)?;
+            let (cc, step) = cy.as_app().ok_or(Error::NotAnEquation)?;
+            let (_, consp_x) = cc.as_app().ok_or(Error::NotAnEquation)?;
+            unfold = unfold.trans(
+                self.pr
+                    .if_t()?
+                    .all_elim(consp_x.clone())?
+                    .all_elim(step.clone())?
+                    .all_elim(base.clone())?
+                    .imp_elim(Thm::assume(guard.clone())?)?,
+            )?;
+            let alt_chosen = self.pr.lt.clone().apply(chosen)?;
+            self.ne_nil_transport(&strict, &unfold.sym()?.cong_arg(alt_chosen)?)?
+                .imp_intro(&guard)?
+                .all_intro("X", a)
+        };
+        Ok([prove(true)?, prove(false)?])
+    }
+
+    /// Checked unconditional weak CAR/CDR bounds, returned in that order.
+    pub(crate) fn acl2_count_projection_weak_thms(
+        &self,
+        count: &Term,
+        count_def: &Thm,
+        invariant: &Thm,
+        strict: &[Thm; 2],
+    ) -> Result<[Thm; 2]> {
+        let mut count_nil = count_def.clone().all_elim(self.anil())?;
+        count_nil = count_nil.rhs_conv(|u| u.rw_all(&self.pr.consp_nil()?))?;
+        count_nil = self.fire_if(count_nil)?;
+        count_nil = count_nil.rhs_conv(|u| u.rw_all(&self.pr.intp_nil()?))?;
+        count_nil = self.fire_if(count_nil)?;
+        let prove = |car_side: bool| -> Result<Thm> {
+            let a = self.a();
+            let x = self.avar("X");
+            let projection = if car_side {
+                self.th.car.clone()
+            } else {
+                self.th.cdr.clone()
+            };
+            let projected = projection.clone().apply(x.clone())?;
+            let count_x = count.clone().apply(x.clone())?;
+            let count_projected = count.clone().apply(projected.clone())?;
+            let goal = ap2(&self.pr.lt, &count_x, &count_projected)?.equals(self.anil())?;
+            let leaf = |e: &Thm, proj_nil: Thm| -> Result<Thm> {
+                let projected_nil = e.clone().cong_arg(projection.clone())?.trans(proj_nil)?;
+                let count_projected_zero = projected_nil
+                    .cong_arg(count.clone())?
+                    .trans(count_nil.clone())?;
+                let inv = beta_reduce(invariant.clone().all_elim(x.clone())?)?;
+                count_projected_zero
+                    .cong_arg(self.pr.lt.clone().apply(count_x.clone())?)?
+                    .trans(inv.and_elim_r()?)
+            };
+            let proved = self.by_cases(
+                &x,
+                &goal,
+                if car_side { "cwc" } else { "cwd" },
+                &|b, e| {
+                    leaf(
+                        e,
+                        if car_side {
+                            self.pr.car_atom()?.all_elim(b.clone())?
+                        } else {
+                            self.pr.cdr_atom()?.all_elim(b.clone())?
+                        },
+                    )
+                },
+                &|e| {
+                    leaf(
+                        e,
+                        if car_side {
+                            self.pr.car_nil()?
+                        } else {
+                            self.pr.cdr_nil()?
+                        },
+                    )
+                },
+                &|h, t, e| {
+                    let guard_eq = e.clone().cong_arg(self.pr.consp.clone())?.trans(
+                        self.pr
+                            .consp_cons()?
+                            .all_elim(h.clone())?
+                            .all_elim(t.clone())?,
+                    )?;
+                    let guard = self.holds_of_eq_t(guard_eq)?;
+                    let forward = strict[usize::from(!car_side)]
+                        .clone()
+                        .all_elim(x.clone())?
+                        .imp_elim(guard)?;
+                    self.reverse_nil_of_strict(&count_projected, &count_x, forward)
+                },
+            )?;
+            proved.all_intro("X", a)
+        };
+        Ok([prove(true)?, prove(false)?])
+    }
+
+    /// Checked guarded positivity of ACL2-COUNT.
+    pub(crate) fn acl2_count_consp_positive_thm(
+        &self,
+        count: &Term,
+        invariant: &Thm,
+        cdr_strict: &Thm,
+    ) -> Result<Thm> {
+        let a = self.a();
+        let x = self.avar("X");
+        let cdr_x = self.th.cdr.clone().apply(x.clone())?;
+        let count_d = count.clone().apply(cdr_x.clone())?;
+        let count_x = count.clone().apply(x.clone())?;
+        let guard = ap1(&self.pr.consp, &x)?.equals(self.anil())?.not()?;
+        let strict_holds = cdr_strict
+            .clone()
+            .all_elim(x.clone())?
+            .imp_elim(Thm::assume(guard.clone())?)?;
+        let strict = self
+            .pr
+            .alt_iff_at(&count_d, &count_x)?
+            .eq_mp(strict_holds)?;
+        let inv_d = beta_reduce(invariant.clone().all_elim(cdr_x)?)?;
+        let nonneg = self.aequal_holds_of_eq(inv_d.and_elim_r()?)?;
+        let le = self.nonneg_of_hne(&count_d, &nonneg)?;
+        let zero = mk_int(0i64);
+        let hlt = int::lt_of_le_of_lt()
+            .all_elim(zero.clone())?
+            .all_elim(self.iv(&count_d)?)?
+            .all_elim(self.iv(&count_x)?)?
+            .imp_elim(le)?
+            .imp_elim(strict)?;
+        let hlt = hlt.rewrite(&self.pr.intval_int()?.all_elim(zero)?.sym()?)?;
+        self.pr
+            .alt_iff_at(&self.a0()?, &count_x)?
+            .sym()?
+            .eq_mp(hlt)?
+            .imp_intro(&guard)?
+            .all_intro("X", a)
+    }
+
+    /// Checked unconditional structural successor law for explicit conses:
+    /// `count a + count b < count(cons a b)`.
+    pub(crate) fn acl2_count_cons_greater_thm(&self, count: &Term, count_def: &Thm) -> Result<Thm> {
+        let a_ty = self.a();
+        let a = self.avar("A");
+        let b = self.avar("B");
+        let cons = self.acons_t(&a, &b)?;
+        let sum = ap2(
+            &self.pr.plus,
+            &count.clone().apply(a.clone())?,
+            &count.clone().apply(b.clone())?,
+        )?;
+        let mut unfold = count_def.clone().all_elim(cons.clone())?;
+        unfold = unfold.rhs_conv(|u| {
+            u.rw_all(
+                &self
+                    .pr
+                    .consp_cons()?
+                    .all_elim(a.clone())?
+                    .all_elim(b.clone())?,
+            )
+        })?;
+        unfold = self.fire_if(unfold)?;
+        unfold = unfold.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(false, &a, &b)?))?;
+        unfold = unfold.rhs_conv(|u| u.rw_all(&self.th.cs.proj_scons(true, &a, &b)?))?;
+        let strict = self.successor_strict_thm()?.all_elim(sum.clone())?;
+        let alt_sum = self.pr.lt.clone().apply(sum)?;
+        self.ne_nil_transport(&strict, &unfold.sym()?.cong_arg(alt_sum)?)?
+            .all_intro("B", a_ty.clone())?
+            .all_intro("A", a_ty)
     }
 
     /// `⊢ posp (aint i) = alt '0 (aint i)` at a fixed `int` term.
@@ -3147,6 +3839,17 @@ impl Ordinals {
             .t_ne_nil()?
             .not_elim(chain.sym()?.trans(Thm::assume(eq.clone())?)?)?;
         f.imp_intro(&eq)?.not_intro()
+    }
+
+    /// Turn a checked carrier equality into the holds-form ACL2 `EQUAL`
+    /// proposition used by `ModelImplies` arithmetic premises.
+    fn aequal_holds_of_eq(&self, eq: Thm) -> Result<Thm> {
+        let r = eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        self.holds_of_eq_t(
+            eq.cong_arg(self.pr.equal.clone())?
+                .cong_fn(r.clone())?
+                .trans(self.pr.equal_refl()?.all_elim(r)?)?,
+        )
     }
 
     /// From `hn : Γ ⊢ ¬(intLt (intval x) (intval y))`, conclude

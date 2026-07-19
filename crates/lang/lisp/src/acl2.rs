@@ -89,7 +89,11 @@ use std::sync::{LazyLock, Mutex};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
-use covalence_init::init::acl2::count::with_acl2_count;
+use covalence_init::init::acl2::count::{
+    acl2_count_car_strict_fact, acl2_count_car_weak_fact, acl2_count_cdr_strict_fact,
+    acl2_count_cdr_weak_fact, acl2_count_cons_greater_fact, acl2_count_consp_positive_fact,
+    acl2_count_natp_fact, acl2_count_sum_strict_fact, acl2_count_sum_weak_fact, with_acl2_count,
+};
 use covalence_init::init::acl2::defun::{
     Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
 };
@@ -128,6 +132,24 @@ fn shadow_env() -> covalence_core::Result<Acl2Env> {
     let fixers = with_fixers(&ordinal)?;
     let count = with_acl2_count(&fixers)?;
     with_arith_rules(&count)
+}
+
+fn shadow_cache(env: &Acl2Env) -> covalence_core::Result<FactCache> {
+    let cache = FactCache::default();
+    for fact in [
+        acl2_count_natp_fact(env)?,
+        acl2_count_sum_strict_fact(env)?,
+        acl2_count_sum_weak_fact(env)?,
+        acl2_count_car_strict_fact(env)?,
+        acl2_count_cdr_strict_fact(env)?,
+        acl2_count_car_weak_fact(env)?,
+        acl2_count_cdr_weak_fact(env)?,
+        acl2_count_consp_positive_fact(env)?,
+        acl2_count_cons_greater_fact(env)?,
+    ] {
+        cache.add_lemma(fact);
+    }
+    Ok(cache)
 }
 
 // ============================================================================
@@ -270,12 +292,14 @@ impl Acl2Session {
     /// Build a session over the process-global kernel theories, with no
     /// definitions and no theorems.
     pub fn new() -> Result<Self, Acl2Error> {
+        let env = shadow_env().map_err(kernel_err)?;
+        let cache = shadow_cache(&env).map_err(kernel_err)?;
         Ok(Acl2Session {
             defs: Defs::new(),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
-            deep: KernelAcl2Session::new(shadow_env().map_err(kernel_err)?),
-            deep_cache: Mutex::new(FactCache::default()),
+            deep: KernelAcl2Session::new(env),
+            deep_cache: Mutex::new(cache),
         })
     }
 
@@ -368,8 +392,9 @@ impl Acl2Session {
         self.defs = Defs::new();
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
+            let cache = shadow_cache(&env).unwrap_or_default();
             self.deep = KernelAcl2Session::new(env);
-            self.deep_cache = Mutex::new(FactCache::default());
+            self.deep_cache = Mutex::new(cache);
         }
     }
 
@@ -596,8 +621,9 @@ impl Acl2Session {
             rec_formal,
         };
         if let Ok(env) = admit_kernel_defun(self.deep.env(), &spec) {
+            let cache = shadow_cache(&env).unwrap_or_default();
             self.deep = KernelAcl2Session::new(env);
-            self.deep_cache = Mutex::new(FactCache::default());
+            self.deep_cache = Mutex::new(cache);
         }
     }
 

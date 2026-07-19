@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35705,
+      "words": 35714,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1498,
+      "words": 1543,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 191,
+      "words": 197,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1040,
+      "words": 1146,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2356,
+      "words": 2362,
       "updated": 0
     },
     {
@@ -10825,7 +10825,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1610,
+      "words": 1616,
       "updated": 0
     },
     {
@@ -15325,7 +15325,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35705,
+      "words": 35714,
       "updated": 0
     },
     {
@@ -15433,7 +15433,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3549,
+      "words": 3559,
       "updated": 0
     },
     {
@@ -22091,6 +22091,15 @@
       "id": "todo:lisp.hol.apply-list",
       "kind": "todo",
       "title": "Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.first-class-primitives",
+      "kind": "todo",
+      "title": "Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
       "words": 0,

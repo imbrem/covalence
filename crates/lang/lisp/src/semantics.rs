@@ -345,6 +345,12 @@ impl LispSemantics {
                 operator,
                 arguments,
             } => self.compile_core_primitive(*operator, arguments),
+            CoreExpr::PrimitiveValue(_) | CoreExpr::ApplyListProcedure => {
+                // TODO(cov:lisp.hol.first-class-primitives, major): Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.
+                Err(HolError::Stuck(
+                    "first-class procedures need the partial higher-order HOL semantics".into(),
+                ))
+            }
         }
     }
 

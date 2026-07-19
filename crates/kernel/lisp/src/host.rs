@@ -175,6 +175,8 @@ pub enum HostValue<S, A, P> {
     Nil,
     Cons(Box<Self>, Box<Self>),
     Closure(Arc<HostClosure<S, A, P>>),
+    Primitive(P),
+    ApplyListProcedure,
 }
 
 impl<S, A, P> HostValue<S, A, P> {
@@ -211,7 +213,7 @@ impl<S, A: Clone, P> HostValue<S, A, P> {
             Self::Atom(atom) => Some(Datum::Atom(atom.clone())),
             Self::Nil => Some(Datum::Nil),
             Self::Cons(head, tail) => Some(Datum::cons(head.as_datum()?, tail.as_datum()?)),
-            Self::Closure(_) => None,
+            Self::Closure(_) | Self::Primitive(_) | Self::ApplyListProcedure => None,
         }
     }
 }
@@ -633,7 +635,33 @@ impl<P: CorePrimitive> CoreMachine<P> {
         arguments: Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
     ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
         let HostValue::Closure(closure) = function.clone() else {
-            return Err(CoreMachineError::NotCallable);
+            return match function {
+                HostValue::Primitive(primitive) => {
+                    let value = self
+                        .primitives
+                        .apply(&primitive, &arguments)
+                        .map_err(CoreMachineError::Primitive)?;
+                    configuration.control = HostControl::Value(value);
+                    Ok(Some(configuration))
+                }
+                HostValue::ApplyListProcedure => {
+                    if arguments.len() < 2 {
+                        return Err(CoreMachineError::Arity {
+                            expected: ArityExpectation::AtLeast(2),
+                            actual: arguments.len(),
+                        });
+                    }
+                    let mut arguments = arguments;
+                    let function = arguments.remove(0);
+                    let tail = arguments.pop().expect("at least two apply arguments");
+                    arguments.extend(Self::proper_list(tail)?);
+                    self.apply(configuration, function, arguments)
+                }
+                HostValue::Atom(_) | HostValue::Nil | HostValue::Cons(_, _) => {
+                    Err(CoreMachineError::NotCallable)
+                }
+                HostValue::Closure(_) => unreachable!("matched above"),
+            };
         };
         if closure.rest.is_none() && closure.parameters.len() != arguments.len() {
             return Err(CoreMachineError::Arity {
@@ -687,7 +715,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     values.push(*head);
                     value = *tail;
                 }
-                HostValue::Atom(_) | HostValue::Closure(_) => {
+                HostValue::Atom(_)
+                | HostValue::Closure(_)
+                | HostValue::Primitive(_)
+                | HostValue::ApplyListProcedure => {
                     return Err(CoreMachineError::ImproperArgumentList);
                 }
             }
@@ -862,6 +893,12 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             ));
                         }
                     }
+                    CoreExpr::PrimitiveValue(primitive) => {
+                        next.control = HostControl::Value(HostValue::Primitive(primitive));
+                    }
+                    CoreExpr::ApplyListProcedure => {
+                        next.control = HostControl::Value(HostValue::ApplyListProcedure);
+                    }
                 }
                 Ok(vec![next])
             }
@@ -1031,6 +1068,14 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
             operator,
             arguments,
         })
+    }
+
+    fn primitive_value(&self, operator: Self::Primitive) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::PrimitiveValue(operator))
+    }
+
+    fn apply_list_procedure(&self) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::ApplyListProcedure)
     }
 }
 

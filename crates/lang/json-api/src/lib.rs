@@ -1038,6 +1038,36 @@ mod tests {
     }
 
     #[test]
+    fn datatype_family_derives_nested_list_interpretation_and_map() {
+        use covalence_inductive::{
+            SymbolicFamilyArrow as A, SymbolicFamilyBackend, SymbolicFamilyObject as O,
+            ValidatedDatatypeFamily, interpret_family, map_family, symbolic_arrow,
+        };
+
+        let family = ValidatedDatatypeFamily::try_from(json_value_family()).unwrap();
+        let source = O::Parameter(JsonParameter::Bool);
+        let target = O::Parameter(JsonParameter::Decimal);
+        let arrow = symbolic_arrow(source.clone(), target.clone(), "value-map");
+
+        let O::Sum(layer) = interpret_family(&SymbolicFamilyBackend, &family, &source).unwrap()
+        else {
+            panic!("JSON is a six-way sum");
+        };
+        assert_eq!(layer.len(), JsonConstructor::ALL.len());
+        assert!(matches!(layer[4], O::Fixpoint { .. }));
+        assert!(matches!(layer[5], O::Fixpoint { .. }));
+
+        let A::Sum(mapped) =
+            map_family(&SymbolicFamilyBackend, &family, &source, &target, &arrow).unwrap()
+        else {
+            panic!("JSON map follows the six-way sum");
+        };
+        assert_eq!(mapped.len(), JsonConstructor::ALL.len());
+        assert!(matches!(mapped[4], A::Fixpoint { .. }));
+        assert!(matches!(mapped[5], A::Fixpoint { .. }));
+    }
+
+    #[test]
     fn syntax_parser_retains_nested_duplicate_members_in_order() {
         let (value, witness) = JsonSyntaxParser
             .parse_diagnostic(br#"{"x":1,"x":{"y":2,"y":3}}"#)

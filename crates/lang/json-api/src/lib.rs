@@ -16,7 +16,9 @@ use covalence_parsing_api::{
     same_interpretation_by,
 };
 use covalence_types::Int;
-use std::convert::Infallible;
+use std::{collections::HashMap, collections::HashSet, convert::Infallible};
+
+pub mod corpus;
 
 /// A JSON string code point.
 ///
@@ -77,11 +79,9 @@ pub struct DuplicateName(pub JsonString);
 
 impl<D> JsonObject<D> {
     pub fn new(members: Vec<JsonMember<D>>) -> Result<Self, DuplicateName> {
-        for (index, member) in members.iter().enumerate() {
-            if members[..index]
-                .iter()
-                .any(|prior| prior.name == member.name)
-            {
+        let mut names = HashSet::with_capacity(members.len());
+        for member in &members {
+            if !names.insert(&member.name) {
                 return Err(DuplicateName(member.name.clone()));
             }
         }
@@ -95,14 +95,19 @@ impl<D> JsonObject<D> {
 
 impl<D: PartialEq> PartialEq for JsonObject<D> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.len() == other.0.len()
-            && self.0.iter().all(|member| {
-                other
-                    .0
-                    .iter()
-                    .find(|candidate| candidate.name == member.name)
-                    .is_some_and(|candidate| candidate.value == member.value)
-            })
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        let by_name = other
+            .0
+            .iter()
+            .map(|member| (&member.name, &member.value))
+            .collect::<HashMap<_, _>>();
+        self.0.iter().all(|member| {
+            by_name
+                .get(&member.name)
+                .is_some_and(|value| **value == member.value)
+        })
     }
 }
 
@@ -214,6 +219,8 @@ pub enum JsonParseErrorKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JsonNestingLimit(usize);
 
+// TODO(cov:json.parser-stackless-depth, major): Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.
+
 impl JsonNestingLimit {
     /// Default limit used by [`JsonSyntaxParser`] and [`JsonParser`].
     pub const DEFAULT: Self = Self(128);
@@ -243,11 +250,11 @@ impl Default for JsonNestingLimit {
 
 /// Positive, checkable parsing evidence retained by the reference parser.
 ///
-/// This is not a theorem: it records the decoded syntax and the exact number
-/// of source bytes consumed so a later logic backend can reflect or check it.
+/// This is not a theorem. It records the exact number of source bytes consumed
+/// so a later logic backend can replay the parse against the returned value.
+/// The decoded tree is deliberately not duplicated inside this witness.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JsonParseWitness {
-    pub syntax: ParsedJsonValue,
     pub consumed: usize,
 }
 
@@ -303,7 +310,6 @@ impl JsonSyntaxParser {
         let value = parser.value(0)?;
         parser.whitespace();
         let witness = JsonParseWitness {
-            syntax: value.clone(),
             consumed: parser.offset - start,
         };
         Ok(PrefixInterpretation::new(
@@ -361,14 +367,10 @@ impl JsonParser {
         limit: JsonNestingLimit,
     ) -> Result<PrefixInterpretation<JsonValue, JsonParseWitness>, JsonParseError> {
         let parsed = JsonSyntaxParser.parse_prefix_diagnostic_with_limit(source, start, limit)?;
-        let value = parsed
-            .value
-            .clone()
-            .into_semantic()
-            .map_err(|_| JsonParseError {
-                offset: parsed.consumed.end,
-                kind: JsonParseErrorKind::DuplicateName,
-            })?;
+        let value = parsed.value.into_semantic().map_err(|_| JsonParseError {
+            offset: parsed.consumed.end,
+            kind: JsonParseErrorKind::DuplicateName,
+        })?;
         Ok(PrefixInterpretation {
             value,
             witness: parsed.witness,

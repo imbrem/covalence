@@ -32,9 +32,10 @@ pub struct CfgParseLimits {
 
 /// Independent bounds for the bottom-up chart evaluator.
 ///
-/// `results_per_cell` bounds ambiguity at one `(nonterminal, start, end)`
-/// extent. `chart_entries` bounds all retained derivation witnesses, rather
-/// than merely the number of occupied extents.
+/// `results_per_cell` bounds packed alternatives at one
+/// `(nonterminal, start, end)` node. `chart_entries` bounds the sum of nodes
+/// and packed alternatives. Tree expansion has its own bounds because a small
+/// forest may denote exponentially or infinitely many derivations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChartParseLimits {
     pub work: usize,
@@ -230,17 +231,15 @@ impl<T: Clone + PartialOrd> RelationalParser for CfgParser<'_, T> {
 /// A bounded bottom-up chart parser.
 ///
 /// This is deliberately a simpler fixed-point algorithm than optimized
-/// Earley: every production is reconsidered until no new derivation witness is
+/// Earley: every production is reconsidered until no new packed alternative is
 /// discovered. It has the same important semantic property for this API:
 /// left-recursive and nullable grammars are evaluated without recursive calls.
 /// The tradeoff is intentionally explicit work bounds rather than a performance
 /// claim.
 ///
-/// Distinct derivation trees are retained, including trees with the same
-/// nonterminal and extent. Grammars with a productive zero-width cycle have
-/// infinitely many finite derivation trees, so evaluation ends with a result or
-/// chart limit rather than pretending that enumeration is complete.
-// TODO(cov:lang.cfg-parsing.packed-forest, major): Represent cyclic/ambiguous derivations as a bounded shared packed parse forest instead of expanding every tree.
+/// The chart is a [`PackedParseForest`]: ambiguity shares nonterminal/span
+/// nodes, and nullable cycles are finite graph cycles. The original tree API is
+/// retained as a bounded compatibility view over that forest.
 #[derive(Clone, Copy, Debug)]
 pub struct ChartCfgParser<'g, T> {
     grammar: &'g Cfg<T>,
@@ -275,6 +274,21 @@ impl<T> ParserSyntax for ChartCfgParser<'_, T> {
 }
 
 impl<T: Clone + PartialOrd> ChartCfgParser<'_, T> {
+    /// Build the complete bounded packed forest for `source`.
+    pub fn parse_forest(&self, source: &[T]) -> Result<PackedParseForest, CfgParseError> {
+        self.grammar.validate()?;
+        let mut evaluator = ForestBuilder {
+            grammar: self.grammar,
+            source,
+            limits: self.limits,
+            work: 0,
+            entries: 0,
+            forest: PackedParseForest::default(),
+        };
+        evaluator.fixed_point()?;
+        Ok(evaluator.forest)
+    }
+
     pub fn parse_prefixes(
         &self,
         source: &[T],
@@ -288,14 +302,20 @@ impl<T: Clone + PartialOrd> ChartCfgParser<'_, T> {
                 mode: CfgParseMode::Prefix,
             }));
         }
-        let chart = self.run(source)?;
-        let mut derivations = chart
-            .into_iter()
-            .filter_map(|((nt, begin, _), values)| {
-                (nt == self.start.index() && begin == start).then_some(values)
-            })
-            .flatten()
-            .collect::<Vec<_>>();
+        let forest = self.parse_forest(source)?;
+        let roots = forest.root_ids(self.start, start, None);
+        let mut derivations = Vec::new();
+        for root in roots {
+            let expanded = forest
+                .expand(root, self.expansion_limits(source.len()))
+                .expect("root belongs to this forest");
+            if expanded.truncated {
+                return Err(CfgParseError::ResultLimit {
+                    limit: self.limits.results_per_cell,
+                });
+            }
+            derivations.extend(expanded.derivations);
+        }
         sort_derivations(&mut derivations);
         if derivations.is_empty() {
             return Ok(ParseAttempt::NoMatch(CfgNoMatch {
@@ -320,10 +340,20 @@ impl<T: Clone + PartialOrd> ChartCfgParser<'_, T> {
         &self,
         source: &[T],
     ) -> Result<ParseAttempt<Vec<((), Derivation)>, CfgNoMatch>, CfgParseError> {
-        let mut matches = self
-            .run(source)?
-            .remove(&(self.start.index(), 0, source.len()))
-            .unwrap_or_default();
+        let forest = self.parse_forest(source)?;
+        let roots = forest.root_ids(self.start, 0, Some(source.len()));
+        let mut matches = Vec::new();
+        for root in roots {
+            let expanded = forest
+                .expand(root, self.expansion_limits(source.len()))
+                .expect("root belongs to this forest");
+            if expanded.truncated {
+                return Err(CfgParseError::ResultLimit {
+                    limit: self.limits.results_per_cell,
+                });
+            }
+            matches.extend(expanded.derivations);
+        }
         sort_derivations(&mut matches);
         if matches.is_empty() {
             Ok(ParseAttempt::NoMatch(CfgNoMatch {
@@ -340,18 +370,14 @@ impl<T: Clone + PartialOrd> ChartCfgParser<'_, T> {
         }
     }
 
-    fn run(&self, source: &[T]) -> Result<Chart, CfgParseError> {
-        self.grammar.validate()?;
-        let mut evaluator = ChartEvaluator {
-            grammar: self.grammar,
-            source,
-            limits: self.limits,
-            work: 0,
-            entries: 0,
-            chart: HashMap::new(),
-        };
-        evaluator.fixed_point()?;
-        Ok(evaluator.chart)
+    fn expansion_limits(&self, source_len: usize) -> DerivationExpansionLimits {
+        DerivationExpansionLimits {
+            work: self.limits.work,
+            results: self.limits.results_per_cell,
+            depth: source_len
+                .saturating_add(self.grammar.productions().len())
+                .saturating_add(1),
+        }
     }
 }
 
@@ -369,19 +395,216 @@ impl<T: Clone + PartialOrd> RelationalParser for ChartCfgParser<'_, T> {
     }
 }
 
-type ChartKey = (usize, usize, usize);
-type Chart = HashMap<ChartKey, Vec<Derivation>>;
+/// Stable index of a node within one [`PackedParseForest`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ForestNodeId(usize);
 
-struct ChartEvaluator<'a, T> {
+impl ForestNodeId {
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// One shared nonterminal occurrence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackedNode {
+    pub nonterminal: NtId,
+    pub span: Span,
+    pub alternatives: Vec<PackedAlternative>,
+}
+
+/// One production/split choice at a packed node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackedAlternative {
+    pub production: usize,
+    pub segments: Vec<PackedSegment>,
+}
+
+/// A terminal extent or reference to another shared forest node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PackedSegment {
+    Terminal { span: Span },
+    NonTerminal(ForestNodeId),
+}
+
+/// A finite shared representation of all recognized derivations.
+///
+/// Nodes are interned by `(nonterminal, start, end)`. Their insertion order,
+/// and the order of alternatives within each node, are deterministic.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PackedParseForest {
+    nodes: Vec<PackedNode>,
+    lookup: HashMap<(usize, usize, usize), ForestNodeId>,
+}
+
+impl PackedParseForest {
+    pub fn nodes(&self) -> &[PackedNode] {
+        &self.nodes
+    }
+
+    pub fn node(&self, id: ForestNodeId) -> Option<&PackedNode> {
+        self.nodes.get(id.0)
+    }
+
+    /// Root nodes in ascending end-offset order.
+    pub fn root_ids(&self, nt: NtId, start: usize, end: Option<usize>) -> Vec<ForestNodeId> {
+        let mut roots = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                node.nonterminal == nt
+                    && node.span.start == start
+                    && end.is_none_or(|end| node.span.end == end)
+            })
+            .map(|(index, _)| ForestNodeId(index))
+            .collect::<Vec<_>>();
+        roots.sort_by_key(|id| {
+            let node = &self.nodes[id.0];
+            (node.span.end, id.0)
+        });
+        roots
+    }
+
+    /// Materialize derivation trees under explicit bounds.
+    ///
+    /// `truncated` is true when a work, result, or depth bound prevented full
+    /// enumeration. In particular, a productive nullable cycle necessarily
+    /// truncates: its finite forest denotes infinitely many finite trees.
+    pub fn expand(
+        &self,
+        root: ForestNodeId,
+        limits: DerivationExpansionLimits,
+    ) -> Option<DerivationExpansion> {
+        self.node(root)?;
+        let mut context = ExpansionContext {
+            forest: self,
+            limits,
+            work: 0,
+            truncated: false,
+        };
+        let derivations = context.node(root, limits.depth);
+        Some(DerivationExpansion {
+            derivations,
+            truncated: context.truncated,
+        })
+    }
+}
+
+/// Independent bounds for turning a packed forest back into trees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DerivationExpansionLimits {
+    pub work: usize,
+    pub results: usize,
+    pub depth: usize,
+}
+
+impl Default for DerivationExpansionLimits {
+    fn default() -> Self {
+        Self {
+            work: 100_000,
+            results: 10_000,
+            depth: 1_000,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DerivationExpansion {
+    pub derivations: Vec<Derivation>,
+    pub truncated: bool,
+}
+
+struct ExpansionContext<'a> {
+    forest: &'a PackedParseForest,
+    limits: DerivationExpansionLimits,
+    work: usize,
+    truncated: bool,
+}
+
+impl ExpansionContext<'_> {
+    fn tick(&mut self) -> bool {
+        if self.work >= self.limits.work {
+            self.truncated = true;
+            false
+        } else {
+            self.work += 1;
+            true
+        }
+    }
+
+    fn node(&mut self, id: ForestNodeId, depth: usize) -> Vec<Derivation> {
+        if depth == 0 || !self.tick() {
+            self.truncated = true;
+            return Vec::new();
+        }
+        let node = &self.forest.nodes[id.0];
+        let mut results = Vec::new();
+        for alternative in &node.alternatives {
+            for segments in self.segments(&alternative.segments, depth - 1) {
+                if results.len() >= self.limits.results {
+                    self.truncated = true;
+                    return results;
+                }
+                results.push(Derivation {
+                    nonterminal: node.nonterminal,
+                    production: alternative.production,
+                    span: node.span,
+                    segments,
+                });
+            }
+        }
+        results
+    }
+
+    fn segments(
+        &mut self,
+        segments: &[PackedSegment],
+        depth: usize,
+    ) -> Vec<Vec<SegmentDerivation>> {
+        let mut partial = vec![Vec::new()];
+        for segment in segments {
+            if !self.tick() {
+                return Vec::new();
+            }
+            let choices = match segment {
+                PackedSegment::Terminal { span } => {
+                    vec![SegmentDerivation::Terminal { span: *span }]
+                }
+                PackedSegment::NonTerminal(child) => self
+                    .node(*child, depth)
+                    .into_iter()
+                    .map(|tree| SegmentDerivation::NonTerminal(Box::new(tree)))
+                    .collect(),
+            };
+            let mut next = Vec::new();
+            for prefix in &partial {
+                for choice in &choices {
+                    if next.len() >= self.limits.results {
+                        self.truncated = true;
+                        return Vec::new();
+                    }
+                    let mut combined = prefix.clone();
+                    combined.push(choice.clone());
+                    next.push(combined);
+                }
+            }
+            partial = next;
+        }
+        partial
+    }
+}
+
+struct ForestBuilder<'a, T> {
     grammar: &'a Cfg<T>,
     source: &'a [T],
     limits: ChartParseLimits,
     work: usize,
     entries: usize,
-    chart: Chart,
+    forest: PackedParseForest,
 }
 
-impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
+impl<T: Clone + PartialOrd> ForestBuilder<'_, T> {
     fn tick(&mut self) -> Result<(), CfgParseError> {
         if self.work >= self.limits.work {
             return Err(CfgParseError::WorkLimit {
@@ -399,12 +622,14 @@ impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
                 for start in 0..=self.source.len() {
                     self.tick()?;
                     for (end, segments) in self.segments(&prod.segs, start)? {
-                        self.insert(Derivation {
-                            nonterminal: prod.lhs,
-                            production,
-                            span: Span::new(start, end).expect("ordered"),
-                            segments,
-                        })?;
+                        self.insert(
+                            prod.lhs,
+                            Span::new(start, end).expect("ordered"),
+                            PackedAlternative {
+                                production,
+                                segments,
+                            },
+                        )?;
                     }
                 }
             }
@@ -414,28 +639,46 @@ impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
         }
     }
 
-    fn insert(&mut self, derivation: Derivation) -> Result<(), CfgParseError> {
+    fn insert(
+        &mut self,
+        nonterminal: NtId,
+        span: Span,
+        alternative: PackedAlternative,
+    ) -> Result<(), CfgParseError> {
         self.tick()?;
-        let key = (
-            derivation.nonterminal.index(),
-            derivation.span.start,
-            derivation.span.end,
-        );
-        let cell = self.chart.entry(key).or_default();
-        if cell.contains(&derivation) {
+        let key = (nonterminal.index(), span.start, span.end);
+        let id = if let Some(id) = self.forest.lookup.get(&key) {
+            *id
+        } else {
+            self.reserve_entry()?;
+            let id = ForestNodeId(self.forest.nodes.len());
+            self.forest.nodes.push(PackedNode {
+                nonterminal,
+                span,
+                alternatives: Vec::new(),
+            });
+            self.forest.lookup.insert(key, id);
+            id
+        };
+        if self.forest.nodes[id.0].alternatives.contains(&alternative) {
             return Ok(());
         }
-        if cell.len() >= self.limits.results_per_cell {
+        if self.forest.nodes[id.0].alternatives.len() >= self.limits.results_per_cell {
             return Err(CfgParseError::ResultLimit {
                 limit: self.limits.results_per_cell,
             });
         }
+        self.reserve_entry()?;
+        self.forest.nodes[id.0].alternatives.push(alternative);
+        Ok(())
+    }
+
+    fn reserve_entry(&mut self) -> Result<(), CfgParseError> {
         if self.entries >= self.limits.chart_entries {
             return Err(CfgParseError::ChartLimit {
                 limit: self.limits.chart_entries,
             });
         }
-        cell.push(derivation);
         self.entries += 1;
         Ok(())
     }
@@ -444,7 +687,7 @@ impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
         &mut self,
         segments: &[Seg<T>],
         start: usize,
-    ) -> Result<Vec<(usize, Vec<SegmentDerivation>)>, CfgParseError> {
+    ) -> Result<Vec<(usize, Vec<PackedSegment>)>, CfgParseError> {
         let mut partial = vec![(start, Vec::new())];
         for segment in segments {
             let mut next = Vec::new();
@@ -456,7 +699,7 @@ impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
                             self.tick()?;
                             if regex_matches(regex, &self.source[middle..end]) {
                                 let mut all = witnesses.clone();
-                                all.push(SegmentDerivation::Terminal {
+                                all.push(PackedSegment::Terminal {
                                     span: Span::new(middle, end).expect("ordered"),
                                 });
                                 if next.len() >= self.limits.results_per_cell {
@@ -469,21 +712,20 @@ impl<T: Clone + PartialOrd> ChartEvaluator<'_, T> {
                         }
                     }
                     Seg::NonTerm(nt) => {
-                        let mut children = self
-                            .chart
+                        let children = self
+                            .forest
+                            .nodes
                             .iter()
-                            .filter_map(|((child_nt, child_start, _), values)| {
-                                (*child_nt == nt.index() && *child_start == middle)
-                                    .then_some(values.as_slice())
+                            .enumerate()
+                            .filter(|(_, node)| {
+                                node.nonterminal == *nt && node.span.start == middle
                             })
-                            .flatten()
-                            .cloned()
+                            .map(|(index, _)| ForestNodeId(index))
                             .collect::<Vec<_>>();
-                        sort_derivations(&mut children);
                         for child in children {
-                            let end = child.span.end;
+                            let end = self.forest.nodes[child.0].span.end;
                             let mut all = witnesses.clone();
-                            all.push(SegmentDerivation::NonTerminal(Box::new(child)));
+                            all.push(PackedSegment::NonTerminal(child));
                             if next.len() >= self.limits.results_per_cell {
                                 return Err(CfgParseError::ResultLimit {
                                     limit: self.limits.results_per_cell,
@@ -960,5 +1202,114 @@ mod tests {
             parser.parse_exact(b""),
             Err(CfgParseError::ChartLimit { limit: 1 })
         );
+    }
+
+    #[test]
+    fn nullable_cycle_is_finite_in_forest_and_bounded_when_expanded() {
+        // S → ε | S has infinitely many finite derivation trees, but one
+        // shared node with a self-referential packed alternative.
+        let mut grammar = Cfg::new();
+        let start = grammar.add_nt("S");
+        grammar.add_prod(start, vec![]);
+        grammar.add_prod(start, vec![Seg::nt(start)]);
+        let parser = ChartCfgParser::new(&grammar, start, ChartParseLimits::default());
+
+        let forest = parser.parse_forest(b"").unwrap();
+        let roots = forest.root_ids(start, 0, Some(0));
+        assert_eq!(forest.nodes().len(), 1);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(forest.node(roots[0]).unwrap().alternatives.len(), 2);
+        assert!(matches!(
+            forest.node(roots[0]).unwrap().alternatives[1].segments[0],
+            PackedSegment::NonTerminal(id) if id == roots[0]
+        ));
+
+        let first = forest
+            .expand(
+                roots[0],
+                DerivationExpansionLimits {
+                    work: 1_000,
+                    results: 100,
+                    depth: 4,
+                },
+            )
+            .unwrap();
+        let second = forest
+            .expand(
+                roots[0],
+                DerivationExpansionLimits {
+                    work: 1_000,
+                    results: 100,
+                    depth: 4,
+                },
+            )
+            .unwrap();
+        assert!(first.truncated);
+        assert_eq!(first, second);
+        assert_eq!(first.derivations.len(), 4);
+    }
+
+    #[test]
+    fn packed_forest_is_smaller_than_ambiguous_tree_family() {
+        // S → S S | a has Catalan-many trees. Seven input symbols have 132
+        // trees, while the forest has one node per recognized span and one
+        // packed alternative per split.
+        let mut grammar = Cfg::new();
+        let start = grammar.add_nt("S");
+        grammar.add_prod(start, vec![Seg::nt(start), Seg::nt(start)]);
+        grammar.add_prod(start, vec![Seg::term(literal(b'a'))]);
+        let parser = ChartCfgParser::new(&grammar, start, ChartParseLimits::default());
+
+        let forest = parser.parse_forest(b"aaaaaaa").unwrap();
+        let root = forest.root_ids(start, 0, Some(7))[0];
+        let packed_alternatives = forest
+            .nodes()
+            .iter()
+            .map(|node| node.alternatives.len())
+            .sum::<usize>();
+        let expanded = forest
+            .expand(
+                root,
+                DerivationExpansionLimits {
+                    work: 100_000,
+                    results: 1_000,
+                    depth: 16,
+                },
+            )
+            .unwrap();
+
+        assert!(!expanded.truncated);
+        assert_eq!(expanded.derivations.len(), 132);
+        assert!(forest.nodes().len() <= 28);
+        assert!(packed_alternatives < expanded.derivations.len());
+    }
+
+    #[test]
+    fn expansion_work_bound_never_returns_partial_trees() {
+        let mut grammar = Cfg::new();
+        let start = grammar.add_nt("S");
+        grammar.add_prod(
+            start,
+            vec![
+                Seg::term(literal(b'a')),
+                Seg::term(literal(b'b')),
+                Seg::term(literal(b'c')),
+            ],
+        );
+        let parser = ChartCfgParser::new(&grammar, start, ChartParseLimits::default());
+        let forest = parser.parse_forest(b"abc").unwrap();
+        let root = forest.root_ids(start, 0, Some(3))[0];
+        let expanded = forest
+            .expand(
+                root,
+                DerivationExpansionLimits {
+                    work: 2,
+                    results: 100,
+                    depth: 10,
+                },
+            )
+            .unwrap();
+        assert!(expanded.truncated);
+        assert!(expanded.derivations.is_empty());
     }
 }

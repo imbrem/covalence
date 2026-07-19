@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bits;
 pub mod bytes;
 pub mod bytes_nat;
 pub mod nat;
@@ -21,6 +22,11 @@ pub mod relation;
 
 use core::fmt::Debug;
 
+pub use bits::{
+    BitSyntax, BitsBytesPacking, BitsBytesPackingLaws, BitsConcatLaws, BitsConstruction,
+    BitsNormalization, BitsObservation, BitsSyntax, BytePacking, FixedWidthBits,
+    FixedWidthBitsLaws, IntraByteOrder, PartialByte,
+};
 pub use bytes_nat::{
     CanonicalNatBytes, FixedWidthError, NatBackedBytes, NatByteList, NatByteListError, Radix256Nat,
 };

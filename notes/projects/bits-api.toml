@@ -1,0 +1,8 @@
+id = "bits-api"
+title = "Bits API and List Bool realization"
+status = "active"
+parent = "computation-foundations"
+depends_on = []
+todos = []
+notes = ["notes/vibes/logics/computation-theory.md"]
+files = ["crates/kernel/hol/logic", "crates/kernel/hol/init/src/init/inductive"]

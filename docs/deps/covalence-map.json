@@ -556,7 +556,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 32541,
+      "words": 32879,
       "updated": 0
     },
     {
@@ -6725,6 +6725,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/computation",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/computation",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
       "kind": "file",
       "title": "automata.rs",
@@ -6884,6 +6893,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/float_parse.rs",
       "words": 1552,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/inductive",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/inductive",
+      "words": 0,
       "updated": 0
     },
     {
@@ -8953,6 +8971,15 @@
       "title": "crates/lang/acl2",
       "status": "missing",
       "path": "crates/lang/acl2",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation",
+      "kind": "file",
+      "title": "crates/lang/computation",
+      "status": null,
+      "path": "crates/lang/computation",
       "words": 0,
       "updated": 0
     },
@@ -14209,7 +14236,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 32541,
+      "words": 32879,
       "updated": 0
     },
     {
@@ -17723,11 +17750,56 @@
       "updated": 0
     },
     {
+      "id": "task:automata-hol",
+      "kind": "task",
+      "title": "Automata theory in HOL",
+      "status": "active",
+      "path": "notes/projects/automata-hol.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:bits-api",
+      "kind": "task",
+      "title": "Bits API and List Bool realization",
+      "status": "active",
+      "path": "notes/projects/bits-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:blc-hol",
+      "kind": "task",
+      "title": "Binary lambda calculus in HOL",
+      "status": "planned",
+      "path": "notes/projects/blc-hol.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "task:coinductive-conformance",
       "kind": "task",
       "title": "First coinductive backend and conformance suite",
       "status": "planned",
       "path": "notes/projects/coinductive-conformance.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:computability-api",
+      "kind": "task",
+      "title": "Computability, recognizability, and reductions API",
+      "status": "active",
+      "path": "notes/projects/computability-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:computation-foundations",
+      "kind": "task",
+      "title": "Computation, encodings, and computability foundations",
+      "status": "active",
+      "path": "notes/projects/computation-foundations.toml",
       "words": 0,
       "updated": 0
     },
@@ -29512,6 +29584,138 @@
       "detail": null
     },
     {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-accepts-iff-run",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-native-definitions",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-partial-compilers",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.pda-acceptance-replay",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/finite.rs",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/pushdown.rs",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "contains",
+      "target": "todo:computation.lambda-ski-preservation",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "contains",
+      "target": "todo:computation.native-definitions",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/blc.rs",
+      "detail": null
+    },
+    {
       "source": "task:coinductive-conformance",
       "predicate": "contains",
       "target": "todo:inductive.coinductive-conformance",
@@ -29539,6 +29743,48 @@
       "source": "task:coinductive-conformance",
       "predicate": "touches",
       "target": "file:crates/lang/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation",
       "detail": null
     },
     {

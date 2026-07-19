@@ -1,0 +1,8 @@
+id = "computability-api"
+title = "Computability, recognizability, and reductions API"
+status = "active"
+parent = "computation-foundations"
+depends_on = []
+todos = []
+notes = ["notes/vibes/logics/computation-theory.md"]
+files = ["crates/lang/computation"]

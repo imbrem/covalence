@@ -13,8 +13,10 @@ use core::convert::Infallible;
 
 use covalence_logic_api::{MalformedUtf8, RawByte, UnicodeScalar};
 use covalence_parsing_api::{
-    InterpretationPer, ParseAttempt, PartialExactParser, PartialParser, PartialPrefixParser,
-    PrefixInterpretation, SameInterpretation, Span, TextEncodingBoundary, Utf8,
+    EncodedTextError, InterpretationPer, ParseAttempt, PartialExactParser, PartialParser,
+    PartialPrefixParser, PrefixAdapterError, PrefixInterpretation, SameInterpretation, Span,
+    TextEncodingBoundary, Utf8, exact_from_prefix, parse_encoded_text_prefix,
+    same_interpretation_by,
 };
 use covalence_sexp::{Atom, ParseError, SExp};
 use covalence_sexpr_api::FreeSExpr;
@@ -40,6 +42,11 @@ pub struct SExprDiagnostic {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SExprEncodingError {
     MalformedUtf8(MalformedUtf8),
+    InvalidScalarExtent {
+        consumed: Span,
+        remainder: usize,
+        scalar_len: usize,
+    },
 }
 
 /// A byte-oriented prefix result with both byte and scalar provenance.
@@ -60,22 +67,34 @@ impl SExprParser {
         &self,
         source: &[RawByte],
     ) -> Result<ParseAttempt<Utf8PrefixInterpretation, SExprDiagnostic>, SExprEncodingError> {
-        let decoded = Utf8
-            .decode_text(source)
-            .map_err(SExprEncodingError::MalformedUtf8)?;
-        let parsed = self
-            .parse_prefix(&decoded.scalars, 0)
-            .expect("scalar parsing is infallible");
+        let (_, parsed) =
+            parse_encoded_text_prefix(&Utf8, self, source, 0).map_err(|error| match error {
+                EncodedTextError::Decode(error) => SExprEncodingError::MalformedUtf8(error),
+                EncodedTextError::Parse(error) => match error {},
+                EncodedTextError::InvalidScalarExtent {
+                    consumed,
+                    remainder,
+                    scalar_len,
+                } => SExprEncodingError::InvalidScalarExtent {
+                    consumed,
+                    remainder,
+                    scalar_len,
+                },
+            })?;
         Ok(match parsed {
             ParseAttempt::NoMatch(diagnostic) => ParseAttempt::NoMatch(diagnostic),
-            ParseAttempt::Match(interpretation) => {
-                let byte_span = decoded
-                    .byte_span(interpretation.consumed)
-                    .expect("parser span lies inside decoded source");
+            ParseAttempt::Match(encoded) => {
+                let scalar_span = encoded.witness.scalar_span;
                 ParseAttempt::Match(Utf8PrefixInterpretation {
-                    byte_remainder: byte_span.end,
-                    byte_span,
-                    interpretation,
+                    byte_span: encoded.consumed,
+                    byte_remainder: encoded.remainder,
+                    interpretation: PrefixInterpretation::new(
+                        encoded.value,
+                        encoded.witness,
+                        scalar_span,
+                        scalar_span.end,
+                    )
+                    .expect("witness span and scalar remainder agree"),
                 })
             }
         })
@@ -148,21 +167,16 @@ impl PartialExactParser for SExprParser {
         &self,
         source: &[UnicodeScalar],
     ) -> Result<ParseAttempt<(ParsedSExpr, SExprParseWitness), SExprDiagnostic>, Infallible> {
-        let text = scalars_to_string(source);
-        Ok(match covalence_sexp::parse(&text) {
-            Ok(mut values) if values.len() == 1 => {
-                let span = Span::new(0, source.len()).unwrap();
-                ParseAttempt::Match((
-                    lower(values.remove(0)),
-                    SExprParseWitness { scalar_span: span },
-                ))
+        match exact_from_prefix(self, source, source.len(), |trailing| SExprDiagnostic {
+            span: trailing,
+            message: "trailing input after S-expression".into(),
+        }) {
+            Ok(attempt) => Ok(attempt),
+            Err(PrefixAdapterError::Parse(error)) => match error {},
+            Err(PrefixAdapterError::InvalidExtent { .. }) => {
+                unreachable!("S-expression prefix parser constructs validated extents")
             }
-            Ok(values) => ParseAttempt::NoMatch(SExprDiagnostic {
-                span: Span::new(0, source.len()).unwrap(),
-                message: format!("expected exactly one S-expression, found {}", values.len()),
-            }),
-            Err(error) => ParseAttempt::NoMatch(diagnostic(&text, 0, error)),
-        })
+        }
     }
 }
 
@@ -191,18 +205,9 @@ impl InterpretationPer for SExprParser {
         left: &[UnicodeScalar],
         right: &[UnicodeScalar],
     ) -> Result<Option<SameInterpretation<ParsedSExpr, SExprParseWitness, ()>>, Infallible> {
-        let Some((left_value, left_witness)) = self.parse(left)? else {
-            return Ok(None);
-        };
-        let Some((right_value, right_witness)) = self.parse(right)? else {
-            return Ok(None);
-        };
-        Ok((left_value == right_value).then_some(SameInterpretation {
-            value: left_value,
-            left: left_witness,
-            right: right_witness,
-            equivalence: (),
-        }))
+        same_interpretation_by(self, left, right, |left_value, right_value| {
+            (left_value == right_value).then_some(())
+        })
     }
 }
 
@@ -261,10 +266,13 @@ mod tests {
 
     #[test]
     fn exact_rejects_a_valid_prefix_with_trailing_value() {
-        assert!(matches!(
+        assert_eq!(
             SExprParser.parse_exact(&scalars("(a) (b)")).unwrap(),
-            ParseAttempt::NoMatch(_)
-        ));
+            ParseAttempt::NoMatch(SExprDiagnostic {
+                span: Span::new(3, 7).unwrap(),
+                message: "trailing input after S-expression".into(),
+            })
+        );
         assert!(matches!(
             SExprParser.parse_exact(&scalars("(a (b c))")).unwrap(),
             ParseAttempt::Match(_)

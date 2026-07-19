@@ -25,6 +25,7 @@ pub mod admission;
 pub mod effect;
 pub mod host;
 pub mod relation;
+pub mod runtime;
 pub mod stack;
 pub mod syntax;
 
@@ -41,13 +42,15 @@ pub use effect::{
 };
 pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
-    HostConfiguration, HostControl, HostEnvironment, HostFrame, HostValue,
+    HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame, HostValue,
+    HostValues,
 };
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
+pub use runtime::{LispEnvironment, LispValue, RuntimeBinding, RuntimeValueView};
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
 };

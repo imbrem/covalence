@@ -4,11 +4,13 @@
 //! trace discovery, differential testing, and as an executable specification
 //! for proof-producing backends.
 
+use core::convert::Infallible;
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
+use crate::runtime::{LispEnvironment, LispValue, RuntimeBinding, RuntimeValueView};
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
 /// The direct inductive S-expression representation
@@ -215,6 +217,101 @@ impl<S, A: Clone, P> HostValue<S, A, P> {
             Self::Cons(head, tail) => Some(Datum::cons(head.as_datum()?, tail.as_datum()?)),
             Self::Closure(_) | Self::Primitive(_) | Self::ApplyListProcedure => None,
         }
+    }
+}
+
+/// Runtime-value capability backed by the direct Rust [`HostValue`] domain.
+#[derive(Clone, Copy, Debug)]
+pub struct HostValues<S, A, P>(PhantomData<(S, A, P)>);
+
+impl<S, A, P> Default for HostValues<S, A, P> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone, A: Clone, P: Clone> LispValue for HostValues<S, A, P> {
+    type Atom = A;
+    type Primitive = P;
+    type Value = HostValue<S, A, P>;
+    type Error = Infallible;
+
+    fn atom(&self, atom: A) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::Atom(atom))
+    }
+
+    fn nil(&self) -> Self::Value {
+        HostValue::Nil
+    }
+
+    fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::cons(head, tail))
+    }
+
+    fn primitive(&self, primitive: P) -> Result<Self::Value, Self::Error> {
+        Ok(HostValue::Primitive(primitive))
+    }
+
+    fn apply_list_procedure(&self) -> Self::Value {
+        HostValue::ApplyListProcedure
+    }
+
+    fn view(
+        &self,
+        value: &Self::Value,
+    ) -> Result<RuntimeValueView<A, P, Self::Value>, Self::Error> {
+        Ok(match value {
+            HostValue::Atom(atom) => RuntimeValueView::Atom(atom.clone()),
+            HostValue::Nil => RuntimeValueView::Nil,
+            HostValue::Cons(head, tail) => RuntimeValueView::Cons {
+                head: (**head).clone(),
+                tail: (**tail).clone(),
+            },
+            HostValue::Closure(_) => RuntimeValueView::Closure,
+            HostValue::Primitive(primitive) => RuntimeValueView::Primitive(primitive.clone()),
+            HostValue::ApplyListProcedure => RuntimeValueView::ApplyListProcedure,
+        })
+    }
+}
+
+/// Persistent-environment capability backed by [`HostEnvironment`].
+#[derive(Clone, Copy, Debug)]
+pub struct HostEnvironments<S, V>(PhantomData<(S, V)>);
+
+impl<S, V> Default for HostEnvironments<S, V> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone + PartialEq, V: Clone> LispEnvironment for HostEnvironments<S, V> {
+    type Symbol = S;
+    type Value = V;
+    type Environment = HostEnvironment<S, V>;
+    type Error = Infallible;
+
+    fn empty(&self) -> Self::Environment {
+        HostEnvironment::default()
+    }
+
+    fn lookup(
+        &self,
+        environment: &Self::Environment,
+        symbol: &S,
+    ) -> Result<Option<V>, Self::Error> {
+        Ok(environment.lookup(symbol))
+    }
+
+    fn extend(
+        &self,
+        environment: &Self::Environment,
+        bindings: Vec<RuntimeBinding<S, V>>,
+    ) -> Result<Self::Environment, Self::Error> {
+        Ok(environment.extend(
+            bindings
+                .into_iter()
+                .map(|binding| (binding.symbol, binding.value)),
+        ))
     }
 }
 

@@ -12,7 +12,8 @@ use std::str::FromStr;
 
 use covalence_kernel_lisp::{
     CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, ExecutionError,
-    HostConfiguration, HostEnvironment, HostValue, execute,
+    HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues, LispEnvironment,
+    LispValue, RuntimeBinding, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -609,7 +610,10 @@ impl CorePrimitive for StandardPrimitives {
         match primitive {
             Primitive::Cons => {
                 let [head, tail] = self.values::<2>(arguments)?;
-                Ok(HostValue::cons(head, tail))
+                Ok(self
+                    .runtime()
+                    .cons(head, tail)
+                    .expect("the direct host value backend is infallible"))
             }
             Primitive::Car => {
                 let [value] = self.values::<1>(arguments)?;
@@ -689,10 +693,16 @@ impl StandardPrimitives {
 
     fn truth(&self, value: bool) -> FrontendValue {
         if value {
-            HostValue::Atom(CoreAtom::symbol("t"))
+            self.runtime()
+                .atom(CoreAtom::symbol("t"))
+                .expect("the direct host value backend is infallible")
         } else {
-            HostValue::Nil
+            self.runtime().nil()
         }
+    }
+
+    fn runtime(&self) -> HostValues<String, CoreAtom, Primitive> {
+        HostValues::default()
     }
 
     fn values<const N: usize>(
@@ -766,16 +776,26 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
 /// bindings as language policy, making primitives ordinary shadowable values
 /// rather than syntax.
 pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
-    let environment = HostEnvironment::default();
+    let environments = HostEnvironments::<String, FrontendValue>::default();
+    let environment = environments.empty();
     if dialect != SurfaceDialect::Scheme {
         return environment;
     }
-    environment.extend(
-        SCHEME_PRIMITIVES
-            .iter()
-            .map(|(name, primitive)| ((*name).to_owned(), HostValue::Primitive(*primitive)))
-            .chain([("apply".to_owned(), HostValue::ApplyListProcedure)]),
-    )
+    environments
+        .extend(
+            &environment,
+            SCHEME_PRIMITIVES
+                .iter()
+                .map(|(name, primitive)| {
+                    RuntimeBinding::new((*name).to_owned(), HostValue::Primitive(*primitive))
+                })
+                .chain([RuntimeBinding::new(
+                    "apply".to_owned(),
+                    HostValue::ApplyListProcedure,
+                )])
+                .collect(),
+        )
+        .expect("the direct host environment is infallible")
 }
 
 /// Stateful proof-free frontend execution.

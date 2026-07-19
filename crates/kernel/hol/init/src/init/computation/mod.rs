@@ -5,6 +5,7 @@
 //! the already kernel-checked theorems through `covalence-computation`.
 
 pub mod automata;
+pub mod automata_hol_api;
 pub mod minsky;
 pub mod turing;
 

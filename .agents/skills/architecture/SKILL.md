@@ -38,6 +38,10 @@ disable-model-invocation: true
     neither advertises decision or normalization capabilities.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
+  - `automata_api` (A0011) separates relational finite-automata syntax,
+    universal closure/acceptance law bundles, untrusted search witnesses, and
+    replay. Its core covers DFA/NFA uniformly; determinism and epsilon closure
+    are optional capabilities.
   - Native HOL realizations and replay seams live in
     `crates/kernel/hol/init/src/init/computation/`.
   - Search witnesses are plain data and non-authoritative. Replay must

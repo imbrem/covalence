@@ -21,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod automata_api;
 pub mod automata_theory;
 pub mod blc;
 pub mod compiler;

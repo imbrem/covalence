@@ -84,8 +84,10 @@ pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
 pub use family::{DatatypeFamilyError, DatatypeFamilyExpr};
 pub use family_action::{
-    DatatypeFamilyBackend, FamilyFixpointKind, SymbolicFamilyArrow, SymbolicFamilyBackend,
-    SymbolicFamilyObject, ValidatedDatatypeFamily, interpret_family, map_family, symbolic_arrow,
+    DatatypeFamilyBackend, DatatypeFamilyLaws, FamilyFixpointKind, SymbolicFamilyArrow,
+    SymbolicFamilyBackend, SymbolicFamilyEvidence, SymbolicFamilyObject, ValidatedDatatypeFamily,
+    family_map_composition, family_map_congruence, family_map_identity, interpret_family,
+    map_family, symbolic_arrow,
 };
 pub use fixpoint::{
     CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointNoConfusionFacts,

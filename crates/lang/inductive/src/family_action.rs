@@ -379,7 +379,490 @@ fn map_at<P, B: DatatypeFamilyBackend<P>>(
     }
 }
 
-// TODO(cov:inductive.family-proof-laws, major): Add a proof-bearing companion which derives identity/composition evidence structurally and requires μ/ν law evidence only at the fixpoint capability boundary.
+/// Evidence-producing companion to [`DatatypeFamilyBackend`].
+///
+/// The `combine_*` methods are the categorical laws for finite sums and
+/// products. The generic traversal supplies their recursively derived premises.
+/// Consequently, a backend needs datatype-specific law machinery only for the
+/// two fixpoint methods.
+pub trait DatatypeFamilyLaws<P>: DatatypeFamilyBackend<P> {
+    /// Backend-native equality evidence, such as a kernel theorem handle.
+    type Evidence: Clone;
+
+    /// Evidence that mapping the identity arrow at a non-fixpoint leaf is the
+    /// identity on that leaf.
+    fn leaf_identity(
+        &self,
+        object: &Self::Object,
+        mapped: &Self::Arrow,
+    ) -> Result<Self::Evidence, Self::Error>;
+    /// Compose identity evidence for a sum.
+    fn sum_identity(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error>;
+    /// Compose identity evidence for a product.
+    fn product_identity(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error>;
+    /// Identity law for a nested fixpoint map.
+    fn fixpoint_identity(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        family: &Self::Object,
+        outer_bounds: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error>;
+
+    /// Evidence for preservation of composition at a leaf.
+    fn leaf_composition(
+        &self,
+        source: &Self::Object,
+        middle: &Self::Object,
+        target: &Self::Object,
+        first: &Self::Arrow,
+        second: &Self::Arrow,
+    ) -> Result<Self::Evidence, Self::Error>;
+    /// Compose composition evidence for a sum.
+    fn sum_composition(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error>;
+    /// Compose composition evidence for a product.
+    fn product_composition(
+        &self,
+        evidence: &[Self::Evidence],
+    ) -> Result<Self::Evidence, Self::Error>;
+    /// Composition law for a nested fixpoint map.
+    #[allow(clippy::too_many_arguments)]
+    fn fixpoint_composition(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        source: &Self::Object,
+        middle: &Self::Object,
+        target: &Self::Object,
+        first: &Self::Arrow,
+        second: &Self::Arrow,
+        source_bounds: &[Self::Object],
+        middle_bounds: &[Self::Object],
+        target_bounds: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error>;
+
+    /// Transport equality of arrows through a leaf map.
+    fn leaf_congruence(
+        &self,
+        source: &Self::Object,
+        target: &Self::Object,
+        left: &Self::Arrow,
+        right: &Self::Arrow,
+        equal: &Self::Evidence,
+    ) -> Result<Self::Evidence, Self::Error>;
+    /// Compose congruence evidence for a sum.
+    fn sum_congruence(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error>;
+    /// Compose congruence evidence for a product.
+    fn product_congruence(
+        &self,
+        evidence: &[Self::Evidence],
+    ) -> Result<Self::Evidence, Self::Error>;
+    /// Congruence law for a nested fixpoint map.
+    #[allow(clippy::too_many_arguments)]
+    fn fixpoint_congruence(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        source: &Self::Object,
+        target: &Self::Object,
+        left: &Self::Arrow,
+        right: &Self::Arrow,
+        equal: &Self::Evidence,
+        source_bounds: &[Self::Object],
+        target_bounds: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error>;
+}
+
+/// Derive evidence for `F(id) = id`.
+pub fn family_map_identity<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    family: &ValidatedDatatypeFamily<P>,
+    object: &B::Object,
+) -> Result<B::Evidence, B::Error> {
+    identity_at(backend, family.expression(), object, &[])
+}
+
+fn identity_at<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    expression: &DatatypeFamilyExpr<P>,
+    variable: &B::Object,
+    bounds: &[B::Object],
+) -> Result<B::Evidence, B::Error> {
+    match expression {
+        DatatypeFamilyExpr::Sum(terms) | DatatypeFamilyExpr::Product(terms) => {
+            let evidence = terms
+                .iter()
+                .map(|term| identity_at(backend, term, variable, bounds))
+                .collect::<Result<Vec<_>, _>>()?;
+            if matches!(expression, DatatypeFamilyExpr::Sum(_)) {
+                backend.sum_identity(&evidence)
+            } else {
+                backend.product_identity(&evidence)
+            }
+        }
+        DatatypeFamilyExpr::Least(body) => {
+            backend.fixpoint_identity(FamilyFixpointKind::Least, body, variable, bounds)
+        }
+        DatatypeFamilyExpr::Greatest(body) => {
+            backend.fixpoint_identity(FamilyFixpointKind::Greatest, body, variable, bounds)
+        }
+        leaf => {
+            let object = interpret_at(backend, leaf, variable, bounds)?;
+            let mapped = map_at(
+                backend,
+                leaf,
+                variable,
+                variable,
+                &backend.identity(variable)?,
+                bounds,
+                bounds,
+            )?;
+            backend.leaf_identity(&object, &mapped)
+        }
+    }
+}
+
+/// Derive evidence for `F(g ∘ f) = F(g) ∘ F(f)`.
+#[allow(clippy::too_many_arguments)]
+pub fn family_map_composition<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    family: &ValidatedDatatypeFamily<P>,
+    source: &B::Object,
+    middle: &B::Object,
+    target: &B::Object,
+    first: &B::Arrow,
+    second: &B::Arrow,
+) -> Result<B::Evidence, B::Error> {
+    composition_at(
+        backend,
+        family.expression(),
+        source,
+        middle,
+        target,
+        first,
+        second,
+        &[],
+        &[],
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn composition_at<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    expression: &DatatypeFamilyExpr<P>,
+    source: &B::Object,
+    middle: &B::Object,
+    target: &B::Object,
+    first: &B::Arrow,
+    second: &B::Arrow,
+    source_bounds: &[B::Object],
+    middle_bounds: &[B::Object],
+    target_bounds: &[B::Object],
+) -> Result<B::Evidence, B::Error> {
+    match expression {
+        DatatypeFamilyExpr::Sum(terms) | DatatypeFamilyExpr::Product(terms) => {
+            let evidence = terms
+                .iter()
+                .map(|term| {
+                    composition_at(
+                        backend,
+                        term,
+                        source,
+                        middle,
+                        target,
+                        first,
+                        second,
+                        source_bounds,
+                        middle_bounds,
+                        target_bounds,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if matches!(expression, DatatypeFamilyExpr::Sum(_)) {
+                backend.sum_composition(&evidence)
+            } else {
+                backend.product_composition(&evidence)
+            }
+        }
+        DatatypeFamilyExpr::Least(body) | DatatypeFamilyExpr::Greatest(body) => backend
+            .fixpoint_composition(
+                if matches!(expression, DatatypeFamilyExpr::Least(_)) {
+                    FamilyFixpointKind::Least
+                } else {
+                    FamilyFixpointKind::Greatest
+                },
+                body,
+                source,
+                middle,
+                target,
+                first,
+                second,
+                source_bounds,
+                middle_bounds,
+                target_bounds,
+            ),
+        leaf => {
+            let source_object = interpret_at(backend, leaf, source, source_bounds)?;
+            let middle_object = interpret_at(backend, leaf, middle, middle_bounds)?;
+            let target_object = interpret_at(backend, leaf, target, target_bounds)?;
+            let mapped_first = map_at(
+                backend,
+                leaf,
+                source,
+                middle,
+                first,
+                source_bounds,
+                middle_bounds,
+            )?;
+            let mapped_second = map_at(
+                backend,
+                leaf,
+                middle,
+                target,
+                second,
+                middle_bounds,
+                target_bounds,
+            )?;
+            backend.leaf_composition(
+                &source_object,
+                &middle_object,
+                &target_object,
+                &mapped_first,
+                &mapped_second,
+            )
+        }
+    }
+}
+
+/// Derive congruence evidence from evidence that two input arrows are equal.
+#[allow(clippy::too_many_arguments)]
+pub fn family_map_congruence<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    family: &ValidatedDatatypeFamily<P>,
+    source: &B::Object,
+    target: &B::Object,
+    left: &B::Arrow,
+    right: &B::Arrow,
+    equal: &B::Evidence,
+) -> Result<B::Evidence, B::Error> {
+    congruence_at(
+        backend,
+        family.expression(),
+        source,
+        target,
+        left,
+        right,
+        equal,
+        &[],
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn congruence_at<P, B: DatatypeFamilyLaws<P>>(
+    backend: &B,
+    expression: &DatatypeFamilyExpr<P>,
+    source: &B::Object,
+    target: &B::Object,
+    left: &B::Arrow,
+    right: &B::Arrow,
+    equal: &B::Evidence,
+    source_bounds: &[B::Object],
+    target_bounds: &[B::Object],
+) -> Result<B::Evidence, B::Error> {
+    match expression {
+        DatatypeFamilyExpr::Sum(terms) | DatatypeFamilyExpr::Product(terms) => {
+            let evidence = terms
+                .iter()
+                .map(|term| {
+                    congruence_at(
+                        backend,
+                        term,
+                        source,
+                        target,
+                        left,
+                        right,
+                        equal,
+                        source_bounds,
+                        target_bounds,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if matches!(expression, DatatypeFamilyExpr::Sum(_)) {
+                backend.sum_congruence(&evidence)
+            } else {
+                backend.product_congruence(&evidence)
+            }
+        }
+        DatatypeFamilyExpr::Least(body) | DatatypeFamilyExpr::Greatest(body) => backend
+            .fixpoint_congruence(
+                if matches!(expression, DatatypeFamilyExpr::Least(_)) {
+                    FamilyFixpointKind::Least
+                } else {
+                    FamilyFixpointKind::Greatest
+                },
+                body,
+                source,
+                target,
+                left,
+                right,
+                equal,
+                source_bounds,
+                target_bounds,
+            ),
+        leaf => {
+            let source_object = interpret_at(backend, leaf, source, source_bounds)?;
+            let target_object = interpret_at(backend, leaf, target, target_bounds)?;
+            let mapped_left = map_at(
+                backend,
+                leaf,
+                source,
+                target,
+                left,
+                source_bounds,
+                target_bounds,
+            )?;
+            let mapped_right = map_at(
+                backend,
+                leaf,
+                source,
+                target,
+                right,
+                source_bounds,
+                target_bounds,
+            )?;
+            backend.leaf_congruence(
+                &source_object,
+                &target_object,
+                &mapped_left,
+                &mapped_right,
+                equal,
+            )
+        }
+    }
+}
+
+/// Proof-free evidence tree used by [`SymbolicFamilyBackend`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SymbolicFamilyEvidence<P> {
+    Leaf(&'static str),
+    Sum(Vec<Self>),
+    Product(Vec<Self>),
+    Fixpoint {
+        kind: FamilyFixpointKind,
+        body: DatatypeFamilyExpr<P>,
+        law: &'static str,
+    },
+}
+
+impl<P: Clone> DatatypeFamilyLaws<P> for SymbolicFamilyBackend {
+    type Evidence = SymbolicFamilyEvidence<P>;
+
+    fn leaf_identity(
+        &self,
+        _: &Self::Object,
+        _: &Self::Arrow,
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Leaf("identity"))
+    }
+    fn sum_identity(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Sum(evidence.to_vec()))
+    }
+    fn product_identity(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Product(evidence.to_vec()))
+    }
+    fn fixpoint_identity(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        _: &Self::Object,
+        _: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Fixpoint {
+            kind,
+            body: body.clone(),
+            law: "identity",
+        })
+    }
+    fn leaf_composition(
+        &self,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Arrow,
+        _: &Self::Arrow,
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Leaf("composition"))
+    }
+    fn sum_composition(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Sum(evidence.to_vec()))
+    }
+    fn product_composition(
+        &self,
+        evidence: &[Self::Evidence],
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Product(evidence.to_vec()))
+    }
+    fn fixpoint_composition(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Arrow,
+        _: &Self::Arrow,
+        _: &[Self::Object],
+        _: &[Self::Object],
+        _: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Fixpoint {
+            kind,
+            body: body.clone(),
+            law: "composition",
+        })
+    }
+    fn leaf_congruence(
+        &self,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Arrow,
+        _: &Self::Arrow,
+        _: &Self::Evidence,
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Leaf("congruence"))
+    }
+    fn sum_congruence(&self, evidence: &[Self::Evidence]) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Sum(evidence.to_vec()))
+    }
+    fn product_congruence(
+        &self,
+        evidence: &[Self::Evidence],
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Product(evidence.to_vec()))
+    }
+    fn fixpoint_congruence(
+        &self,
+        kind: FamilyFixpointKind,
+        body: &DatatypeFamilyExpr<P>,
+        _: &Self::Object,
+        _: &Self::Object,
+        _: &Self::Arrow,
+        _: &Self::Arrow,
+        _: &Self::Evidence,
+        _: &[Self::Object],
+        _: &[Self::Object],
+    ) -> Result<Self::Evidence, Self::Error> {
+        Ok(SymbolicFamilyEvidence::Fixpoint {
+            kind,
+            body: body.clone(),
+            law: "congruence",
+        })
+    }
+}
+
+// TODO(cov:inductive.family-native-hol-laws, major): Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.
 
 #[cfg(test)]
 mod tests {
@@ -488,5 +971,80 @@ mod tests {
             map_family(&Symbolic, &family, &"X".into(), &"Y".into(), &"f".into()).unwrap(),
             "sum-map(id[P[label]],μmap(f))"
         );
+    }
+
+    #[test]
+    fn symbolic_law_evidence_preserves_nested_fixpoint_boundaries() {
+        let family = ValidatedDatatypeFamily::try_from(DatatypeFamilyExpr::Sum(vec![
+            DatatypeFamilyExpr::One,
+            DatatypeFamilyExpr::least(DatatypeFamilyExpr::Sum(vec![
+                DatatypeFamilyExpr::One,
+                DatatypeFamilyExpr::Product(vec![
+                    DatatypeFamilyExpr::<&str>::FamilyVar,
+                    DatatypeFamilyExpr::Bound(0),
+                ]),
+            ])),
+        ]))
+        .unwrap();
+        let source = SymbolicFamilyObject::Parameter("source");
+        let middle = SymbolicFamilyObject::Parameter("middle");
+        let target = SymbolicFamilyObject::Parameter("target");
+        let first = symbolic_arrow(source.clone(), middle.clone(), "f");
+        let second = symbolic_arrow(middle.clone(), target.clone(), "g");
+
+        let SymbolicFamilyEvidence::Sum(identity) =
+            family_map_identity(&SymbolicFamilyBackend, &family, &source).unwrap()
+        else {
+            panic!("sum evidence");
+        };
+        assert!(matches!(
+            identity[1],
+            SymbolicFamilyEvidence::Fixpoint {
+                kind: FamilyFixpointKind::Least,
+                law: "identity",
+                ..
+            }
+        ));
+
+        let SymbolicFamilyEvidence::Sum(composition) = family_map_composition(
+            &SymbolicFamilyBackend,
+            &family,
+            &source,
+            &middle,
+            &target,
+            &first,
+            &second,
+        )
+        .unwrap() else {
+            panic!("sum evidence");
+        };
+        assert!(matches!(
+            composition[1],
+            SymbolicFamilyEvidence::Fixpoint {
+                law: "composition",
+                ..
+            }
+        ));
+
+        let input_equality = SymbolicFamilyEvidence::Leaf("f=f");
+        let SymbolicFamilyEvidence::Sum(congruence) = family_map_congruence(
+            &SymbolicFamilyBackend,
+            &family,
+            &source,
+            &middle,
+            &first,
+            &first,
+            &input_equality,
+        )
+        .unwrap() else {
+            panic!("sum evidence");
+        };
+        assert!(matches!(
+            congruence[1],
+            SymbolicFamilyEvidence::Fixpoint {
+                law: "congruence",
+                ..
+            }
+        ));
     }
 }

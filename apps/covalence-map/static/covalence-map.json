@@ -160,7 +160,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 185,
+      "words": 192,
       "updated": 0
     },
     {
@@ -412,7 +412,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7361,
+      "words": 7370,
       "updated": 0
     },
     {
@@ -610,7 +610,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33783,
+      "words": 33801,
       "updated": 0
     },
     {
@@ -10532,6 +10532,24 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/regex-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/regex-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/regex-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/regex-parsing/src/lib.rs",
+      "words": 626,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/sexpr-api",
       "kind": "file",
       "title": "crates/lang/sexpr-api",
@@ -14434,7 +14452,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33783,
+      "words": 33801,
       "updated": 0
     },
     {
@@ -14452,7 +14470,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 274,
+      "words": 278,
       "updated": 0
     },
     {
@@ -14461,7 +14479,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 909,
+      "words": 922,
       "updated": 0
     },
     {
@@ -14470,7 +14488,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 203,
+      "words": 206,
       "updated": 0
     },
     {
@@ -14479,7 +14497,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1622,
+      "words": 1646,
       "updated": 0
     },
     {
@@ -20999,9 +21017,9 @@
       "updated": 0
     },
     {
-      "id": "todo:parsing.bytes.regex-integration",
+      "id": "todo:parsing.bytes.regex-replay",
       "kind": "todo",
-      "title": "Interpret regular-expression relations through A0013 and replay derivative witnesses without conflating bounded evaluation with completeness.",
+      "title": "Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.",
       "status": "major",
       "path": "crates/lang/parsing/src/bytes.rs",
       "words": 0,

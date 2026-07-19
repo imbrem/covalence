@@ -254,7 +254,7 @@ impl ByteParserRelation for LiteralBytes {
     }
 }
 
-// TODO(cov:parsing.bytes.regex-integration, major): Interpret regular-expression relations through A0013 and replay derivative witnesses without conflating bounded evaluation with completeness.
+// TODO(cov:parsing.bytes.regex-replay, major): Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.
 // TODO(cov:parsing.bytes.cfg-integration, major): Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.
 
 #[cfg(test)]

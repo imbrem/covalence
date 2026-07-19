@@ -2995,10 +2995,10 @@
       "crate": "covalence-parsing-api"
     },
     {
-      "id": "parsing.bytes.regex-integration",
+      "id": "parsing.bytes.regex-replay",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Interpret regular-expression relations through A0013 and replay derivative witnesses without conflating bounded evaluation with completeness.",
+      "summary": "Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.",
       "structured": true,
       "path": "crates/lang/parsing/src/bytes.rs",
       "line": 257,

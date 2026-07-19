@@ -53,6 +53,7 @@
     "covalence-pure-trusted",
     "covalence-python",
     "covalence-rand",
+    "covalence-regex-parsing",
     "covalence-repl",
     "covalence-repl-core",
     "covalence-sat",
@@ -649,6 +650,18 @@
     {
       "from": "covalence-python",
       "to": "covalence-wasm-store"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-repl",

@@ -54,6 +54,13 @@ disable-model-invocation: true
   untrusted data, ambiguity is retained, and exact versus prefix parsing is
   explicit. The reference evaluator rejects left recursion; future Earley/GLR
   backends belong here rather than in the grammar IR.
+- `crates/lang/regex-parsing/` — optional bounded A0013/A0015 evaluators for
+  the syntax in `covalence-grammar`.
+  - Functional evaluation uses an explicit longest-prefix policy; relational
+    evaluation enumerates distinct accepted prefixes rather than derivation
+    trees.
+  - Host match witnesses carry no theorem authority. Logic-level replay and
+    soundness/completeness capabilities remain separate.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

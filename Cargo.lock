@@ -1488,6 +1488,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-regex-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-repl"
 version = "0.0.0"
 dependencies = [

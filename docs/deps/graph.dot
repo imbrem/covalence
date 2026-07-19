@@ -53,6 +53,7 @@ digraph deps {
   "pure-trusted" [style=filled, fillcolor="#ffd6d6"];
   "python";
   "rand";
+  "regex-parsing";
   "repl";
   "repl-core";
   "sat";
@@ -216,6 +217,9 @@ digraph deps {
   "python" -> "store";
   "python" -> "wasm";
   "python" -> "wasm-store";
+  "regex-parsing" -> "grammar";
+  "regex-parsing" -> "logic-api";
+  "regex-parsing" -> "parsing-api";
   "repl" -> "arrow";
   "repl" -> "forsp";
   "repl" -> "git";

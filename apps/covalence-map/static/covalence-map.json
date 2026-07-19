@@ -664,7 +664,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 34796,
+      "words": 35026,
       "updated": 0
     },
     {
@@ -5186,6 +5186,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/base/{trusted,eval}/src/float.rs",
+      "kind": "file",
+      "title": "crates/kernel/base/{trusted,eval}/src/float.rs",
+      "status": null,
+      "path": "crates/kernel/base/{trusted,eval}/src/float.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/core/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -6173,6 +6182,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/eval/src/zero.rs",
       "words": 52,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "kind": "file",
+      "title": "crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "status": null,
+      "path": "crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -7910,6 +7928,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/utf8.rs",
       "words": 877,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -10892,6 +10919,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/numerals/",
+      "kind": "file",
+      "title": "crates/lang/numerals/",
+      "status": null,
+      "path": "crates/lang/numerals/",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/numerals/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -12653,6 +12689,15 @@
       "status": "tracked",
       "path": "crates/lib/types/src/rat.rs",
       "words": 131,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "kind": "file",
+      "title": "crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "status": null,
+      "path": "crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -15001,7 +15046,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 34796,
+      "words": 35026,
       "updated": 0
     },
     {
@@ -16877,6 +16922,15 @@
       "updated": 0
     },
     {
+      "id": "file:packages/covalence-ui/src/lib/graph/",
+      "kind": "file",
+      "title": "packages/covalence-ui/src/lib/graph/",
+      "status": null,
+      "path": "packages/covalence-ui/src/lib/graph/",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:packages/covalence-ui/src/lib/graph/CurvyEdge.svelte",
       "kind": "file",
       "title": "CurvyEdge.svelte",
@@ -17759,6 +17813,15 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "kind": "note",
+      "title": "Verified weighted graph demo: workmux handoff",
+      "status": "draft",
+      "path": "notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "words": 603,
+      "updated": 1784475102
+    },
+    {
       "id": "note:notes/vibes/handoff/README.md",
       "kind": "note",
       "title": "Handoff docs — per-task status",
@@ -18107,7 +18170,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-resync-handoff.md",
       "words": 444,
-      "updated": 1784473467
+      "updated": 1784473969
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
@@ -18459,6 +18522,15 @@
       "path": "notes/vibes/logics/wasm-spec.md",
       "words": 1343,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "kind": "note",
+      "title": "Numeric capability tower: workmux handoff",
+      "status": "draft",
+      "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "words": 670,
+      "updated": 1784475102
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
@@ -27490,6 +27562,60 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:apps/covalence-web/src/routes/graph/+page.svelte",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/decimal/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/interchange.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/networkx.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/render.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:packages/covalence-ui/src/lib/graph/",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "mentions",
+      "target": "todo:graph.dot-full",
+      "detail": null
+    },
+    {
       "source": "note:notes/vibes/handoff/README.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -29869,6 +29995,78 @@
       "source": "note:notes/vibes/logics/wasm-spec.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/vision/roadmap.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/base/{trusted,eval}/src/float.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/api/src/int.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/ball.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/decimal.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/decimal/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/numerals/",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "mentions",
+      "target": "todo:json.decimal-a0006-native-hol-morphism",
       "detail": null
     },
     {
@@ -32626,6 +32824,18 @@
       "stableId": "N0043",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "stableId": "N0044",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "stableId": "N0045",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -33070,6 +33280,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "workmux-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -33853,6 +34073,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "workmux-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
       "noteId": "note:notes/vibes/observers/backend-decoupling.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -34458,8 +34688,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-resync-handoff.md",
-      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
-      "committedAt": 1784473467
+      "commit": "0eb6b936ee024d0a72ce08e19623a696097898c3",
+      "committedAt": 1784473969
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",

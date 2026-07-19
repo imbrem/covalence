@@ -601,8 +601,6 @@ fn byte_list_term(bytes: &[u8]) -> Term {
     })
 }
 
-// TODO(cov:parsing.json.native-hol-a0015-replay, major): Add the corresponding checked A0015 interpretation/PER replay adapter for json_parse without changing its existing theorem statements.
-
 #[cfg(test)]
 mod tests {
     use super::*;

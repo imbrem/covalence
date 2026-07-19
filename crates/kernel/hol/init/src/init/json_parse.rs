@@ -81,6 +81,7 @@ use covalence_hol_eval::defs::{
     nat_rec, none, option_case, pair, snd, some, tail,
 };
 use covalence_hol_eval::derived::DerivedRules;
+use covalence_parsing_api::{PrefixInterpretation, SameInterpretation, Span};
 
 use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
@@ -404,6 +405,168 @@ pub fn parse_json() -> Term {
         s.clone(),
     );
     lam("fuel", Type::nat(), lam("s", blist_t(), applied))
+}
+
+// ============================================================================
+// A0015 checked replay for the bounded integer/array fragment.
+// ============================================================================
+
+/// The precise JSON language implemented by this Native HOL reader.
+///
+/// This is deliberately not an identifier for full RFC JSON: commas are
+/// lenient separators and the only values are integer-like atoms and arrays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HolJsonFragment {
+    LenientIntegerArray,
+    /// The separate non-recursive strict integer-token reader.
+    StrictIntegerToken,
+}
+
+/// The Native HOL parser selected for checked fragment interpretation.
+#[derive(Clone, Debug)]
+pub struct HolJsonFragmentParseTheory {
+    pub parser: Term,
+    pub fragment: HolJsonFragment,
+}
+
+impl Default for HolJsonFragmentParseTheory {
+    fn default() -> Self {
+        Self {
+            parser: parse_json(),
+            fragment: HolJsonFragment::LenientIntegerArray,
+        }
+    }
+}
+
+/// Untrusted positive evidence for one bounded fragment parse.
+///
+/// [`replay_fragment_prefix_interpretation`] checks every field against the
+/// request and the original theorem before returning that theorem unchanged.
+#[derive(Clone, Debug)]
+pub struct HolJsonFragmentParseWitness {
+    pub fragment: HolJsonFragment,
+    pub fuel: Term,
+    pub source: Vec<u8>,
+    pub value: Term,
+    pub remainder: Vec<u8>,
+    pub theorem: Thm,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HolJsonFragmentReplayError {
+    WrongFragment,
+    TheoryMismatch,
+    FuelMismatch,
+    SourceMismatch,
+    ValueMismatch,
+    InvalidExtent,
+    RemainderMismatch,
+    HypothesesPresent,
+    TheoremMismatch,
+}
+
+/// Check an A0015 prefix interpretation against the existing fragment reader.
+///
+/// Successful replay returns the supplied theorem unchanged. Its conclusion
+/// remains exactly `parseFn fuel false source = some (value, remainder)`;
+/// this adapter neither broadens the fragment nor mints a theorem.
+///
+/// @covalence-api-impl {"api":"A0015","name":"NativeHol JSON integer/array fragment checked prefix interpretation","representation":"fuel-bounded lenient integer/array reader theorem replay"}
+pub fn replay_fragment_prefix_interpretation(
+    theory: &HolJsonFragmentParseTheory,
+    expected_fuel: &Term,
+    source: &[u8],
+    interpretation: &PrefixInterpretation<Term, HolJsonFragmentParseWitness>,
+) -> core::result::Result<Thm, HolJsonFragmentReplayError> {
+    let witness = &interpretation.witness;
+    if theory.fragment != HolJsonFragment::LenientIntegerArray
+        || witness.fragment != theory.fragment
+    {
+        return Err(HolJsonFragmentReplayError::WrongFragment);
+    }
+    if theory.parser != parse_json() {
+        return Err(HolJsonFragmentReplayError::TheoryMismatch);
+    }
+    if &witness.fuel != expected_fuel {
+        return Err(HolJsonFragmentReplayError::FuelMismatch);
+    }
+    if witness.source != source {
+        return Err(HolJsonFragmentReplayError::SourceMismatch);
+    }
+    if witness.value != interpretation.value {
+        return Err(HolJsonFragmentReplayError::ValueMismatch);
+    }
+    if interpretation.consumed != Span::new(0, interpretation.remainder).unwrap()
+        || interpretation.remainder > source.len()
+    {
+        return Err(HolJsonFragmentReplayError::InvalidExtent);
+    }
+    if witness.remainder != source[interpretation.remainder..] {
+        return Err(HolJsonFragmentReplayError::RemainderMismatch);
+    }
+    if !witness.theorem.hyps().is_empty() {
+        return Err(HolJsonFragmentReplayError::HypothesesPresent);
+    }
+
+    let expected_lhs = Term::app(
+        Term::app(
+            Term::app(parse_fn(), witness.fuel.clone()),
+            covalence_hol_eval::mk_bool(false),
+        ),
+        byte_list_term(source),
+    );
+    let expected_rhs = some_r(pair_r(
+        interpretation.value.clone(),
+        byte_list_term(&witness.remainder),
+    ));
+    let Some((actual_lhs, actual_rhs)) = witness.theorem.concl().as_eq() else {
+        return Err(HolJsonFragmentReplayError::TheoremMismatch);
+    };
+    if actual_lhs != &expected_lhs || actual_rhs != &expected_rhs {
+        return Err(HolJsonFragmentReplayError::TheoremMismatch);
+    }
+    Ok(witness.theorem.clone())
+}
+
+/// Check both legs of an A0015 same-interpretation witness.
+///
+/// The returned certificate is the pair of original parse theorems. The shared
+/// host value is checked independently against each theorem and is not itself
+/// promoted to a HOL equality.
+pub fn replay_fragment_same_interpretation(
+    theory: &HolJsonFragmentParseTheory,
+    expected_fuel: &Term,
+    left_source: &[u8],
+    right_source: &[u8],
+    same: &SameInterpretation<Term, HolJsonFragmentParseWitness, ()>,
+) -> core::result::Result<(Thm, Thm), HolJsonFragmentReplayError> {
+    let replay_leg = |source: &[u8], witness: &HolJsonFragmentParseWitness| {
+        let remainder = source
+            .len()
+            .checked_sub(witness.remainder.len())
+            .ok_or(HolJsonFragmentReplayError::InvalidExtent)?;
+        let interpretation = PrefixInterpretation::new(
+            same.value.clone(),
+            witness.clone(),
+            Span::new(0, remainder).unwrap(),
+            remainder,
+        )
+        .ok_or(HolJsonFragmentReplayError::InvalidExtent)?;
+        replay_fragment_prefix_interpretation(theory, expected_fuel, source, &interpretation)
+    };
+    Ok((
+        replay_leg(left_source, &same.left)?,
+        replay_leg(right_source, &same.right)?,
+    ))
+}
+
+fn byte_list_term(bytes: &[u8]) -> Term {
+    bytes.iter().rev().fold(defs::nil(u8_t()), |tail, byte| {
+        Term::app(
+            Term::app(defs::cons(u8_t()), covalence_hol_eval::mk_u8(*byte)),
+            tail,
+        )
+    })
 }
 
 // ============================================================================
@@ -1497,6 +1660,211 @@ mod tests {
         assert_eq!(rhs(&eval(30, false, b"")), none_r());
         assert_eq!(rhs(&eval(30, false, b"]")), none_r());
         assert_eq!(rhs(&eval(5, false, b"")), none_r());
+    }
+
+    fn checked_fragment_prefix(
+        source: &[u8],
+    ) -> PrefixInterpretation<Term, HolJsonFragmentParseWitness> {
+        let theorem = eval(30, false, source);
+        let (value, remainder) = ref_value(source).expect("test fragment source parses");
+        let remainder_offset = source.len() - remainder.len();
+        let value = to_term(&value);
+        PrefixInterpretation::new(
+            value.clone(),
+            HolJsonFragmentParseWitness {
+                fragment: HolJsonFragment::LenientIntegerArray,
+                fuel: fuel(30),
+                source: source.to_vec(),
+                value,
+                remainder: remainder.to_vec(),
+                theorem,
+            },
+            Span::new(0, remainder_offset).unwrap(),
+            remainder_offset,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a0015_fragment_replay_preserves_the_existing_parse_theorem() {
+        let source = b"[1]tail";
+        let interpretation = checked_fragment_prefix(source);
+        let replayed = replay_fragment_prefix_interpretation(
+            &HolJsonFragmentParseTheory::default(),
+            &fuel(30),
+            source,
+            &interpretation,
+        )
+        .unwrap();
+        assert_eq!(replayed.concl(), interpretation.witness.theorem.concl());
+        assert!(replayed.hyps().is_empty());
+    }
+
+    #[test]
+    fn a0015_fragment_per_replays_both_sources_at_one_shared_value() {
+        let left_source = b"[1]tail";
+        let right_source = b" [1]tail";
+        let left = checked_fragment_prefix(left_source);
+        let right = checked_fragment_prefix(right_source);
+        assert_eq!(left.value, right.value);
+        let same = SameInterpretation {
+            value: left.value,
+            left: left.witness,
+            right: right.witness,
+            equivalence: (),
+        };
+        let (left_theorem, right_theorem) = replay_fragment_same_interpretation(
+            &HolJsonFragmentParseTheory::default(),
+            &fuel(30),
+            left_source,
+            right_source,
+            &same,
+        )
+        .unwrap();
+        assert_eq!(left_theorem.concl(), same.left.theorem.concl());
+        assert_eq!(right_theorem.concl(), same.right.theorem.concl());
+
+        let mut substituted = same;
+        substituted.right.value = snil();
+        assert_eq!(
+            replay_fragment_same_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                left_source,
+                right_source,
+                &substituted,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::ValueMismatch
+        );
+    }
+
+    #[test]
+    fn a0015_fragment_replay_rejects_identity_fuel_source_value_and_remainder() {
+        let source = b"[1]tail";
+
+        let mut wrong_fragment = checked_fragment_prefix(source);
+        wrong_fragment.witness.fragment = HolJsonFragment::StrictIntegerToken;
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_fragment,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::WrongFragment
+        );
+
+        let wrong_theory = HolJsonFragmentParseTheory {
+            parser: crate::init::sexpr_parse::parse_sexpr(),
+            fragment: HolJsonFragment::LenientIntegerArray,
+        };
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &wrong_theory,
+                &fuel(30),
+                source,
+                &checked_fragment_prefix(source),
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::TheoryMismatch
+        );
+
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(29),
+                source,
+                &checked_fragment_prefix(source),
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::FuelMismatch
+        );
+
+        let mut wrong_source = checked_fragment_prefix(source);
+        wrong_source.witness.source = b"[2]tail".to_vec();
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_source,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::SourceMismatch
+        );
+
+        let mut wrong_value = checked_fragment_prefix(source);
+        wrong_value.witness.value = snil();
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_value,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::ValueMismatch
+        );
+
+        let mut wrong_remainder = checked_fragment_prefix(source);
+        wrong_remainder.witness.remainder = b"ail".to_vec();
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_remainder,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::RemainderMismatch
+        );
+    }
+
+    #[test]
+    fn a0015_fragment_replay_rejects_extent_hypotheses_and_conclusion() {
+        let source = b"[1]tail";
+
+        let mut wrong_extent = checked_fragment_prefix(source);
+        wrong_extent.remainder += 1;
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_extent,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::InvalidExtent
+        );
+
+        let mut hypothetical = checked_fragment_prefix(source);
+        hypothetical.witness.theorem =
+            Thm::assume(hypothetical.witness.theorem.concl().clone()).unwrap();
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &hypothetical,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::HypothesesPresent
+        );
+
+        let mut wrong_theorem = checked_fragment_prefix(source);
+        wrong_theorem.witness.theorem = eval(30, false, b"[2]tail");
+        assert_eq!(
+            replay_fragment_prefix_interpretation(
+                &HolJsonFragmentParseTheory::default(),
+                &fuel(30),
+                source,
+                &wrong_theorem,
+            )
+            .unwrap_err(),
+            HolJsonFragmentReplayError::TheoremMismatch
+        );
     }
 
     #[test]

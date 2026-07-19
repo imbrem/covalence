@@ -1,5 +1,7 @@
 //! Models of computation and the vocabulary used to realize them in HOL.
 //!
+//! @covalence-api {"id":"A0009","title":"Models of computation","status":"experimental","dependsOn":["A0001"]}
+//!
 //! This crate separates four concerns:
 //!
 //! - [`encoding`] gives values canonical bit and byte representations with

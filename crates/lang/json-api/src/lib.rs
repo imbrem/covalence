@@ -5,6 +5,8 @@
 //! sequences are distinct from semantic JSON objects: sequence order and
 //! duplicate names are syntax observations, not silently chosen value
 //! semantics.
+//!
+//! @covalence-api {"id":"A0007","title":"RFC JSON with exact decimals","status":"experimental","dependsOn":["A0004","A0006"]}
 
 use covalence_decimal_api::CanonicalDecimal;
 use covalence_inductive::DatatypeFamilyExpr;

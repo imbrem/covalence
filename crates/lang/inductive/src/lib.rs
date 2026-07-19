@@ -2,6 +2,8 @@
 //! types and least/greatest fixpoints, abstracting over their
 //! **representation**.
 //!
+//! @covalence-api {"id":"A0004","title":"Polynomial and inductive datatypes","status":"experimental","dependsOn":["A0001"]}
+//!
 //! ## The shape
 //!
 //! - [`RecordSpec`], [`VariantSpec`], and [`EnumSpec`] — non-recursive

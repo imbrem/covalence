@@ -47,6 +47,60 @@
       "updated": 0
     },
     {
+      "id": "api:A0004",
+      "kind": "api",
+      "title": "Polynomial and inductive datatypes",
+      "status": "experimental",
+      "path": "crates/lang/inductive/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0005",
+      "kind": "api",
+      "title": "S-expressions",
+      "status": "experimental",
+      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0006",
+      "kind": "api",
+      "title": "Exact finite decimals",
+      "status": "experimental",
+      "path": "crates/lang/decimal/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0007",
+      "kind": "api",
+      "title": "RFC JSON with exact decimals",
+      "status": "experimental",
+      "path": "crates/lang/json-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0008",
+      "kind": "api",
+      "title": "Graphs and graph interchange",
+      "status": "experimental",
+      "path": "crates/lib/graph/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0009",
+      "kind": "api",
+      "title": "Models of computation",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -502,7 +556,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 32385,
+      "words": 32541,
       "updated": 0
     },
     {
@@ -8953,7 +9007,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/computation/src/lib.rs",
-      "words": 49,
+      "words": 51,
       "updated": 0
     },
     {
@@ -9034,7 +9088,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/decimal/src/lib.rs",
-      "words": 196,
+      "words": 198,
       "updated": 0
     },
     {
@@ -9547,7 +9601,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 104,
+      "words": 106,
       "updated": 0
     },
     {
@@ -9637,7 +9691,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 973,
+      "words": 975,
       "updated": 0
     },
     {
@@ -10285,7 +10339,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 712,
+      "words": 714,
       "updated": 0
     },
     {
@@ -10798,7 +10852,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lib/graph/src/lib.rs",
-      "words": 67,
+      "words": 69,
       "updated": 0
     },
     {
@@ -14128,7 +14182,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 32385,
+      "words": 32541,
       "updated": 0
     },
     {
@@ -20827,6 +20881,72 @@
       "source": "api:A0003",
       "predicate": "depends-on",
       "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0004",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/inductive/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0004",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0005",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/sexpr-api/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0005",
+      "predicate": "depends-on",
+      "target": "api:A0004",
+      "detail": null
+    },
+    {
+      "source": "api:A0006",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/decimal/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0007",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/json-api/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0007",
+      "predicate": "depends-on",
+      "target": "api:A0004",
+      "detail": null
+    },
+    {
+      "source": "api:A0007",
+      "predicate": "depends-on",
+      "target": "api:A0006",
+      "detail": null
+    },
+    {
+      "source": "api:A0008",
+      "predicate": "defined-in",
+      "target": "file:crates/lib/graph/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0009",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/computation/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0009",
+      "predicate": "depends-on",
+      "target": "api:A0001",
       "detail": null
     },
     {
@@ -30456,6 +30576,42 @@
       "title": "Bytes and byte strings",
       "status": "experimental",
       "path": "crates/kernel/hol/logic/src/bytes.rs"
+    },
+    {
+      "id": "A0004",
+      "title": "Polynomial and inductive datatypes",
+      "status": "experimental",
+      "path": "crates/lang/inductive/src/lib.rs"
+    },
+    {
+      "id": "A0005",
+      "title": "S-expressions",
+      "status": "experimental",
+      "path": "crates/lang/sexpr-api/src/lib.rs"
+    },
+    {
+      "id": "A0006",
+      "title": "Exact finite decimals",
+      "status": "experimental",
+      "path": "crates/lang/decimal/src/lib.rs"
+    },
+    {
+      "id": "A0007",
+      "title": "RFC JSON with exact decimals",
+      "status": "experimental",
+      "path": "crates/lang/json-api/src/lib.rs"
+    },
+    {
+      "id": "A0008",
+      "title": "Graphs and graph interchange",
+      "status": "experimental",
+      "path": "crates/lib/graph/src/lib.rs"
+    },
+    {
+      "id": "A0009",
+      "title": "Models of computation",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/lib.rs"
     }
   ],
   "apiImplementations": [

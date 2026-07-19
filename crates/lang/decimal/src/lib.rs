@@ -4,6 +4,8 @@
 //! subset of the rationals; it is not an IEEE floating-point value.  Backends
 //! may use any representation, and advertise only the capabilities they
 //! implement.
+//!
+//! @covalence-api {"id":"A0006","title":"Exact finite decimals","status":"experimental","dependsOn":[]}
 
 use covalence_types::Int;
 

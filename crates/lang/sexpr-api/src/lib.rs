@@ -1,5 +1,7 @@
 //! S-expressions as an inductive API.
 //!
+//! @covalence-api {"id":"A0005","title":"S-expressions","status":"experimental","dependsOn":["A0004"]}
+//!
 //! The fundamental datatype permits dotted pairs:
 //!
 //! ```text

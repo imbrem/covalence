@@ -12,7 +12,10 @@ use crate::{
     DuplicateName, JsonMember, JsonObject, JsonString, JsonValue, ObservedSemanticEquality,
     ParsedJsonMember, ParsedJsonValue, json_value_family,
 };
-use covalence_inductive::DatatypeFamilyExpr;
+use covalence_inductive::{
+    DatatypeFamilyExpr, SymbolicFamilyBackend, SymbolicFamilyObject, ValidatedDatatypeFamily,
+    interpret_family,
+};
 
 /// The six observable JSON value alternatives, with backend-owned payloads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -356,20 +359,109 @@ impl<D: Clone> JsonSyntaxAggregates for ReferenceJson<D> {
     }
 }
 
-/// One honestly supported constructor layer of the A0004 JSON family.
+/// The reference least-fixpoint list used by the inductive JSON backend.
 ///
-/// This is a partial inductive-backed implementation: scalars are represented
-/// as cases of `JsonF(X)`.  Arrays and objects require the nested least
-/// fixpoints in [`json_value_family`] and therefore are uninhabited here.
+/// This intentionally does not reuse `Vec`: `Nil + A × X` mirrors the nested
+/// `μ` nodes in [`json_value_family`] and makes the stacking boundary visible.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum InductiveJsonScalar<D, S> {
+pub enum InductiveJsonList<A> {
+    Nil,
+    Cons(A, Box<Self>),
+}
+
+impl<A> InductiveJsonList<A> {
+    pub fn from_values(values: impl IntoIterator<Item = A>) -> Self {
+        values
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .fold(Self::Nil, |tail, head| Self::Cons(head, Box::new(tail)))
+    }
+
+    pub fn iter(&self) -> InductiveJsonListIter<'_, A> {
+        InductiveJsonListIter { next: Some(self) }
+    }
+}
+
+pub struct InductiveJsonListIter<'a, A> {
+    next: Option<&'a InductiveJsonList<A>>,
+}
+
+impl<'a, A> Iterator for InductiveJsonListIter<'a, A> {
+    type Item = &'a A;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next.take()? {
+            InductiveJsonList::Nil => None,
+            InductiveJsonList::Cons(head, tail) => {
+                self.next = Some(tail);
+                Some(head)
+            }
+        }
+    }
+}
+
+impl<A: Clone> InductiveJsonList<A> {
+    pub fn values(&self) -> Vec<A> {
+        self.iter().cloned().collect()
+    }
+}
+
+/// Semantic object subset of the ordered inductive member-list carrier.
+#[derive(Clone, Debug)]
+pub struct InductiveJsonObject<D, S>(Box<InductiveJsonList<(S, InductiveJsonValue<D, S>)>>);
+
+impl<D: PartialEq, S: PartialEq> PartialEq for InductiveJsonObject<D, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.iter().count() == other.0.iter().count()
+            && self.0.iter().all(|(name, value)| {
+                other
+                    .0
+                    .iter()
+                    .find(|(other, _)| other == name)
+                    .is_some_and(|(_, other)| other == value)
+            })
+    }
+}
+
+impl<D: Eq, S: Eq> Eq for InductiveJsonObject<D, S> {}
+
+/// Full host realization of the nested least-fixpoint JSON family.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InductiveJsonValue<D, S> {
     Null,
     Bool(bool),
     Number(D),
     String(S),
+    Array(Box<InductiveJsonList<InductiveJsonValue<D, S>>>),
+    Object(InductiveJsonObject<D, S>),
 }
 
-/// A partial A0007 backend stacked on the A0004 family declaration.
+/// Duplicate-name failure at the semantic-subset boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InductiveJsonDuplicateName<S>(pub S);
+
+/// Decoded syntax over the same inductive list implementation.
+///
+/// Unlike [`InductiveJsonValue`], the object branch is the raw ordered carrier
+/// and therefore retains duplicates.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InductiveParsedJsonValue<D, S> {
+    Null,
+    Bool(bool),
+    Number(D),
+    String(S),
+    Array(Box<InductiveJsonList<InductiveParsedJsonValue<D, S>>>),
+    Object(Box<InductiveJsonList<(S, InductiveParsedJsonValue<D, S>)>>),
+}
+
+/// A concrete proof-free A0007 backend stacked on A0004's scoped family API.
+///
+/// The Rust carriers above are the host interpretation of the two nested
+/// least fixpoints. [`family_layer_at`](Self::family_layer_at) runs the shared
+/// A0004 interpretation pipeline, so the declared and implemented nesting
+/// remain independently testable. This backend makes no theorem claim.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InductiveJsonLayer<D, S>(PhantomData<fn() -> (D, S)>);
 
@@ -378,49 +470,219 @@ impl<D, S> InductiveJsonLayer<D, S> {
         Self(PhantomData)
     }
 
-    /// The A0004 declaration this partial representation implements.
+    /// The A0004 declaration this host representation implements.
     pub fn family(&self) -> DatatypeFamilyExpr<crate::JsonParameter> {
         json_value_family()
+    }
+
+    /// Interpret `JsonF(X)` through A0004, including both nested list
+    /// fixpoints, at a caller-supplied symbolic carrier `X`.
+    pub fn family_layer_at(
+        &self,
+        variable: &SymbolicFamilyObject<crate::JsonParameter>,
+    ) -> SymbolicFamilyObject<crate::JsonParameter> {
+        let family = ValidatedDatatypeFamily::try_from(self.family())
+            .expect("the public JSON datatype family is well scoped");
+        interpret_family(&SymbolicFamilyBackend, &family, variable)
+            .expect("the symbolic family backend is infallible")
     }
 }
 
 impl<D: Clone, S: Clone> JsonRepresentation for InductiveJsonLayer<D, S> {
-    type Value = InductiveJsonScalar<D, S>;
+    type Value = InductiveJsonValue<D, S>;
     type Number = D;
     type String = S;
-    type Array = Infallible;
-    type Object = Infallible;
-    type Error = Infallible;
+    type Array = Box<InductiveJsonList<Self::Value>>;
+    type Object = InductiveJsonObject<D, S>;
+    type Error = InductiveJsonDuplicateName<S>;
 
     fn view(
         &self,
         value: &Self::Value,
-    ) -> Result<JsonView<D, S, Infallible, Infallible>, Self::Error> {
+    ) -> Result<JsonView<D, S, Self::Array, Self::Object>, Self::Error> {
         Ok(match value {
-            InductiveJsonScalar::Null => JsonView::Null,
-            InductiveJsonScalar::Bool(value) => JsonView::Bool(*value),
-            InductiveJsonScalar::Number(value) => JsonView::Number(value.clone()),
-            InductiveJsonScalar::String(value) => JsonView::String(value.clone()),
+            InductiveJsonValue::Null => JsonView::Null,
+            InductiveJsonValue::Bool(value) => JsonView::Bool(*value),
+            InductiveJsonValue::Number(value) => JsonView::Number(value.clone()),
+            InductiveJsonValue::String(value) => JsonView::String(value.clone()),
+            InductiveJsonValue::Array(value) => JsonView::Array(value.clone()),
+            InductiveJsonValue::Object(value) => JsonView::Object(value.clone()),
         })
     }
 }
 
 impl<D: Clone, S: Clone> JsonScalarConstructors for InductiveJsonLayer<D, S> {
     fn null(&self) -> Result<Self::Value, Self::Error> {
-        Ok(InductiveJsonScalar::Null)
+        Ok(InductiveJsonValue::Null)
     }
     fn boolean(&self, value: bool) -> Result<Self::Value, Self::Error> {
-        Ok(InductiveJsonScalar::Bool(value))
+        Ok(InductiveJsonValue::Bool(value))
     }
     fn number(&self, value: D) -> Result<Self::Value, Self::Error> {
-        Ok(InductiveJsonScalar::Number(value))
+        Ok(InductiveJsonValue::Number(value))
     }
     fn string(&self, value: S) -> Result<Self::Value, Self::Error> {
-        Ok(InductiveJsonScalar::String(value))
+        Ok(InductiveJsonValue::String(value))
     }
 }
 
-// TODO(cov:json.inductive-nested-fixpoint-backend, major): Implement JsonArrays, JsonSemanticObjects, and JsonAggregateConstructors by realizing the nested least fixpoints in json_value_family through A0004.
+impl<D: Clone, S: Clone> JsonArrays for InductiveJsonLayer<D, S> {
+    fn array_from_values(
+        &self,
+        values: impl IntoIterator<Item = Self::Value>,
+    ) -> Result<Self::Array, Self::Error> {
+        Ok(Box::new(InductiveJsonList::from_values(values)))
+    }
+
+    fn array_values(&self, array: &Self::Array) -> Result<Vec<Self::Value>, Self::Error> {
+        Ok(array.values())
+    }
+}
+
+impl<D: Clone, S: Clone> JsonAggregateConstructors for InductiveJsonLayer<D, S> {
+    fn array(&self, value: Self::Array) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveJsonValue::Array(value))
+    }
+
+    fn object(&self, value: Self::Object) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveJsonValue::Object(value))
+    }
+}
+
+impl<D: Clone, S: Clone + PartialEq> JsonSemanticObjects for InductiveJsonLayer<D, S> {
+    fn object_from_members(
+        &self,
+        members: impl IntoIterator<Item = (Self::String, Self::Value)>,
+    ) -> Result<Self::Object, Self::Error> {
+        let members = members.into_iter().collect::<Vec<_>>();
+        for (index, (name, _)) in members.iter().enumerate() {
+            if members[..index].iter().any(|(seen, _)| seen == name) {
+                return Err(InductiveJsonDuplicateName(name.clone()));
+            }
+        }
+        Ok(InductiveJsonObject(Box::new(
+            InductiveJsonList::from_values(members),
+        )))
+    }
+
+    fn object_members(
+        &self,
+        object: &Self::Object,
+    ) -> Result<Vec<(Self::String, Self::Value)>, Self::Error> {
+        Ok(object.0.values())
+    }
+}
+
+impl<D: Clone + PartialEq, S: Clone + PartialEq> JsonDecidableEquality
+    for InductiveJsonLayer<D, S>
+{
+    fn equal(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
+}
+
+impl<D: Clone + PartialEq, S: Clone + PartialEq> JsonPer for InductiveJsonLayer<D, S> {
+    type Evidence = ObservedSemanticEquality;
+
+    fn related(
+        &self,
+        left: &Self::Value,
+        right: &Self::Value,
+    ) -> Result<Option<Self::Evidence>, Self::Error> {
+        Ok((left == right).then_some(ObservedSemanticEquality))
+    }
+}
+
+impl<D: Clone + PartialEq, S: Clone + PartialEq> JsonConstructorLaws for InductiveJsonLayer<D, S> {
+    type Evidence = ObservedSemanticEquality;
+
+    fn view_null(&self) -> Result<Self::Evidence, Self::Error> {
+        Ok(ObservedSemanticEquality)
+    }
+    fn view_boolean(&self, _value: bool) -> Result<Self::Evidence, Self::Error> {
+        Ok(ObservedSemanticEquality)
+    }
+    fn view_number(&self, _value: D) -> Result<Self::Evidence, Self::Error> {
+        Ok(ObservedSemanticEquality)
+    }
+    fn view_string(&self, _value: S) -> Result<Self::Evidence, Self::Error> {
+        Ok(ObservedSemanticEquality)
+    }
+}
+
+impl<D: Clone, S: Clone> JsonSyntaxRepresentation for InductiveJsonLayer<D, S> {
+    type Value = InductiveParsedJsonValue<D, S>;
+    type Number = D;
+    type String = S;
+    type Array = Box<InductiveJsonList<Self::Value>>;
+    type OrderedObject = Box<InductiveJsonList<(S, Self::Value)>>;
+    type Error = Infallible;
+
+    fn syntax_view(
+        &self,
+        value: &Self::Value,
+    ) -> Result<
+        JsonSyntaxView<Self::Number, Self::String, Self::Array, Self::OrderedObject>,
+        Self::Error,
+    > {
+        Ok(match value {
+            InductiveParsedJsonValue::Null => JsonSyntaxView::Null,
+            InductiveParsedJsonValue::Bool(value) => JsonSyntaxView::Bool(*value),
+            InductiveParsedJsonValue::Number(value) => JsonSyntaxView::Number(value.clone()),
+            InductiveParsedJsonValue::String(value) => JsonSyntaxView::String(value.clone()),
+            InductiveParsedJsonValue::Array(value) => JsonSyntaxView::Array(value.clone()),
+            InductiveParsedJsonValue::Object(value) => JsonSyntaxView::Object(value.clone()),
+        })
+    }
+
+    fn syntax_null(&self) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::Null)
+    }
+    fn syntax_boolean(&self, value: bool) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::Bool(value))
+    }
+    fn syntax_number(&self, value: D) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::Number(value))
+    }
+    fn syntax_string(&self, value: S) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::String(value))
+    }
+    fn syntax_array(&self, value: Self::Array) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::Array(value))
+    }
+    fn syntax_object(&self, value: Self::OrderedObject) -> Result<Self::Value, Self::Error> {
+        Ok(InductiveParsedJsonValue::Object(value))
+    }
+}
+
+impl<D: Clone, S: Clone> JsonSyntaxAggregates for InductiveJsonLayer<D, S> {
+    fn syntax_array_from_values(
+        &self,
+        values: impl IntoIterator<Item = Self::Value>,
+    ) -> Result<Self::Array, Self::Error> {
+        Ok(Box::new(InductiveJsonList::from_values(values)))
+    }
+
+    fn syntax_array_values(&self, array: &Self::Array) -> Result<Vec<Self::Value>, Self::Error> {
+        Ok(array.values())
+    }
+
+    fn ordered_object_from_members(
+        &self,
+        members: impl IntoIterator<Item = (Self::String, Self::Value)>,
+    ) -> Result<Self::OrderedObject, Self::Error> {
+        Ok(Box::new(InductiveJsonList::from_values(members)))
+    }
+
+    fn ordered_object_members(
+        &self,
+        object: &Self::OrderedObject,
+    ) -> Result<Vec<(Self::String, Self::Value)>, Self::Error> {
+        Ok(object.values())
+    }
+}
+
+// TODO(cov:json.inductive-proof-fixpoint-backend, major): Realize the closed proof-bearing Json ≅ JsonF(Json), nested list induction, and the semantic unique-name subset in a logic backend; the host backend here proves no theorems.
 
 #[cfg(test)]
 mod tests {
@@ -463,8 +725,83 @@ mod tests {
     }
 
     #[test]
-    fn partial_inductive_backend_names_exact_a0004_family() {
+    fn inductive_backend_names_exact_a0004_family() {
         let backend = InductiveJsonLayer::<(), JsonString>::new();
         assert_eq!(backend.family(), json_value_family());
+    }
+
+    fn generic_array_roundtrip<J>(json: &J)
+    where
+        J: JsonScalarConstructors + JsonArrays + JsonAggregateConstructors,
+        J::Error: core::fmt::Debug,
+        J::Number: core::fmt::Debug,
+        J::String: core::fmt::Debug,
+        J::Array: core::fmt::Debug,
+        J::Object: core::fmt::Debug,
+    {
+        let first = json.boolean(true).unwrap();
+        let second = json.null().unwrap();
+        let array = json.array_from_values([first, second]).unwrap();
+        let value = json.array(array).unwrap();
+        let JsonView::Array(array) = json.view(&value).unwrap() else {
+            panic!("expected array");
+        };
+        assert_eq!(json.array_values(&array).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn same_generic_array_consumer_runs_on_both_backends() {
+        generic_array_roundtrip(&ReferenceJson::<()>::new());
+        generic_array_roundtrip(&InductiveJsonLayer::<(), JsonString>::new());
+    }
+
+    #[test]
+    fn inductive_syntax_retains_duplicates_but_semantics_rejects_them() {
+        let json = InductiveJsonLayer::<(), JsonString>::new();
+        let duplicate_syntax = json
+            .ordered_object_from_members([
+                (JsonString::from("x"), InductiveParsedJsonValue::Null),
+                (JsonString::from("x"), InductiveParsedJsonValue::Bool(true)),
+            ])
+            .unwrap();
+        assert_eq!(
+            json.ordered_object_members(&duplicate_syntax)
+                .unwrap()
+                .len(),
+            2
+        );
+
+        assert!(
+            json.object_from_members([
+                (JsonString::from("x"), InductiveJsonValue::Null),
+                (JsonString::from("x"), InductiveJsonValue::Bool(true)),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a0004_interpretation_sees_both_nested_least_fixpoints() {
+        let backend = InductiveJsonLayer::<(), JsonString>::new();
+        let variable = SymbolicFamilyObject::Parameter(crate::JsonParameter::String);
+        let layer = backend.family_layer_at(&variable);
+        let SymbolicFamilyObject::Sum(cases) = layer else {
+            panic!("JSON layer must be a sum");
+        };
+        assert_eq!(cases.len(), 6);
+        assert!(matches!(
+            cases[4],
+            SymbolicFamilyObject::Fixpoint {
+                kind: covalence_inductive::FamilyFixpointKind::Least,
+                ..
+            }
+        ));
+        assert!(matches!(
+            cases[5],
+            SymbolicFamilyObject::Fixpoint {
+                kind: covalence_inductive::FamilyFixpointKind::Least,
+                ..
+            }
+        ));
     }
 }

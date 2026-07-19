@@ -22,7 +22,8 @@ pub mod api;
 pub mod corpus;
 
 pub use api::{
-    InductiveJsonLayer, InductiveJsonScalar, JsonAggregateConstructors, JsonArrays,
+    InductiveJsonDuplicateName, InductiveJsonLayer, InductiveJsonList, InductiveJsonObject,
+    InductiveJsonValue, InductiveParsedJsonValue, JsonAggregateConstructors, JsonArrays,
     JsonConstructorLaws, JsonDecidableEquality, JsonPer, JsonRepresentation,
     JsonScalarConstructors, JsonSemanticObjects, JsonSyntaxAggregates, JsonSyntaxRepresentation,
     JsonSyntaxView, JsonView, ReferenceJson,

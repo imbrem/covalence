@@ -24,8 +24,9 @@
 //!
 //! ## Unifying the value kinds
 //!
-//! The predicate / `eq?` results are **sexpr atoms** `t` / `nil` (not HOL `bool`),
-//! and `cond` tests sexpr *truthiness* (`nil` = false, any other value = true).
+//! The predicate / `eq?` results are S-expression values `t` / `()` (not HOL
+//! `bool`), and `cond` tests Lisp truthiness (`()` = false, any other value =
+//! true).
 //! This dissolves the `Bool`-vs-`Data` split (and the "truthy-data `cond`" wall)
 //! the equational value semantics hit: every value is an sexpr datum.
 //!
@@ -117,8 +118,7 @@ pub struct LispRel {
     carrier: CarvedCarrier,
     /// The sexpr `t` atom (`atom "t"`) — the truthy value predicates return.
     t: Term,
-    /// The sexpr `nil` atom (`atom "nil"`) — the falsy value; distinct from
-    /// `snil` so `null?`/truthiness are decidable on either representation.
+    /// The empty-list constructor — Lisp's canonical false / `nil` value.
     nil: Term,
     /// `atom? : sexpr → sexpr`.
     atom_p: Term,
@@ -183,7 +183,7 @@ impl LispRel {
             }
         };
         let t = atom_c("t")?;
-        let nil = atom_c("nil")?;
+        let nil = cs.snil.clone();
         let (carrier, int_be): (CarvedCarrier, Option<Box<dyn IntBackend>>) = match dialect {
             Dialect::Sector => (CarvedCarrier::over(cs), None),
             Dialect::SectorInt(IntFlavour::Int) => (
@@ -273,7 +273,7 @@ impl LispRel {
         self.t.clone()
     }
 
-    /// The sexpr `nil` atom.
+    /// The canonical empty-list / false value.
     pub fn nil(&self) -> Term {
         self.nil.clone()
     }
@@ -383,27 +383,28 @@ impl LispRel {
     /// | 28 | `∀h t. Step (integer? (scons h t)) nil` |
     /// | 29 | `integer?` on a non-integer atom is `nil` |
     /// | 30 | congruence into `integer?`'s argument |
+    /// | 31 | congruence into the leading `cond` test |
     ///
     /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
-    /// redex clauses follow (indices 31–35, in [`IntOp::ALL`] order):
+    /// redex clauses follow (indices 32–36, in [`IntOp::ALL`] order):
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 31 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
-    /// | 32 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
-    /// | 33 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
-    /// | 34 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
-    /// | 35 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
+    /// | 32 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
+    /// | 33 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
+    /// | 34 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
+    /// | 35 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
+    /// | 36 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
     ///
-    /// then ten integer **congruence** clauses (indices 36–45), a left/right
+    /// then ten integer **congruence** clauses (indices 37–46), a left/right
     /// pair per op in [`IntOp::ALL`] order, so operands reduce in place:
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 36 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
-    /// | 37 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    /// | 37 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
+    /// | 38 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
     ///
-    /// Clause 46 is `∀i:int. Step (integer? (int i)) t`.
+    /// Clause 47 is `∀i:int. Step (integer? (int i)) t`.
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / source-local TODO markers.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -699,6 +700,28 @@ impl LispRel {
                         .forall("value", tau.clone())?,
                 );
             }
+            {
+                let test = Term::free("test", tau.clone());
+                let test2 = Term::free("test2", tau.clone());
+                let body = Term::free("body", tau.clone());
+                let rest = Term::free("rest", tau.clone());
+                let before_clause = self.scons(test.clone(), body.clone()).map_err(to_core)?;
+                let before_cells = self.scons(before_clause, rest.clone()).map_err(to_core)?;
+                let after_clause = self.scons(test2.clone(), body.clone()).map_err(to_core)?;
+                let after_cells = self.scons(after_clause, rest.clone()).map_err(to_core)?;
+                let conclusion = d(
+                    &self.cond_of(before_cells).map_err(to_core)?,
+                    &self.cond_of(after_cells).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&test, &test2)?
+                        .imp(conclusion)?
+                        .forall("rest", tau.clone())?
+                        .forall("body", tau.clone())?
+                        .forall("test2", tau.clone())?
+                        .forall("test", tau.clone())?,
+                );
+            }
 
             // --- integer clauses (the `sector+int` dialect only) -----------
             // One ∀-quantified clause per op:
@@ -723,7 +746,7 @@ impl LispRel {
                     );
                 }
 
-                // 36–45: congruence into the int-op operands (a left/right
+                // 37–46: congruence into the int-op operands (a left/right
                 // pair per op, in IntOp::ALL order), so nested expressions
                 // like `(+ 1 (+ 2 3))` reduce their operands in place:
                 //   left:  ∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)
@@ -775,10 +798,10 @@ impl LispRel {
     }
 
     /// The clause index of int op `op` in the `sector+int` `Step` rule set
-    /// (the integer clauses follow the 31 primitive-fragment clauses, in
+    /// (the integer clauses follow the 32 primitive-fragment clauses, in
     /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
     fn int_clause_idx(op: IntOp) -> usize {
-        31 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
+        32 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
     }
 
     /// The clause index of int op `op`'s **congruence** clause (left = reduce
@@ -786,7 +809,7 @@ impl LispRel {
     /// set: the pairs follow the five redex clauses, in [`IntOp::ALL`] order.
     fn int_cong_idx(op: IntOp, right: bool) -> usize {
         let p = IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL");
-        36 + 2 * p + usize::from(right)
+        37 + 2 * p + usize::from(right)
     }
 
     /// The number of `Step` clauses.
@@ -1171,7 +1194,7 @@ impl LispRel {
                 if let Some(integer) = self.int_be.as_deref().and_then(|be| be.as_lit(v)) {
                     return Ok(Some((
                         self.t(),
-                        self.step_base(46, &[covalence_hol_eval::mk_int(integer)])?,
+                        self.step_base(47, &[covalence_hol_eval::mk_int(integer)])?,
                     )));
                 }
                 if self.is_snil(v) {
@@ -1239,7 +1262,20 @@ impl LispRel {
         if test == self.t {
             return Ok(Some((body.clone(), self.step_base(19, &[body, rest])?)));
         }
-        // Test is not yet a canonical value — no rule (would need congruence).
+        if let Some((test2, sub)) = self.prove_step(&test)? {
+            let after_clause = self.scons(test2.clone(), body.clone())?;
+            let after_cells = self.scons(after_clause, rest.clone())?;
+            let to = self.cond_of(after_cells)?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                31,
+                self.step_n_clauses()?,
+                &[test, test2, body, rest],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
         Ok(None)
     }
 
@@ -1618,7 +1654,7 @@ impl LispRel {
     }
 
     /// Is `t` a **value** of the relation: an `(int n)` literal (int dialect),
-    /// an atom, `snil`/`nil`, or a cons of values?
+    /// an atom, `snil`, or a cons of values?
     pub fn is_value(&self, t: &Term) -> bool {
         if let Some(be) = self.int_be.as_deref()
             && be.as_lit(t).is_some()
@@ -1987,19 +2023,19 @@ mod tests {
         assert!(r.prove_step(&r.car(a).unwrap()).unwrap().is_none());
     }
 
-    /// The rule sets have the expected clause counts. `sector` has 31 `Step`
+    /// The rule sets have the expected clause counts. `sector` has 32 `Step`
     /// clauses; integer dialects add five arithmetic redex clauses, ten
     /// arithmetic congruence clauses, and the positive `integer?` clause.
     #[test]
     fn clause_counts() {
         let r = rel();
-        assert_eq!(r.step_n_clauses().unwrap(), 31);
+        assert_eq!(r.step_n_clauses().unwrap(), 32);
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
 
         let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
-        assert_eq!(ri.step_n_clauses().unwrap(), 47);
+        assert_eq!(ri.step_n_clauses().unwrap(), 48);
         let exact = LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap();
-        assert_eq!(exact.step_n_clauses().unwrap(), 47);
+        assert_eq!(exact.step_n_clauses().unwrap(), 48);
     }
 
     // ---- integer dialect (sector+int) ------------------------------------
@@ -2040,7 +2076,7 @@ mod tests {
 
         for (source, expected) in [
             ("(integer? (car (quote (1 two))))", "t"),
-            ("(integer? (car (cdr (quote (1 two)))))", "nil"),
+            ("(integer? (car (cdr (quote (1 two)))))", "()"),
         ] {
             let expression = frontend
                 .lower(&crate::reader::read_one(source).unwrap())

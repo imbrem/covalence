@@ -626,7 +626,7 @@ impl HostSession {
 
     pub fn evaluate(&self, form: &SExpr) -> Result<FrontendValue, HostSessionError> {
         let expression = self.frontend.lower(form).map_err(HostSessionError::Lower)?;
-        self.evaluate_core(expression)
+        self.evaluate_core(&expression)
     }
 
     pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, HostSessionError> {
@@ -637,7 +637,7 @@ impl HostSession {
         else {
             return Ok(None);
         };
-        let value = self.evaluate_core(expression)?;
+        let value = self.evaluate_core(&expression)?;
         if !matches!(value, HostValue::Closure(_)) {
             return Err(HostSessionError::DefinitionDidNotProduceClosure);
         }
@@ -670,10 +670,18 @@ impl HostSession {
         Ok(names)
     }
 
-    fn evaluate_core(&self, expression: FrontendExpr) -> Result<FrontendValue, HostSessionError> {
+    /// Evaluate already-lowered shared Lisp syntax.
+    ///
+    /// This is the backend seam used by conformance suites and callers that
+    /// parse/lower once before selecting among host and proof-producing
+    /// realizations.
+    pub fn evaluate_core(
+        &self,
+        expression: &FrontendExpr,
+    ) -> Result<FrontendValue, HostSessionError> {
         let trace = execute(
             &host_machine(),
-            HostConfiguration::with_environment(expression, self.environment.clone()),
+            HostConfiguration::with_environment(expression.clone(), self.environment.clone()),
             self.fuel,
         )
         .map_err(HostSessionError::Execute)?;

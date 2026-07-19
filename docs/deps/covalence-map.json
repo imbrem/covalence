@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 826,
+      "words": 834,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2312,
+      "words": 2348,
       "updated": 0
     },
     {

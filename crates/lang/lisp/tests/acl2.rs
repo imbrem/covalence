@@ -432,6 +432,24 @@ fn structural_predicate_defun_is_admitted() {
 }
 
 #[test]
+fn defun_retains_plain_structural_admission_witnesses() {
+    let mut s = Acl2Session::new().unwrap();
+
+    s.eval_cell("(defun identity (x) x)").unwrap();
+    let identity = s.admission("identity").unwrap();
+    assert_eq!(identity.recursive_calls, 0);
+    assert_eq!(identity.decreasing_parameter, None);
+
+    s.eval_cell(APP).unwrap();
+    let app = s.admission("app").unwrap();
+    assert_eq!(app.recursive_calls, 1);
+    assert_eq!(app.decreasing_parameter, Some(0));
+
+    assert!(s.eval_cell("(defun bad (x) (bad x))").is_err());
+    assert!(s.admission("bad").is_none());
+}
+
+#[test]
 fn undefined_callee_is_rejected() {
     let mut s = session();
     // ACL2 requires definition before use — no forward references.

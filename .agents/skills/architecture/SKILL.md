@@ -6,6 +6,16 @@ disable-model-invocation: true
 
 ## Repo Layout
 
+- `crates/kernel/` — low-level, stable capability APIs and trusted
+  implementations. APIs here should be shaped so they can become WIT-facing
+  component boundaries; being under `kernel/` does not by itself mean being
+  trusted.
+- `crates/lang/` — high-level concrete language frontends and language-specific
+  policy (for example Scheme). `kernel/` and `lang/` are responsibility
+  boundaries, not a blanket dependency ordering: dependencies may point either
+  way across them so long as the Cargo package graph stays acyclic. Extract a
+  shared interface/IR package when an actual package cycle would otherwise
+  arise.
 - `crates/app/cov/` — Main binary crate (`cov` CLI)
   - `src/main.rs` — Entry point with clap derive; dispatches to `cov lsp`, `cov cog`, `cov serve`, `cov repl`
   - `src/highlight.rs` — S-expression syntax highlighting for the REPL

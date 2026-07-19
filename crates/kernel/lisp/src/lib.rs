@@ -21,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admission;
 pub mod host;
 pub mod relation;
 pub mod stack;
@@ -29,6 +30,10 @@ pub mod syntax;
 pub use covalence_kernel_data as data;
 pub use covalence_sexpr_api as sexpr;
 
+pub use admission::{
+    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
+    RecursiveCall, TerminationCertificate, Totalization,
+};
 pub use host::{
     CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum, HostConfiguration,
     HostControl, HostEnvironment, HostFrame, HostValue,

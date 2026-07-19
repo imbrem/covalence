@@ -236,12 +236,21 @@
       "updated": 0
     },
     {
+      "id": "api:A0024",
+      "kind": "api",
+      "title": "Lisp admission and totalization",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/admission.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 234,
+      "words": 244,
       "updated": 0
     },
     {
@@ -475,7 +484,7 @@
       "title": "CLAUDE.md",
       "status": "tracked",
       "path": "CLAUDE.md",
-      "words": 186,
+      "words": 194,
       "updated": 0
     },
     {
@@ -9308,6 +9317,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/admission.rs",
+      "kind": "file",
+      "title": "admission.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/admission.rs",
+      "words": 85,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/host.rs",
       "kind": "file",
       "title": "host.rs",
@@ -9322,7 +9340,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 46,
+      "words": 51,
       "updated": 0
     },
     {
@@ -10690,7 +10708,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1754,
+      "words": 1785,
       "updated": 0
     },
     {
@@ -10816,7 +10834,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 468,
+      "words": 486,
       "updated": 0
     },
     {
@@ -22858,6 +22876,18 @@
       "detail": null
     },
     {
+      "source": "api:A0024",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/lisp/src/admission.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0024",
+      "predicate": "depends-on",
+      "target": "api:A0022",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -25183,6 +25213,12 @@
       "source": "file:crates/kernel/lisp/sexpr/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/sexpr/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/admission.rs",
       "detail": null
     },
     {
@@ -33486,6 +33522,12 @@
       "title": "Concatenative Lisp stack machines",
       "status": "experimental",
       "path": "crates/kernel/lisp/src/stack.rs"
+    },
+    {
+      "id": "A0024",
+      "title": "Lisp admission and totalization",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/admission.rs"
     }
   ],
   "apiImplementations": [

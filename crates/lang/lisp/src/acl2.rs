@@ -238,6 +238,17 @@ pub struct Acl2Theorem {
     pub proof: Acl2Proof,
 }
 
+/// Plain structural-admission witness retained for an ACL2 `defun`.
+///
+/// This records what the surface checker established. It is not a theorem and
+/// cannot totalize the function; the deep ACL2/HOL layer must replay suitable
+/// evidence before gaining theorem authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Acl2Admission {
+    pub recursive_calls: usize,
+    pub decreasing_parameter: Option<usize>,
+}
+
 // ============================================================================
 // The session
 // ============================================================================
@@ -251,6 +262,7 @@ pub struct Acl2Theorem {
 /// theorems, retrievable via [`theorem`](Acl2Session::theorem)).
 pub struct Acl2Session {
     defs: Defs,
+    admissions: BTreeMap<String, Acl2Admission>,
     thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
     sem0: LispSemantics,
@@ -268,6 +280,7 @@ impl Acl2Session {
     pub fn new() -> Result<Self, Acl2Error> {
         Ok(Acl2Session {
             defs: Defs::new(),
+            admissions: BTreeMap::new(),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
             deep: KernelAcl2Session::new(shadow_env().map_err(kernel_err)?),
@@ -278,6 +291,10 @@ impl Acl2Session {
     /// The admitted `defun` dictionary.
     pub fn defs(&self) -> &Defs {
         &self.defs
+    }
+
+    pub fn admission(&self, name: &str) -> Option<&Acl2Admission> {
+        self.admissions.get(name)
     }
 
     /// A proved `defthm` by name — the genuine kernel theorem (its hypotheses
@@ -329,6 +346,7 @@ impl Acl2Session {
     /// table) — infallible, used by the `#lang` switch reset.
     pub fn reset(&mut self) {
         self.defs = Defs::new();
+        self.admissions = BTreeMap::new();
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
             self.deep = KernelAcl2Session::new(env);
@@ -523,10 +541,12 @@ impl Acl2Session {
         let params = param_names(&items[2]).map_err(&inadmissible)?;
         let body = defun_body(items).map_err(Acl2Error::Malformed)?;
         let source_body = body.clone();
-        self.check_admissible(&name, &params, body)
+        let admission = self
+            .check_admissible(&name, &params, body)
             .map_err(&inadmissible)?;
         let body = self.translate(body, &params, Some(&name))?;
         self.install(&name, &params, &body)?;
+        self.admissions.insert(name.clone(), admission);
         self.try_admit_deep_defun(&name, &params, &source_body);
         Ok(name)
     }
@@ -569,19 +589,30 @@ impl Acl2Session {
 
     /// The syntactic admissibility check (see the module docs for the exact
     /// criterion). Errors carry a human-readable reason.
-    fn check_admissible(&self, name: &str, params: &[String], body: &SExpr) -> Result<(), String> {
+    fn check_admissible(
+        &self,
+        name: &str,
+        params: &[String],
+        body: &SExpr,
+    ) -> Result<Acl2Admission, String> {
         let mut calls: Vec<&[SExpr]> = Vec::new();
         self.check_body(name, params, body, &mut calls)?;
         if calls.is_empty() {
-            return Ok(()); // non-recursive: nothing to justify
+            return Ok(Acl2Admission {
+                recursive_calls: 0,
+                decreasing_parameter: None,
+            });
         }
-        let decreasing = (0..params.len()).any(|i| {
+        let decreasing_parameter = (0..params.len()).find(|&i| {
             calls
                 .iter()
                 .all(|args| is_proper_projection(&args[i], &params[i]))
         });
-        if decreasing {
-            Ok(())
+        if let Some(decreasing_parameter) = decreasing_parameter {
+            Ok(Acl2Admission {
+                recursive_calls: calls.len(),
+                decreasing_parameter: Some(decreasing_parameter),
+            })
         } else {
             Err(format!(
                 "not structurally recursive: no formal position decreases — every \

@@ -1281,6 +1281,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-lexer-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-logic-api",
+ "covalence-parsing-api",
+ "covalence-regex-parsing",
+]
+
+[[package]]
 name = "covalence-lisp"
 version = "0.0.0"
 dependencies = [

@@ -557,6 +557,10 @@
       "to": "covalence-arrow"
     },
     {
+      "from": "covalence-parsing-api",
+      "to": "covalence-logic-api"
+    },
+    {
       "from": "covalence-pure",
       "to": "covalence-pure-trusted"
     },

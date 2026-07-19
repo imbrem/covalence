@@ -191,6 +191,7 @@ digraph deps {
   "opentheory" -> "hol-api";
   "opentheory" -> "hol-eval";
   "parquet" -> "arrow";
+  "parsing-api" -> "logic-api";
   "pure" -> "pure-trusted";
   "pure-eval" -> "pure";
   "pure-eval" -> "types";

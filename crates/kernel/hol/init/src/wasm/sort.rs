@@ -7,7 +7,10 @@
 //! not silently replace erased case/field premises with truth.
 
 use covalence_core::{Error, Result, Term, Type, subst};
-use covalence_spectec::ast::{SpecTecPrem, SpecTecTyp, SpecTecTypBind};
+use covalence_spectec::ast::{
+    SpecTecArg, SpecTecBinOp, SpecTecCmpOp, SpecTecExp, SpecTecIter, SpecTecIterExp, SpecTecNum,
+    SpecTecNumTyp, SpecTecOpTyp, SpecTecParam, SpecTecPrem, SpecTecTyp, SpecTecTypBind,
+};
 
 use super::denote::{self, DenoteCtx, TypeEnv};
 use super::syntax;
@@ -121,32 +124,42 @@ pub enum RefinementLowering<'a> {
 /// Implementations are ordinary, untrusted term builders. [`HolSort`] checks
 /// the resulting predicate's type before a resolver exposes it.
 pub trait RefinementLowerer {
-    fn lower<'a>(&self, family: &TypeFamily<'a>, carrier: &Type) -> Result<RefinementLowering<'a>>;
+    fn lower<'a>(
+        &self,
+        family: &TypeFamily<'a>,
+        arguments: &[SpecTecArg],
+        carrier: &Type,
+        ctx: &syntax::TypeCtx<'a>,
+    ) -> Result<RefinementLowering<'a>>;
 }
 
 /// Exact value-refinement fragment used by the bundled WASM syntax.
 ///
-/// It accepts precisely a nullary family with one instance and one
-/// single-constructor variant whose payload is one named value. Every retained
-/// premise must be an `If`; those expressions are denoted in HOL under that
-/// payload binder, conjoined in source order, and lambda-abstracted. Parametric,
-/// dependent, multi-case, field, and non-`If` refinements are refused.
-// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the dependent/parametric remainder of 56 retained refinements across 29 types; four singleton value predicates are exact.
+/// It accepts a one-instance, single-constructor value family whose payload is
+/// carrier-transparent. Primitive payload predicates are denoted directly.
+/// The parametric `list(X)` family is also compiled exactly: its retained
+/// `|X*| < 2^32` premise becomes a predicate over the resolved `list X`
+/// carrier. Multi-case, field, existentially bound, and non-`If` refinements
+/// are refused.
+// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the dependent remainder of 56 retained refinements across 29 types; singleton primitive predicates and the parametric bounded-list predicate are exact.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SingletonValueRefinementLowerer;
 
 impl RefinementLowerer for SingletonValueRefinementLowerer {
-    fn lower<'a>(&self, family: &TypeFamily<'a>, carrier: &Type) -> Result<RefinementLowering<'a>> {
+    fn lower<'a>(
+        &self,
+        family: &TypeFamily<'a>,
+        arguments: &[SpecTecArg],
+        carrier: &Type,
+        ctx: &syntax::TypeCtx<'a>,
+    ) -> Result<RefinementLowering<'a>> {
         if family.refinements().next().is_none() {
             return Ok(RefinementLowering::NotApplicable);
         }
-        if !family.params.is_empty() || family.instances.len() != 1 {
+        if arguments.len() != family.params.len() || family.instances.len() != 1 {
             return Ok(RefinementLowering::Unsupported);
         }
         let instance = &family.instances[0];
-        if !instance.params.is_empty() || !instance.args.is_empty() {
-            return Ok(RefinementLowering::Unsupported);
-        }
         let TypeShape::Variant(cases) = &instance.shape else {
             return Ok(RefinementLowering::Unsupported);
         };
@@ -154,6 +167,27 @@ impl RefinementLowerer for SingletonValueRefinementLowerer {
             return Ok(RefinementLowering::Unsupported);
         };
         if !case.params.is_empty() || case.refinements.is_empty() {
+            return Ok(RefinementLowering::Unsupported);
+        }
+
+        if let Some((predicate, source_premises)) =
+            lower_bounded_list(family, arguments, carrier, ctx)?
+        {
+            return Ok(RefinementLowering::Predicate {
+                predicate,
+                source_premises,
+            });
+        }
+        if let Some((predicate, source_premises)) =
+            lower_bounded_unsigned(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::Predicate {
+                predicate,
+                source_premises,
+            });
+        }
+
+        if !family.params.is_empty() || !instance.params.is_empty() || !instance.args.is_empty() {
             return Ok(RefinementLowering::Unsupported);
         }
         let SpecTecTyp::Tup { ets } = case.payload else {
@@ -198,6 +232,316 @@ impl RefinementLowerer for SingletonValueRefinementLowerer {
             source_premises: case.refinements,
         })
     }
+}
+
+/// Compile `uN(N)` for a ground natural width.
+///
+/// The source spells the upper bound through `nat → int → nat`
+/// conversions. Once `N` is ground this is exactly `i ≤ 2^N - 1`; keeping the
+/// subtraction in `nat` also preserves the source's `N = 0` behavior. The
+/// complete source expression is recognized before this normalization.
+fn lower_bounded_unsigned<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, &'a [SpecTecPrem])>> {
+    if family.name != "uN" || carrier != &Type::nat() {
+        return Ok(None);
+    }
+    let (
+        [SpecTecParam::Exp { x: width_name, .. }],
+        [
+            SpecTecArg::Exp {
+                e:
+                    SpecTecExp::Num {
+                        n: SpecTecNum::Nat(width),
+                    },
+            },
+        ],
+        [instance],
+    ) = (family.params, arguments, family.instances.as_slice())
+    else {
+        return Ok(None);
+    };
+    if !matches!(
+        (instance.params, instance.args),
+        (
+            [SpecTecParam::Exp { x: instance_width, .. }],
+            [SpecTecArg::Exp {
+                e: SpecTecExp::Var { id: instance_arg },
+            }],
+        ) if instance_width == width_name && instance_arg == width_name
+    ) {
+        return Ok(None);
+    }
+    let TypeShape::Variant(cases) = &instance.shape else {
+        return Ok(None);
+    };
+    let [case] = cases.as_slice() else {
+        return Ok(None);
+    };
+    let SpecTecTyp::Tup { ets } = case.payload else {
+        return Ok(None);
+    };
+    let [
+        SpecTecTypBind::Bind {
+            id: value_name,
+            typ: SpecTecTyp::Num(SpecTecNumTyp::Nat),
+        },
+    ] = ets.as_slice()
+    else {
+        return Ok(None);
+    };
+    let [SpecTecPrem::If { e }] = case.refinements else {
+        return Ok(None);
+    };
+    if !case.params.is_empty() || !is_exact_unsigned_bound(e, value_name, width_name) {
+        return Ok(None);
+    }
+
+    let value = Term::free(value_name.clone(), Type::nat());
+    let zero_le = crate::init::nat::nat_le()
+        .apply(covalence_hol_eval::mk_nat(0u64))?
+        .apply(value.clone())?;
+    let top = crate::init::nat::nat_sub()
+        .apply(
+            crate::init::nat::nat_pow()
+                .apply(covalence_hol_eval::mk_nat(2u64))?
+                .apply(covalence_hol_eval::mk_nat(*width))?,
+        )?
+        .apply(covalence_hol_eval::mk_nat(1u64))?;
+    let upper = crate::init::nat::nat_le().apply(value)?.apply(top)?;
+    let body = zero_le.and(upper)?;
+    let predicate = Term::abs(Type::nat(), subst::close(&body, value_name));
+    Ok(Some((predicate, case.refinements)))
+}
+
+fn is_exact_unsigned_bound(e: &SpecTecExp, value_name: &str, width_name: &str) -> bool {
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::And,
+        t: SpecTecOpTyp::Bool(_),
+        e1,
+        e2,
+    } = e
+    else {
+        return false;
+    };
+    let SpecTecExp::Cmp {
+        op: SpecTecCmpOp::Ge,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+        e1: lower_value,
+        e2: lower_zero,
+    } = e1.as_ref()
+    else {
+        return false;
+    };
+    if !matches!(lower_value.as_ref(), SpecTecExp::Var { id } if id == value_name)
+        || !matches!(
+            lower_zero.as_ref(),
+            SpecTecExp::Num {
+                n: SpecTecNum::Nat(0)
+            }
+        )
+    {
+        return false;
+    }
+    let SpecTecExp::Cmp {
+        op: SpecTecCmpOp::Le,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+        e1: upper_value,
+        e2: upper,
+    } = e2.as_ref()
+    else {
+        return false;
+    };
+    if !matches!(upper_value.as_ref(), SpecTecExp::Var { id } if id == value_name) {
+        return false;
+    }
+    let SpecTecExp::Cvt {
+        nt1: SpecTecNumTyp::Int,
+        nt2: SpecTecNumTyp::Nat,
+        e1: difference,
+    } = upper.as_ref()
+    else {
+        return false;
+    };
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::Sub,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+        e1: power_as_int,
+        e2: one_as_int,
+    } = difference.as_ref()
+    else {
+        return false;
+    };
+    let SpecTecExp::Cvt {
+        nt1: SpecTecNumTyp::Nat,
+        nt2: SpecTecNumTyp::Int,
+        e1: power,
+    } = power_as_int.as_ref()
+    else {
+        return false;
+    };
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::Pow,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+        e1: two,
+        e2: width,
+    } = power.as_ref()
+    else {
+        return false;
+    };
+    matches!(
+        two.as_ref(),
+        SpecTecExp::Num {
+            n: SpecTecNum::Nat(2)
+        }
+    ) && matches!(width.as_ref(), SpecTecExp::Var { id } if id == width_name)
+        && matches!(
+            one_as_int.as_ref(),
+            SpecTecExp::Cvt {
+                nt1: SpecTecNumTyp::Nat,
+                nt2: SpecTecNumTyp::Int,
+                e1,
+            } if matches!(e1.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(1) })
+        )
+}
+
+/// Compile the exact source refinement on `list(X)`.
+///
+/// This recognizer is deliberately structural and fail-closed. In particular,
+/// it does not infer that an arbitrary list-shaped premise means a length
+/// bound: every operator, literal, binder, and source-domain occurrence is
+/// checked before the normalized HOL predicate is built.
+fn lower_bounded_list<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+    ctx: &syntax::TypeCtx<'a>,
+) -> Result<Option<(Term, &'a [SpecTecPrem])>> {
+    if family.name != "list" {
+        return Ok(None);
+    }
+    let ([SpecTecParam::Typ { x: type_param }], [SpecTecArg::Typ { t: element_ast }], [instance]) =
+        (family.params, arguments, family.instances.as_slice())
+    else {
+        return Ok(None);
+    };
+    if !matches!(
+        (instance.params, instance.args),
+        (
+            [SpecTecParam::Typ { x: instance_element }],
+            [SpecTecArg::Typ {
+                t: SpecTecTyp::Var {
+                    x: instance_arg,
+                    as1,
+                },
+            }],
+        ) if instance_element == type_param && instance_arg == type_param && as1.is_empty()
+    ) {
+        return Ok(None);
+    }
+    let TypeShape::Variant(cases) = &instance.shape else {
+        return Ok(None);
+    };
+    let [case] = cases.as_slice() else {
+        return Ok(None);
+    };
+    let SpecTecTyp::Tup { ets } = case.payload else {
+        return Ok(None);
+    };
+    let [
+        SpecTecTypBind::Bind {
+            id: payload_name,
+            typ:
+                SpecTecTyp::Iter {
+                    t1,
+                    it: payload_iterations,
+                },
+        },
+    ] = ets.as_slice()
+    else {
+        return Ok(None);
+    };
+    let SpecTecTyp::Var {
+        x: payload_element,
+        as1: payload_element_args,
+    } = t1.as_ref()
+    else {
+        return Ok(None);
+    };
+    if payload_element != type_param
+        || !payload_element_args.is_empty()
+        || payload_iterations.as_slice() != [SpecTecIter::List]
+        || !case.params.is_empty()
+    {
+        return Ok(None);
+    }
+    let [premise @ SpecTecPrem::If { e }] = case.refinements else {
+        return Ok(None);
+    };
+    if !is_exact_list_bound(e, type_param, payload_name) {
+        return Ok(None);
+    }
+
+    let element = syntax::resolve_typ(element_ast, ctx)?;
+    let expected_carrier = crate::init::list::list(element.clone());
+    if carrier != &expected_carrier {
+        return Ok(None);
+    }
+    let value = Term::free(payload_name.clone(), carrier.clone());
+    let length = covalence_hol_eval::defs::list_length(element).apply(value.clone())?;
+    let bound = crate::init::nat::nat_pow()
+        .apply(covalence_hol_eval::mk_nat(2u64))?
+        .apply(covalence_hol_eval::mk_nat(32u64))?;
+    let body = crate::init::nat::nat_lt().apply(length)?.apply(bound)?;
+    let predicate = Term::abs(carrier.clone(), subst::close(&body, payload_name));
+    Ok(Some((predicate, std::slice::from_ref(premise))))
+}
+
+fn is_exact_list_bound(e: &SpecTecExp, type_param: &str, payload_name: &str) -> bool {
+    let SpecTecExp::Cmp {
+        op: SpecTecCmpOp::Lt,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+        e1,
+        e2,
+    } = e
+    else {
+        return false;
+    };
+    let SpecTecExp::Len { e1: iterated } = e1.as_ref() else {
+        return false;
+    };
+    let SpecTecExp::Iter {
+        e1: element,
+        it: SpecTecIter::List,
+        xes,
+    } = iterated.as_ref()
+    else {
+        return false;
+    };
+    let SpecTecExp::Var { id: element_name } = element.as_ref() else {
+        return false;
+    };
+    let [SpecTecIterExp::Dom { x, e: domain }] = xes.as_slice() else {
+        return false;
+    };
+    let SpecTecExp::Var { id: domain_name } = domain else {
+        return false;
+    };
+    if element_name != type_param || x != type_param || domain_name != payload_name {
+        return false;
+    }
+    matches!(
+        e2.as_ref(),
+        SpecTecExp::Bin {
+            op: SpecTecBinOp::Pow,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+            e1,
+            e2,
+        } if matches!(e1.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(2) })
+            && matches!(e2.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(32) })
+    )
 }
 
 /// Behavior-preserving adapter around [`syntax::resolve_typ`].
@@ -275,10 +619,9 @@ impl SemanticTypeResolver for RefinementAwareTypeResolver<'_, '_, '_> {
                 provenance: TypeProvenance::SemanticBackend,
             })
         } else if let SpecTecTyp::Var { x, as1 } = ty
-            && as1.is_empty()
             && let Some(family) = self.families.family(x)
             && let RefinementLowering::Predicate { predicate, .. } =
-                self.refinements.lower(family, &carrier)?
+                self.refinements.lower(family, as1, &carrier, self.ctx)?
         {
             Ok(ResolvedType {
                 sort: HolSort::with_invariant(carrier, predicate)?,
@@ -370,7 +713,7 @@ mod tests {
         let RefinementLowering::Predicate {
             source_premises, ..
         } = SingletonValueRefinementLowerer
-            .lower(family, &Type::nat())
+            .lower(family, &[], &Type::nat(), &ctx)
             .unwrap()
         else {
             panic!("byte source refinement must lower");
@@ -383,13 +726,131 @@ mod tests {
     }
 
     #[test]
-    fn exact_value_fragment_is_live_but_dependent_refinements_still_refuse() {
+    fn parametric_list_bound_becomes_an_exact_checked_predicate() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let list_bool = SpecTecTyp::Var {
+            x: "list".into(),
+            as1: vec![SpecTecArg::Typ {
+                t: SpecTecTyp::Bool,
+            }],
+        };
+        let resolved = RefinementAwareTypeResolver::new(&ctx, &families)
+            .resolve_type(&list_bool)
+            .unwrap();
+        let carrier = crate::init::list::list(Type::bool());
+        assert_eq!(resolved.sort.carrier(), &carrier);
+        let SortInvariant::Predicate(predicate) = resolved.sort.invariant() else {
+            panic!("list(bool) must retain its source length bound");
+        };
+        assert_eq!(
+            predicate.type_of().unwrap(),
+            Type::fun(carrier.clone(), Type::bool())
+        );
+        assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+
+        let family = families.family("list").unwrap();
+        let arguments = match &list_bool {
+            SpecTecTyp::Var { as1, .. } => as1,
+            _ => unreachable!(),
+        };
+        let RefinementLowering::Predicate {
+            source_premises, ..
+        } = SingletonValueRefinementLowerer
+            .lower(family, arguments, &carrier, &ctx)
+            .unwrap()
+        else {
+            panic!("list(bool) source refinement must lower");
+        };
+        assert_eq!(source_premises.len(), 1);
+        assert!(std::ptr::eq(
+            &source_premises[0],
+            family.refinements().next().unwrap()
+        ));
+
+        // Wrong argument kinds and carriers fail closed.
+        assert!(matches!(
+            SingletonValueRefinementLowerer
+                .lower(family, &[], &carrier, &ctx)
+                .unwrap(),
+            RefinementLowering::Unsupported
+        ));
+        assert!(matches!(
+            SingletonValueRefinementLowerer
+                .lower(family, arguments, &Type::nat(), &ctx)
+                .unwrap(),
+            RefinementLowering::Unsupported
+        ));
+    }
+
+    #[test]
+    fn ground_unsigned_width_becomes_an_exact_checked_predicate() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let resolver = RefinementAwareTypeResolver::new(&ctx, &families);
+        let u32_ty = SpecTecTyp::Var {
+            x: "uN".into(),
+            as1: vec![SpecTecArg::Exp {
+                e: SpecTecExp::Num {
+                    n: SpecTecNum::Nat(32),
+                },
+            }],
+        };
+        let resolved = resolver.resolve_type(&u32_ty).unwrap();
+        assert_eq!(resolved.sort.carrier(), &Type::nat());
+        let SortInvariant::Predicate(predicate) = resolved.sort.invariant() else {
+            panic!("uN(32) must retain its source numeric bound");
+        };
+        assert_eq!(
+            predicate.type_of().unwrap(),
+            Type::fun(Type::nat(), Type::bool())
+        );
+        assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+        let family = families.family("uN").unwrap();
+        let arguments = match &u32_ty {
+            SpecTecTyp::Var { as1, .. } => as1,
+            _ => unreachable!(),
+        };
+        let RefinementLowering::Predicate {
+            source_premises, ..
+        } = SingletonValueRefinementLowerer
+            .lower(family, arguments, &Type::nat(), &ctx)
+            .unwrap()
+        else {
+            panic!("uN(32) source refinement must lower");
+        };
+        assert_eq!(source_premises.len(), 1);
+        assert!(std::ptr::eq(
+            &source_premises[0],
+            family.refinements().next().unwrap()
+        ));
+
+        let symbolic = SpecTecTyp::Var {
+            x: "uN".into(),
+            as1: vec![SpecTecArg::Exp {
+                e: SpecTecExp::Var { id: "N".into() },
+            }],
+        };
+        // Carrier rendering does not require a value environment, but the
+        // refinement lowerer must not pretend an uninstantiated bound is
+        // closed.
+        let unresolved = resolver.resolve_type(&symbolic).unwrap();
+        assert!(matches!(
+            unresolved.sort.invariant(),
+            SortInvariant::Unresolved
+        ));
+    }
+
+    #[test]
+    fn exact_value_and_list_fragments_are_live_but_other_dependent_refinements_refuse() {
         let defs = crate::wasm::spec::wasm_spec();
         let ctx = syntax::TypeCtx::new(&defs);
         let families = TypeFamilies::new(&defs);
         let resolver = RefinementAwareTypeResolver::new(&ctx, &families);
 
-        for name in ["bit", "byte", "char", "dim"] {
+        for name in ["bit", "byte", "char", "dim", "sz"] {
             let resolved = resolver
                 .resolve_type(&SpecTecTyp::Var {
                     x: name.into(),

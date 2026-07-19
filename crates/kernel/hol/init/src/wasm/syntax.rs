@@ -56,12 +56,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use covalence_core::{Error, Result, Type};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_spectec::ast::{
     SpecTecArg, SpecTecDef, SpecTecDefTyp, SpecTecExp, SpecTecInst, SpecTecIter, SpecTecNumTyp,
     SpecTecParam, SpecTecTyp, SpecTecTypBind, SpecTecTypCase, SpecTecTypField,
 };
 
 use super::type_family::{TypeFamilies, TypeFamilySource};
+use crate::init::eq::beta_nf;
+use crate::init::ext::TermExt;
 use crate::init::inductive::{
     ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var,
 };
@@ -668,15 +671,162 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
 /// are normalized to their exact structural bodies first: they do **not**
 /// acquire a fictitious constructor merely because Tarjan includes them in the
 /// same dependency SCC. This is the standard simultaneous generalisation of
-/// the existing unary [`ChurchBackend`] type. It is representation-only (no
-/// constructors or theorems are minted), but it is exact about source
+/// the existing unary [`ChurchBackend`] type. The signature below supplies
+/// handler-injection constructors and their checked β laws, while keeping
+/// source-datatype freeness as explicit obligations. It is exact about source
 /// constructor order, payload shape and every recursive edge. Unsupported
 /// binders/refinements are refused rather than erased.
+/// One handler-injection constructor in a simultaneous Church signature.
+#[derive(Debug, Clone)]
+pub struct MutualChurchConstructor {
+    owner: String,
+    name: String,
+    payload: Type,
+    term: covalence_core::Term,
+    handler_index: usize,
+}
+
+impl MutualChurchConstructor {
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn payload_type(&self) -> &Type {
+        &self.payload
+    }
+    pub fn term(&self) -> &covalence_core::Term {
+        &self.term
+    }
+}
+
+/// A freeness law that an exact mutual-datatype backend must discharge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MutualFreenessObligation {
+    Injective { constructor: usize },
+    Distinct { left: usize, right: usize },
+}
+
+/// Exact term-level signature of one mutually-recursive SCC.
+///
+/// Constructors are handler injections over the already-folded payload
+/// carriers. Their computation laws are pure β and kernel checked. This does
+/// not claim source-datatype freeness: every injectivity/distinctness law is
+/// retained explicitly in [`Self::freeness_obligations`].
+// TODO(cov:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free, severe): Seal simultaneous Church signatures as exact recursive carriers; handler-injection constructors and β laws are now checked.
+// TODO(cov:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded, severe): Discharge the explicit mutual injectivity/distinctness obligations in an exact-type backend and thread them into denotation.
+#[derive(Debug, Clone)]
+pub struct MutualChurchSignature {
+    members: Vec<String>,
+    carriers: BTreeMap<String, Type>,
+    handler_types: Vec<Type>,
+    constructors: Vec<MutualChurchConstructor>,
+}
+
+impl MutualChurchSignature {
+    pub fn members(&self) -> &[String] {
+        &self.members
+    }
+
+    pub fn carrier(&self, member: &str) -> Option<&Type> {
+        self.carriers.get(member)
+    }
+
+    pub fn constructors(&self) -> &[MutualChurchConstructor] {
+        &self.constructors
+    }
+
+    pub fn handler_types(&self) -> &[Type] {
+        &self.handler_types
+    }
+
+    pub fn freeness_obligations(&self) -> Vec<MutualFreenessObligation> {
+        let mut out = self
+            .constructors
+            .iter()
+            .enumerate()
+            .map(|(constructor, _)| MutualFreenessObligation::Injective { constructor })
+            .collect::<Vec<_>>();
+        for left in 0..self.constructors.len() {
+            for right in left + 1..self.constructors.len() {
+                if self.constructors[left].owner == self.constructors[right].owner {
+                    out.push(MutualFreenessObligation::Distinct { left, right });
+                }
+            }
+        }
+        out
+    }
+
+    /// Prove the handler-injection computation equation
+    /// `Cᵢ payload handlers = handlers[i] payload` by β-normalisation.
+    pub fn computation(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+        handlers: &[covalence_core::Term],
+    ) -> Result<Thm> {
+        let ctor = self
+            .constructors
+            .get(constructor)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?;
+        if handlers.len() != self.handler_types.len() {
+            return Err(syntax_err("wrong mutual handler count"));
+        }
+        for (actual, expected) in handlers.iter().zip(&self.handler_types) {
+            if actual.type_of()? != *expected {
+                return Err(syntax_err("wrong mutual handler type"));
+            }
+        }
+        if payload.type_of()? != ctor.payload {
+            return Err(syntax_err("wrong mutual constructor payload type"));
+        }
+        let mut lhs = ctor.term.clone().apply(payload.clone())?;
+        for handler in handlers {
+            lhs = lhs.apply(handler.clone())?;
+        }
+        let rhs = handlers[ctor.handler_index].clone().apply(payload)?;
+        let lhs_beta = beta_nf(lhs);
+        let rhs_beta = beta_nf(rhs);
+        let Some((_, lhs_nf)) = lhs_beta.concl().as_eq() else {
+            return Err(syntax_err("β-normalisation did not produce equality"));
+        };
+        let Some((_, rhs_nf)) = rhs_beta.concl().as_eq() else {
+            return Err(syntax_err("β-normalisation did not produce equality"));
+        };
+        if lhs_nf != rhs_nf {
+            return Err(syntax_err(
+                "mutual constructor did not reduce to selected handler",
+            ));
+        }
+        lhs_beta.trans(rhs_beta.sym()?)
+    }
+}
+
+/// Build the term-level simultaneous Church signature containing `member`.
+pub fn mutual_church_signature(member: &str, ctx: &TypeCtx<'_>) -> Result<MutualChurchSignature> {
+    let component = ctx
+        .mutual_by_name
+        .get(member)
+        .ok_or_else(|| syntax_err(format!("`{member}` is not in a mutual type SCC")))?;
+    build_mutual_church_signature(component, ctx)
+}
+
 fn resolve_mutual_named<'a>(
     target: &str,
     component: &[&'a str],
     ctx: &TypeCtx<'a>,
 ) -> Result<Type> {
+    build_mutual_church_signature(component, ctx)?
+        .carrier(target)
+        .cloned()
+        .ok_or_else(|| syntax_err(format!("`{target}` is not in its mutual component")))
+}
+
+fn build_mutual_church_signature<'a>(
+    component: &[&'a str],
+    ctx: &TypeCtx<'a>,
+) -> Result<MutualChurchSignature> {
     let mutual_members: BTreeSet<String> =
         component.iter().map(|name| (*name).to_owned()).collect();
     let mut mutual = BTreeMap::new();
@@ -811,15 +961,18 @@ fn resolve_mutual_named<'a>(
             match dt {
                 SpecTecDefTyp::Alias { .. } | SpecTecDefTyp::Struct { .. } => {}
                 SpecTecDefTyp::Variant { tcs } => {
-                    for SpecTecTypCase::Field { t, qs, prs, .. } in tcs {
+                    for SpecTecTypCase::Field { op, t, qs, prs } in tcs {
                         if !qs.is_empty() || !prs.is_empty() {
                             return Err(syntax_err(format!(
                                 "mutual variant `{member}` has case binders/refinements"
                             )));
                         }
-                        handlers.push(Type::fun(
-                            resolve_typ_d(t, ctx, &mut visited, &scope)?,
-                            result.clone(),
+                        let payload = resolve_typ_d(t, ctx, &mut visited, &scope)?;
+                        handlers.push((
+                            member.to_owned(),
+                            super::encode::mixop_key(op),
+                            payload.clone(),
+                            Type::fun(payload, result.clone()),
                         ));
                     }
                 }
@@ -830,15 +983,54 @@ fn resolve_mutual_named<'a>(
     if handlers.is_empty() {
         return Err(syntax_err("mutual component has no data constructor"));
     }
-    let mut encoded = scope
-        .mutual
-        .get(target)
-        .cloned()
-        .ok_or_else(|| syntax_err(format!("`{target}` is not in its mutual component")))?;
-    for handler in handlers.into_iter().rev() {
-        encoded = Type::fun(handler, encoded);
+    let handler_types: Vec<_> = handlers.iter().map(|(_, _, _, ty)| ty.clone()).collect();
+    let mut carriers = BTreeMap::new();
+    for &member in component {
+        let mut encoded = scope.mutual[member].clone();
+        for handler in handler_types.iter().rev() {
+            encoded = Type::fun(handler.clone(), encoded);
+        }
+        carriers.insert(member.to_owned(), encoded);
     }
-    Ok(encoded)
+    let handler_names: Vec<_> = (0..handler_types.len())
+        .map(|i| format!("cov$mutual$h{i}"))
+        .collect();
+    let handler_vars: Vec<_> = handler_types
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| covalence_core::Term::free(&handler_names[i], ty.clone()))
+        .collect();
+    let constructors = handlers
+        .iter()
+        .enumerate()
+        .map(|(i, (owner, name, payload, _))| {
+            let value = covalence_core::Term::free("cov$mutual$payload", payload.clone());
+            let mut body = handler_vars[i].clone().apply(value.clone())?;
+            for j in (0..handler_vars.len()).rev() {
+                body = covalence_core::Term::abs(
+                    handler_types[j].clone(),
+                    covalence_core::subst::close(&body, &handler_names[j]),
+                );
+            }
+            let term = covalence_core::Term::abs(
+                payload.clone(),
+                covalence_core::subst::close(&body, "cov$mutual$payload"),
+            );
+            Ok(MutualChurchConstructor {
+                owner: owner.clone(),
+                name: name.clone(),
+                payload: payload.clone(),
+                term,
+                handler_index: i,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(MutualChurchSignature {
+        members: component.iter().map(|name| (*name).to_owned()).collect(),
+        carriers,
+        handler_types,
+        constructors,
+    })
 }
 
 /// Resolve a definition body under `base` (its parameter bindings), guarding the
@@ -1209,6 +1401,7 @@ fn reject_parametric_field(qs: &[SpecTecParam]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_core::Term;
     use covalence_spectec::ast::{MixOp, SpecTecInst, SpecTecParam};
 
     fn alias(name: &str, typ: SpecTecTyp) -> SpecTecDef {
@@ -1330,6 +1523,101 @@ mod tests {
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>(),
             expected_vars
+        );
+    }
+
+    #[test]
+    fn mutual_signature_exposes_checked_handler_injections_and_all_obligations() {
+        let defs = vec![
+            variant_def(
+                "even",
+                vec![
+                    variant_case("ZERO", unit_ty()),
+                    variant_case("ES", var("odd")),
+                ],
+            ),
+            variant_def("odd", vec![variant_case("OS", var("even"))]),
+        ];
+        let ctx = TypeCtx::new(&defs);
+        let signature = mutual_church_signature("even", &ctx).unwrap();
+        assert_eq!(signature.members(), ["even", "odd"]);
+        assert_eq!(signature.constructors().len(), 3);
+        assert_eq!(
+            signature
+                .constructors()
+                .iter()
+                .map(|ctor| (ctor.owner(), ctor.name()))
+                .collect::<Vec<_>>(),
+            [("even", "ZERO"), ("even", "ES"), ("odd", "OS")]
+        );
+
+        let handlers: Vec<_> = signature
+            .handler_types()
+            .iter()
+            .enumerate()
+            .map(|(i, ty)| Term::free(format!("test_handler_{i}"), ty.clone()))
+            .collect();
+        for (i, ctor) in signature.constructors().iter().enumerate() {
+            assert_eq!(
+                ctor.term().type_of().unwrap(),
+                Type::fun(
+                    ctor.payload_type().clone(),
+                    signature.carrier(ctor.owner()).unwrap().clone()
+                )
+            );
+            let payload = Term::free(format!("payload_{i}"), ctor.payload_type().clone());
+            let mut lhs = ctor.term().clone().apply(payload.clone()).unwrap();
+            for handler in &handlers {
+                lhs = lhs.apply(handler.clone()).unwrap();
+            }
+            let rhs = handlers[i].clone().apply(payload.clone()).unwrap();
+            let expected = lhs.equals(rhs).unwrap();
+            let computation = signature.computation(i, payload, &handlers).unwrap();
+            assert!(computation.hyps().is_empty());
+            assert_eq!(computation.concl(), &expected);
+        }
+        assert_eq!(
+            signature.freeness_obligations(),
+            [
+                MutualFreenessObligation::Injective { constructor: 0 },
+                MutualFreenessObligation::Injective { constructor: 1 },
+                MutualFreenessObligation::Injective { constructor: 2 },
+                MutualFreenessObligation::Distinct { left: 0, right: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn wasm_mutual_signature_constructor_terms_cover_the_pinned_scc() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        let signature = mutual_church_signature("valtype", &ctx).unwrap();
+        assert_eq!(signature.members().len(), 9);
+        assert_eq!(signature.constructors().len(), 41);
+        for ctor in signature.constructors() {
+            assert_eq!(
+                ctor.term().type_of().unwrap(),
+                Type::fun(
+                    ctor.payload_type().clone(),
+                    signature.carrier(ctor.owner()).unwrap().clone()
+                )
+            );
+        }
+        let obligations = signature.freeness_obligations();
+        assert_eq!(obligations.len(), 224);
+        assert_eq!(
+            obligations
+                .iter()
+                .filter(|law| matches!(law, MutualFreenessObligation::Injective { .. }))
+                .count(),
+            41
+        );
+        assert_eq!(
+            obligations
+                .iter()
+                .filter(|law| matches!(law, MutualFreenessObligation::Distinct { .. }))
+                .count(),
+            183
         );
     }
 

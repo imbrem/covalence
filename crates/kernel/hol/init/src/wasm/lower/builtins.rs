@@ -1,6 +1,6 @@
-//! **Integer-builtin defining clauses** — per-width supplementary `fn.*`
-//! clauses for the WASM integer numerics (spec §4.3.2, *Integer Operations*),
-//! the biggest fireability unlock of the Dec leg: arithmetic execution.
+//! **Exact numeric/representation builtin clauses** — supplementary `fn.*`
+//! clauses for WASM integer numerics and structural floating-point
+//! representation, the biggest fireability unlock of the Dec leg.
 //!
 //! ## Why these clauses exist (what the spec clauses can't fire)
 //!
@@ -68,8 +68,8 @@
 //!   by `2^(N−1−r) ≤ a < 2^(N−r)` (i.e. `r = N − 1 − ⌊log₂ a⌋`), `ictz_` by
 //!   `a mod 2^r = 0 ∧ a mod 2^(r+1) ≠ 0`. Both systems have exactly one
 //!   solution `r` per real `a` and refuse every other `r` (including junk
-//!   `r ≥ N`, which contradicts the bounds). `ipopcnt_` has no similarly
-//!   clean single-antecedent shape — it stays frontier (censused).
+//!   `r ≥ N`, which contradicts the bounds). `ipopcnt_` is the sum of the
+//!   separately pinned structural bits.
 //! - `truncz`/`ceilz`: exact on the structural rational fragment produced by
 //!   natural-to-rational conversion and division.  For `n/d`, `d > 0`,
 //!   truncation is `n div d` and ceiling is `(n + d - 1) div d`; unary-minus
@@ -90,6 +90,13 @@
 //!   (`q = 2^(N−1)`, unrepresentable) gets an explicit `↦ opt.none` clause;
 //!   the normal same-sign-negative clause carries the complementary
 //!   `q < 2^(N−1)` guard.
+//! - float representation: SpecTec's explicit sign, normal/subnormal,
+//!   significand, and exponent constructors map to the IEEE payload by exact
+//!   natural arithmetic. Bits and bytes are least-significant first, hence
+//!   bytes are WebAssembly's required little-endian encoding. The same raw
+//!   payload proves typed byte serialization, reinterpretation, `fabs_`, and
+//!   `fneg_`. Finite values, infinities, and exact NaN payloads are covered;
+//!   malformed structural values deliberately remain underivable.
 //!
 //! Every clause also carries carrier guards (`a < 2^N`, `b < 2^N`, sign-class
 //! bounds) — antecedents at least as strong as the SpecTec semantics (the
@@ -125,7 +132,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Operations given defining clauses by this leg.
-pub const OPS: [&str; 48] = [
+pub const OPS: [&str; 55] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -174,6 +181,13 @@ pub const OPS: [&str; 48] = [
     "inv_cbytes_",
     "inv_concat_",
     "inv_concatn_",
+    "fbits_",
+    "inv_fbits_",
+    "fbytes_",
+    "inv_fbytes_",
+    "reinterpret__",
+    "fabs_",
+    "fneg_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -181,7 +195,7 @@ pub const OPS: [&str; 48] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 37;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 44;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -1173,6 +1187,252 @@ fn integer_serialization(w: u64) -> Result<Vec<Clause>> {
     ])
 }
 
+/// One exact IEEE representation case of SpecTec's structural
+/// `fN(N)` carrier. `raw` is the corresponding unsigned `N`-bit payload.
+fn float_case(
+    w: u64,
+    sign: u64,
+    kind: &str,
+    exp_sign: Option<u64>,
+) -> Result<(Vec<String>, Vec<Term>, u64, Term, Term, Term)> {
+    let (m_bits, e_bits) = match w {
+        32 => (23, 8),
+        64 => (52, 11),
+        _ => unreachable!("only WebAssembly scalar float widths"),
+    };
+    let mut names = Vec::new();
+    let mut sides = Vec::new();
+    let magnitude = match kind {
+        "subnormal" => {
+            names.push("m".to_owned());
+            sides.push(lt(mv("m"), p2(m_bits)?)?);
+            app(con("case.SUBNORM"), app(con("tup"), wrap_nat(mv("m"))?)?)?
+        }
+        "normal" => {
+            names.extend(["m".to_owned(), "e".to_owned()]);
+            sides.push(lt(mv("m"), p2(m_bits)?)?);
+            let es = exp_sign.expect("normal exponent sign");
+            if es == 0 {
+                sides.push(le(mv("e"), mk_nat(p2_u64(e_bits - 1) - 1))?);
+            } else {
+                // Canonical negative integers exclude negative zero. The
+                // minimum normal exponent is 2 - 2^(E-1).
+                sides.push(lt(mk_nat(0u64), mv("e"))?);
+                sides.push(le(mv("e"), mk_nat(p2_u64(e_bits - 1) - 2))?);
+            }
+            let payload = app(app(con("tup"), wrap_nat(mv("m"))?)?, wrap_int(es, mv("e"))?)?;
+            app(con("case.NORM"), payload)?
+        }
+        "infinity" => app(con("case.INF"), con("tup"))?,
+        "nan" => {
+            names.push("m".to_owned());
+            sides.push(lt(mk_nat(0u64), mv("m"))?);
+            sides.push(lt(mv("m"), p2(m_bits)?)?);
+            app(con("case.NAN"), app(con("tup"), wrap_nat(mv("m"))?)?)?
+        }
+        _ => unreachable!(),
+    };
+    let value = app(
+        con(if sign == 0 { "case.POS" } else { "case.NEG" }),
+        magnitude.clone(),
+    )?;
+    let sign_part = mul(mk_nat(sign), p2(w - 1)?)?;
+    let raw = match kind {
+        "subnormal" => add(sign_part, mv("m"))?,
+        "infinity" => add(
+            sign_part,
+            mul(sub(p2(e_bits)?, mk_nat(1u64))?, p2(m_bits)?)?,
+        )?,
+        "nan" => add(
+            add(
+                sign_part,
+                mul(sub(p2(e_bits)?, mk_nat(1u64))?, p2(m_bits)?)?,
+            )?,
+            mv("m"),
+        )?,
+        "normal" => {
+            let bias = p2_u64(e_bits - 1) - 1;
+            let biased = if exp_sign == Some(0) {
+                add(mk_nat(bias), mv("e"))?
+            } else {
+                sub(mk_nat(bias), mv("e"))?
+            };
+            add(add(sign_part, mul(biased, p2(m_bits)?)?)?, mv("m"))?
+        }
+        _ => unreachable!(),
+    };
+    Ok((names, sides, sign, magnitude, value, raw))
+}
+
+const fn p2_u64(n: u64) -> u64 {
+    1u64 << n
+}
+
+type FloatCase = (Vec<String>, Vec<Term>, u64, Term, Term, Term);
+
+fn float_cases(w: u64) -> Result<Vec<FloatCase>> {
+    let mut out = Vec::new();
+    for sign in [0, 1] {
+        out.push(float_case(w, sign, "subnormal", None)?);
+        out.push(float_case(w, sign, "normal", Some(0))?);
+        out.push(float_case(w, sign, "normal", Some(1))?);
+        out.push(float_case(w, sign, "infinity", None)?);
+        out.push(float_case(w, sign, "nan", None)?);
+    }
+    Ok(out)
+}
+
+fn encoded_digits(
+    raw: Term,
+    width: u64,
+    radix_bits: u64,
+) -> Result<(Vec<String>, Vec<Term>, Term)> {
+    let ids: Vec<String> = (0..width / radix_bits).map(|i| format!("d{i}")).collect();
+    let mut sides = Vec::new();
+    let base = p2(radix_bits)?;
+    for (i, id) in ids.iter().enumerate() {
+        sides.push(lt(mv(id), base.clone())?);
+        sides.push(mv(id).equals(md(
+            div(raw.clone(), p2(radix_bits * i as u64)?)?,
+            base.clone(),
+        )?)?);
+    }
+    let list = encoded_nat_list(&ids)?;
+    Ok((ids, sides, list))
+}
+
+/// Exact IEEE bit/byte isomorphisms for all finite values and infinities.
+/// The representation is derived from the SpecTec sign/magnitude constructors
+/// using natural arithmetic; no host floating-point operation participates.
+fn float_serialization() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        for (base_names, base_sides, _sign, _magnitude, value, raw) in float_cases(w)? {
+            for (op, inverse, radix_bits) in [
+                ("fbits_", false, 1),
+                ("inv_fbits_", true, 1),
+                ("fbytes_", false, 8),
+                ("inv_fbytes_", true, 8),
+            ] {
+                let (digits, digit_sides, list) = encoded_digits(raw.clone(), w, radix_bits)?;
+                let mut names = base_names.clone();
+                names.extend(digits);
+                let mut sides = base_sides.clone();
+                sides.extend(digit_sides);
+                let (args, result) = if inverse {
+                    (vec![w_lit(w)?, list], value.clone())
+                } else {
+                    (vec![w_lit(w)?, value.clone()], list)
+                };
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                out.push(clause(&refs, sides, fn_graph(op, &args, &result)?));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Float branches of the type-directed byte front doors. These share exactly
+/// the primitive `fbytes_` equations above while preserving the source type
+/// constructor.
+fn composite_float_byte_serialization() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for (w, ty) in [(32, "F32"), (64, "F64")] {
+        for (base_names, base_sides, _sign, _magnitude, value, raw) in float_cases(w)? {
+            let (digits, digit_sides, bytes) = encoded_digits(raw, w, 8)?;
+            let mut names = base_names;
+            names.extend(digits);
+            let mut sides = base_sides;
+            sides.extend(digit_sides);
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            for (op, inverse) in [
+                ("nbytes_", false),
+                ("inv_nbytes_", true),
+                ("zbytes_", false),
+                ("inv_zbytes_", true),
+                ("cbytes_", false),
+                ("inv_cbytes_", true),
+            ] {
+                let (args, result) = if inverse {
+                    (vec![numtype(ty)?, bytes.clone()], value.clone())
+                } else {
+                    (vec![numtype(ty)?, value.clone()], bytes.clone())
+                };
+                out.push(clause(&refs, sides.clone(), fn_graph(op, &args, &result)?));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn numtype(name: &str) -> Result<Term> {
+    app(con(format!("case.{name}")), con("tup"))
+}
+
+/// Exact same-width integer/float reinterpretation on the structural IEEE
+/// fragment. Both directions share the very same `raw` equation.
+fn float_reinterpretation() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for (w, i, f) in [(32, "I32", "F32"), (64, "I64", "F64")] {
+        for (mut names, mut sides, _sign, _magnitude, value, raw) in float_cases(w)? {
+            names.push("raw".to_owned());
+            sides.push(in_carrier(mv("raw"), w)?);
+            sides.push(mv("raw").equals(raw)?);
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            out.push(clause(
+                &refs,
+                sides.clone(),
+                fn_graph(
+                    "reinterpret__",
+                    &[numtype(i)?, numtype(f)?, ival(mv("raw"))?],
+                    &value,
+                )?,
+            ));
+            out.push(clause(
+                &refs,
+                sides,
+                fn_graph(
+                    "reinterpret__",
+                    &[numtype(f)?, numtype(i)?, value],
+                    &ival(mv("raw"))?,
+                )?,
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn singleton(value: Term) -> Result<Term> {
+    app(con("list"), value)
+}
+
+/// `fabs` and `fneg` are pure sign-bit transformations, so they need no
+/// floating arithmetic, including for exact NaN payloads.
+fn float_sign_ops() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        for (names, sides, sign, magnitude, value, _raw) in float_cases(w)? {
+            let pos = app(con("case.POS"), magnitude.clone())?;
+            let flipped = app(
+                con(if sign == 0 { "case.NEG" } else { "case.POS" }),
+                magnitude,
+            )?;
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            out.push(clause(
+                &refs,
+                sides.clone(),
+                fn_graph("fabs_", &[w_lit(w)?, value.clone()], &singleton(pos)?)?,
+            ));
+            out.push(clause(
+                &refs,
+                sides,
+                fn_graph("fneg_", &[w_lit(w)?, value], &singleton(flipped)?)?,
+            ));
+        }
+    }
+    Ok(out)
+}
+
 /// Exact byte serialization for the composite numeric, vector, storage, and
 /// constant-type front doors.
 ///
@@ -1528,6 +1788,10 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     }
     out.extend(q15mulr_sat()?);
     out.extend(inverse_sequence_clauses()?);
+    out.extend(float_serialization()?);
+    out.extend(composite_float_byte_serialization()?);
+    out.extend(float_reinterpretation()?);
+    out.extend(float_sign_ops()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -2215,8 +2479,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 48);
-        assert_eq!(report.zero_clause_ops, 37);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -2490,9 +2754,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 349);
-        assert_eq!(report.ops, 48);
-        assert_eq!(report.zero_clause_ops, 37);
+        assert_eq!(report.clauses, 629);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2571,9 +2835,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 349);
-        assert_eq!(report.ops, 48);
-        assert_eq!(report.zero_clause_ops, 37);
+        assert_eq!(report.clauses, 629);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -2879,9 +3143,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 349);
-        assert_eq!(report.ops, 48);
-        assert_eq!(report.zero_clause_ops, 37);
+        assert_eq!(report.clauses, 629);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -2939,8 +3203,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 48);
-        assert_eq!(report.zero_clause_ops, 37);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -3027,5 +3291,211 @@ mod tests {
             &clauses,
             &sx_fact("iq15mulr_sat_", 16, "S", 65536, 1, 2)
         ));
+    }
+
+    fn tuple1(x: Term) -> Term {
+        app(con("tup"), x).unwrap()
+    }
+
+    fn tuple2(x: Term, y: Term) -> Term {
+        app(app(con("tup"), x).unwrap(), y).unwrap()
+    }
+
+    fn fmag_subnormal(m: u64) -> Term {
+        app(con("case.SUBNORM"), tuple1(wrap_nat(nat(m)).unwrap())).unwrap()
+    }
+
+    fn fmag_normal(m: u64, sign: u64, exponent: u64) -> Term {
+        app(
+            con("case.NORM"),
+            tuple2(
+                wrap_nat(nat(m)).unwrap(),
+                wrap_int(sign, nat(exponent)).unwrap(),
+            ),
+        )
+        .unwrap()
+    }
+
+    fn fmag_inf() -> Term {
+        app(con("case.INF"), con("tup")).unwrap()
+    }
+
+    fn fval(sign: u64, magnitude: Term) -> Term {
+        app(
+            con(if sign == 0 { "case.POS" } else { "case.NEG" }),
+            magnitude,
+        )
+        .unwrap()
+    }
+
+    fn float_serialize_fact(op: &str, w: u64, value: Term, digits: &[u64]) -> Term {
+        fn_graph(op, &[w_lit(w).unwrap(), value], &nat_list(digits)).unwrap()
+    }
+
+    fn inverse_float_serialize_fact(op: &str, w: u64, digits: &[u64], value: Term) -> Term {
+        fn_graph(op, &[w_lit(w).unwrap(), nat_list(digits)], &value).unwrap()
+    }
+
+    fn le_bytes(raw: u64, width: usize) -> Vec<u64> {
+        (0..width).map(|i| (raw >> (8 * i)) & 0xff).collect()
+    }
+
+    fn low_bits_first(raw: u64, width: usize) -> Vec<u64> {
+        (0..width).map(|i| (raw >> i) & 1).collect()
+    }
+
+    #[test]
+    fn structural_float_representation_is_exact_and_fail_closed() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 629);
+        assert_eq!(report.ops, 55);
+        assert_eq!(report.zero_clause_ops, 44);
+
+        let cases = [
+            (32, fval(0, fmag_subnormal(0)), 0),
+            (32, fval(1, fmag_subnormal(0)), 1u64 << 31),
+            (32, fval(0, fmag_subnormal(1)), 1),
+            (32, fval(0, fmag_normal(0, 0, 0)), 0x3f80_0000),
+            (32, fval(0, fmag_normal(0, 1, 126)), 0x0080_0000),
+            (32, fval(1, fmag_inf()), 0xff80_0000),
+            (64, fval(0, fmag_normal(0, 0, 0)), 0x3ff0_0000_0000_0000),
+            (64, fval(1, fmag_inf()), 0xfff0_0000_0000_0000),
+        ];
+        for (w, value, raw) in cases {
+            let bytes = le_bytes(raw, (w / 8) as usize);
+            let bits = low_bits_first(raw, w as usize);
+            assert!(derivable_at(
+                &clauses,
+                &float_serialize_fact("fbits_", w, value.clone(), &bits)
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &inverse_float_serialize_fact("inv_fbits_", w, &bits, value.clone())
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &float_serialize_fact("fbytes_", w, value.clone(), &bytes)
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &inverse_float_serialize_fact("inv_fbytes_", w, &bytes, value.clone())
+            ));
+            for (forward, inverse) in [
+                ("nbytes_", "inv_nbytes_"),
+                ("zbytes_", "inv_zbytes_"),
+                ("cbytes_", "inv_cbytes_"),
+            ] {
+                let ty = if w == 32 { "F32" } else { "F64" };
+                assert!(derivable_at(
+                    &clauses,
+                    &fn_graph(
+                        forward,
+                        &[numtype(ty).unwrap(), value.clone()],
+                        &nat_list(&bytes),
+                    )
+                    .unwrap()
+                ));
+                assert!(derivable_at(
+                    &clauses,
+                    &fn_graph(inverse, &[numtype(ty).unwrap(), nat_list(&bytes)], &value,).unwrap()
+                ));
+            }
+            let mut wrong = bytes.clone();
+            wrong[0] ^= 1;
+            assert!(!derivable_at(
+                &clauses,
+                &float_serialize_fact("fbytes_", w, value.clone(), &wrong)
+            ));
+
+            let (ity, fty) = if w == 32 {
+                ("I32", "F32")
+            } else {
+                ("I64", "F64")
+            };
+            assert!(derivable_at(
+                &clauses,
+                &fn_graph(
+                    "reinterpret__",
+                    &[numtype(fty).unwrap(), numtype(ity).unwrap(), value.clone()],
+                    &ival(nat(raw)).unwrap(),
+                )
+                .unwrap()
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &fn_graph(
+                    "reinterpret__",
+                    &[
+                        numtype(ity).unwrap(),
+                        numtype(fty).unwrap(),
+                        ival(nat(raw)).unwrap()
+                    ],
+                    &value,
+                )
+                .unwrap()
+            ));
+        }
+
+        let one = fval(0, fmag_normal(0, 0, 0));
+        let neg_one = fval(1, fmag_normal(0, 0, 0));
+        assert!(derivable_at(
+            &clauses,
+            &fn_graph(
+                "fabs_",
+                &[w_lit(32).unwrap(), neg_one.clone()],
+                &singleton(one.clone()).unwrap(),
+            )
+            .unwrap()
+        ));
+        assert!(derivable_at(
+            &clauses,
+            &fn_graph(
+                "fneg_",
+                &[w_lit(32).unwrap(), one],
+                &singleton(neg_one).unwrap(),
+            )
+            .unwrap()
+        ));
+
+        // Representation and sign operations preserve exact NaN payloads;
+        // they do not make any choice for arithmetic NaN results.
+        let nan = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(1)).unwrap())).unwrap(),
+        );
+        assert!(derivable_at(
+            &clauses,
+            &float_serialize_fact("fbytes_", 32, nan.clone(), &[1, 0, 0x80, 0x7f])
+        ));
+        assert!(derivable_at(
+            &clauses,
+            &fn_graph(
+                "fabs_",
+                &[w_lit(32).unwrap(), nan.clone()],
+                &singleton(nan).unwrap(),
+            )
+            .unwrap()
+        ));
+
+        // Invalid exponent, significand, and NaN shapes do not inherit a raw
+        // value.
+        for junk in [
+            fval(0, fmag_normal(0, 0, 128)),
+            fval(0, fmag_normal(1 << 23, 0, 0)),
+            fval(0, fmag_normal(0, 1, 0)),
+            fval(
+                0,
+                app(con("case.NAN"), tuple1(wrap_nat(nat(0)).unwrap())).unwrap(),
+            ),
+            fval(
+                0,
+                app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 23)).unwrap())).unwrap(),
+            ),
+        ] {
+            assert!(!derivable_at(
+                &clauses,
+                &float_serialize_fact("fbytes_", 32, junk, &[0; 4])
+            ));
+        }
     }
 }

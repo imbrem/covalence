@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3825 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **4105 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 349 exact builtin
-  clauses over 48 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 629 exact builtin
+  clauses over 55 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -656,6 +656,39 @@ relaxed/nondeterministic.
 Repeated source declarations account for the difference between names and
 declaration count.
 
+## Landed (Wave AE — exact structural IEEE representation)
+
+The float frontier now has a representation-preserving first leg for F32 and
+F64. Natural-arithmetic clauses map SpecTec's explicit `POS`/`NEG`,
+`SUBNORM`/`NORM`/`INF` constructors to IEEE bit payloads, little-endian bytes,
+and back; the same equations drive the float branches of the typed
+`nbytes_`/`zbytes_`/`cbytes_` front doors and exact same-width
+`reinterpret__` in both directions. `fabs_` and `fneg_` are exact structural
+sign transformations. This uses no host floating-point arithmetic.
+
+The leg covers every finite value, both infinities, and every exact NaN payload
+at both widths, with
+canonical exponent and significand bounds pinned by kernel natural
+inequalities. Malformed constructors and NaN payloads, negative-zero integer
+exponents, out-of-range exponents/significands, cross-width reinterpretations,
+and wrong bit/byte results remain underivable. This does not choose NaN results
+for arithmetic builtins: it only preserves an already-present payload.
+
+The builtin leg is now **629 clauses over 55 operations**, filling **44 of
+91** formerly empty declarations and leaving **47 declarations**. A structural
+oracle checks signed zeros, least subnormals, normal exponent boundaries,
+infinities, bytes/bits, all typed byte fronts, reinterpretation in both
+directions, sign operations, perturbed results, malformed shapes, exact NaNs,
+and invalid-NaN refusal.
+
+The residual census is **42 distinct names / 47 source declarations** (five
+names are redeclared). Twenty-five deterministic names remain: 20 scalar float
+arithmetic/comparison/sign operations and five float conversions. The other 17
+are explicitly choice-valued or relaxed: `ND`, the nine `R_*` relations, two
+integer relaxed operations, four float relaxed operations, and
+`relaxed_trunc__`. No bit, byte, typed-byte, or reinterpretation primitive
+remains in the frontier.
+
 ### Exact unbounded inverse sequence concatenation
 
 The two sequence builtins are deterministic in SpecTec's reference interpreter:
@@ -858,9 +891,12 @@ over left-nested snoc spines (`⌜[e₀…eₙ]⌝ = app(⌜[e₀…eₙ₋₁]�
   through a simultaneous Church signature: structural aliases are normalized,
   the eight generative members retain distinct result carriers, and every
   cross-member payload edge remains visible. Strict coverage is **144/207**
-  and use-site renderability is **170/207**. These signatures remain
-  representation-only; constructor theories and closed term-level fixpoints
-  are still tracked separately.
+  and use-site renderability is **170/207**. `MutualChurchSignature` now also
+  exposes all **41** source-ordered handler-injection constructor terms and
+  hypothesis-free, kernel-checked β computation laws. It separately enumerates
+  **41** same-constructor injectivity and **183** same-owner
+  pairwise-distinctness obligations; no source-datatype freeness is claimed
+  until an exact recursive carrier backend discharges those obligations.
 - **Grammars:** whole-corpus `GrammarEnv` (all 231, both modes) + left-recursion
   guard (T* has a `Thexnum` cycle) + honest per-NT coverage class. Residuals:
   grammar-valued param monomorphisation, non-`If` premises, 2 bridge

@@ -456,35 +456,48 @@ pub trait LispRuntime {
     type Value: Clone;
     type Closure: Clone;
     type Environment: Clone;
+    /// Coherent failure channel for all representation capabilities.
+    ///
+    /// A handle-based or component-backed runtime commonly performs every
+    /// operation through the same resource table or transport. Requiring one
+    /// error carrier keeps an evaluator generic without erasing which runtime
+    /// failed; individual implementations may use an enum when they need
+    /// finer-grained provenance.
+    type Error;
 
-    type Data: SExprView<Payload = Self::Atom, Value = Self::Datum>;
+    type Data: SExprView<Payload = Self::Atom, Value = Self::Datum, Error = Self::Error>;
     type Values: LispMachineValue<
             Atom = Self::Atom,
             Primitive = Self::Primitive,
             Value = Self::Value,
             Closure = Self::Closure,
+            Error = Self::Error,
         >;
     type Expressions: LispExpression<
             Symbol = Self::Symbol,
             Datum = Self::Datum,
             Primitive = Self::Primitive,
             Expr = Self::Expr,
+            Error = Self::Error,
         > + LispSyntax<
             Symbol = Self::Symbol,
             Datum = Self::Datum,
             Primitive = Self::Primitive,
             Expr = Self::Expr,
+            Error = Self::Error,
         >;
     type Closures: LispClosure<
             Symbol = Self::Symbol,
             Expr = Self::Expr,
             Environment = Self::Environment,
             Closure = Self::Closure,
+            Error = Self::Error,
         >;
     type Environments: LispRecursiveEnvironment<
             Symbol = Self::Symbol,
             Value = Self::Value,
             Environment = Self::Environment,
+            Error = Self::Error,
         >;
 
     fn values(&self) -> &Self::Values;

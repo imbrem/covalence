@@ -142,12 +142,7 @@ pub trait CorePrimitive:
     type Primitive: Clone + PartialEq + Debug;
 }
 
-type ValuesOf<P> = HostValues<
-    <P as CorePrimitive>::Symbol,
-    <P as CorePrimitive>::Atom,
-    <P as CorePrimitive>::Primitive,
->;
-type PrimitiveErrorOf<P> = <P as PrimitiveSemantics<ValuesOf<P>>>::Error;
+type RuntimePrimitiveError<R, P> = <P as PrimitiveSemantics<<R as LispRuntime>::Values>>::Error;
 
 type Expr<S, A, P> = CoreExpr<S, Datum<A>, P>;
 type Value<S, A, P> = HostValue<S, A, P>;
@@ -457,6 +452,7 @@ where
     type Value = Value<S, A, P>;
     type Closure = Arc<HostClosure<S, A, P>>;
     type Environment = Environment<S, A, P>;
+    type Error = Infallible;
     type Data = covalence_sexpr_api::Free<A>;
     type Values = HostValues<S, A, P>;
     type Expressions = CoreSyntax<S, A, P>;
@@ -583,7 +579,7 @@ pub enum ArityExpectation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CoreMachineError<S, E> {
+pub enum CoreMachineError<S, E, R = Infallible> {
     UnboundVariable(S),
     DuplicateRecursiveBinding(S),
     InvalidRecursiveInitializer(S),
@@ -597,9 +593,10 @@ pub enum CoreMachineError<S, E> {
     },
     ImproperArgumentList,
     Primitive(E),
+    Runtime(R),
 }
 
-impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
+impl<S: Debug, E: Debug, R: Debug> Display for CoreMachineError<S, E, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::UnboundVariable(symbol) => write!(f, "unbound variable: {symbol:?}"),
@@ -629,31 +626,38 @@ impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
                 f.write_str("apply-list tail did not evaluate to a proper list")
             }
             Self::Primitive(error) => write!(f, "primitive operation failed: {error:?}"),
+            Self::Runtime(error) => write!(f, "runtime representation failed: {error:?}"),
         }
     }
 }
 
-impl<S: Debug, E: Debug> core::error::Error for CoreMachineError<S, E> {}
+impl<S: Debug, E: Debug, R: Debug> core::error::Error for CoreMachineError<S, E, R> {}
 
-/// Strategy-parameterized host realization of the common Lisp core.
+/// Strategy-parameterized evaluator over a coherent Lisp runtime.
+///
+/// The representation bundle is explicit even though the current transition
+/// implementation is provided first for [`HostRuntime`]. This keeps ownership
+/// and policy independent: subsequent backends can reuse the same machine
+/// state and transition algorithm without impersonating the direct Rust
+/// representation.
 #[derive(Clone, Debug)]
-pub struct CoreMachine<P: CorePrimitive> {
+pub struct LispMachine<R, P> {
     primitives: P,
     strategy: Strategy,
-    runtime: HostRuntime<P::Symbol, P::Atom, P::Primitive>,
+    runtime: R,
 }
 
-impl<P: CorePrimitive> CoreMachine<P> {
-    pub fn new(primitives: P) -> Self {
-        Self::with_strategy(primitives, Strategy::STRICT_LEXICAL)
-    }
-
-    pub fn with_strategy(primitives: P, strategy: Strategy) -> Self {
+impl<R, P> LispMachine<R, P> {
+    pub fn with_runtime(runtime: R, primitives: P, strategy: Strategy) -> Self {
         Self {
             primitives,
             strategy,
-            runtime: HostRuntime::default(),
+            runtime,
         }
+    }
+
+    pub fn runtime(&self) -> &R {
+        &self.runtime
     }
 
     pub fn primitives(&self) -> &P {
@@ -665,24 +669,54 @@ impl<P: CorePrimitive> CoreMachine<P> {
     }
 }
 
-type ConfigOf<P> = HostConfiguration<
-    <P as CorePrimitive>::Symbol,
-    <P as CorePrimitive>::Atom,
-    <P as CorePrimitive>::Primitive,
+/// Compatibility name for the direct-Rust realization of [`LispMachine`].
+pub type CoreMachine<P> = LispMachine<
+    HostRuntime<
+        <P as CorePrimitive>::Symbol,
+        <P as CorePrimitive>::Atom,
+        <P as CorePrimitive>::Primitive,
+    >,
+    P,
 >;
 
-impl<P: CorePrimitive> CoreMachine<P> {
-    fn values(&self) -> &HostValues<P::Symbol, P::Atom, P::Primitive> {
+impl<P: CorePrimitive> LispMachine<HostRuntime<P::Symbol, P::Atom, P::Primitive>, P> {
+    pub fn new(primitives: P) -> Self {
+        Self::with_strategy(primitives, Strategy::STRICT_LEXICAL)
+    }
+
+    pub fn with_strategy(primitives: P, strategy: Strategy) -> Self {
+        Self::with_runtime(HostRuntime::default(), primitives, strategy)
+    }
+}
+
+type RuntimeConfiguration<R> = MachineConfiguration<
+    <R as LispRuntime>::Expr,
+    <R as LispRuntime>::Value,
+    <R as LispRuntime>::Environment,
+    <R as LispRuntime>::Primitive,
+>;
+
+type RuntimeMachineError<R, P> = CoreMachineError<
+    <R as LispRuntime>::Symbol,
+    RuntimePrimitiveError<R, P>,
+    <R as LispRuntime>::Error,
+>;
+
+impl<R, P> LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
+    fn values(&self) -> &R::Values {
         self.runtime.values()
     }
 
-    fn closures(&self) -> &HostClosures<P::Symbol, P::Atom, P::Primitive> {
+    fn closures(&self) -> &R::Closures {
         self.runtime.closures()
     }
 
-    fn environments(
-        &self,
-    ) -> &HostEnvironments<P::Symbol, Value<P::Symbol, P::Atom, P::Primitive>> {
+    fn environments(&self) -> &R::Environments {
         self.runtime.environments()
     }
 
@@ -692,12 +726,9 @@ impl<P: CorePrimitive> CoreMachine<P> {
     /// forward and mutual references observe the same lexical generation.
     pub fn bind_recursive(
         &self,
-        parent: &Environment<P::Symbol, P::Atom, P::Primitive>,
-        bindings: Vec<(P::Symbol, Expr<P::Symbol, P::Atom, P::Primitive>)>,
-    ) -> Result<
-        Environment<P::Symbol, P::Atom, P::Primitive>,
-        CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>,
-    > {
+        parent: &R::Environment,
+        bindings: Vec<(R::Symbol, R::Expr)>,
+    ) -> Result<R::Environment, RuntimeMachineError<R, P>> {
         for (index, (name, expression)) in bindings.iter().enumerate() {
             if bindings[..index].iter().any(|(earlier, _)| earlier == name) {
                 return Err(CoreMachineError::DuplicateRecursiveBinding(name.clone()));
@@ -706,7 +737,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 self.runtime
                     .expressions()
                     .view(expression)
-                    .unwrap_or_else(|never| match never {}),
+                    .map_err(CoreMachineError::Runtime)?,
                 CoreExprLayer::Lambda { .. }
             ) {
                 return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
@@ -718,7 +749,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 parent,
                 bindings.iter().map(|(name, _)| name.clone()).collect(),
             )
-            .unwrap_or_else(|never| match never {});
+            .map_err(CoreMachineError::Runtime)?;
         let environment = allocation.environment;
         for ((_, expression), cell) in bindings.into_iter().zip(allocation.cells) {
             let CoreExprLayer::Lambda {
@@ -730,7 +761,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 .runtime
                 .expressions()
                 .view(&expression)
-                .unwrap_or_else(|never| match never {})
+                .map_err(CoreMachineError::Runtime)?
             else {
                 unreachable!("recursive initializers validated above")
             };
@@ -746,11 +777,11 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     body,
                     environment: environment.clone(),
                 })
-                .unwrap_or_else(|never| match never {});
+                .map_err(CoreMachineError::Runtime)?;
             let closure = self
                 .values()
                 .roll(RuntimeValueLayer::Closure(closure))
-                .unwrap_or_else(|never| match never {});
+                .map_err(CoreMachineError::Runtime)?;
             environments.initialize_recursive(cell, closure);
         }
         Ok(environment)
@@ -766,27 +797,27 @@ impl<P: CorePrimitive> CoreMachine<P> {
 
     fn schedule_application_part(
         &self,
-        configuration: ConfigOf<P>,
-        function: Option<Value<P::Symbol, P::Atom, P::Primitive>>,
-        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
+        configuration: RuntimeConfiguration<R>,
+        function: Option<R::Value>,
+        evaluated: Vec<Option<R::Value>>,
         splice_tail: bool,
-        remaining: Vec<HostApplicationPart<P::Symbol, P::Atom, P::Primitive>>,
-        environment: Environment<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Vec<ConfigOf<P>> {
+        remaining: Vec<MachineApplicationPart<R::Expr>>,
+        environment: R::Environment,
+    ) -> Vec<RuntimeConfiguration<R>> {
         self.argument_choices(remaining.len())
             .into_iter()
             .map(|choice| {
                 let mut next = configuration.clone();
                 let mut pending = remaining.clone();
                 let (current, expression) = match pending.remove(choice) {
-                    HostApplicationPart::Operator(expression) => {
-                        (HostApplicationPosition::Operator, expression)
+                    MachineApplicationPart::Operator(expression) => {
+                        (MachineApplicationPosition::Operator, expression)
                     }
-                    HostApplicationPart::Argument { index, expression } => {
-                        (HostApplicationPosition::Argument(index), expression)
+                    MachineApplicationPart::Argument { index, expression } => {
+                        (MachineApplicationPosition::Argument(index), expression)
                     }
                 };
-                next.continuation.push(HostFrame::ApplyParts {
+                next.continuation.push(MachineFrame::ApplyParts {
                     function: function.clone(),
                     evaluated: evaluated.clone(),
                     splice_tail,
@@ -794,7 +825,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     remaining: pending,
                     environment: environment.clone(),
                 });
-                next.control = HostControl::Expression(expression);
+                next.control = MachineControl::Expression(expression);
                 next.environment = environment.clone();
                 next
             })
@@ -803,35 +834,33 @@ impl<P: CorePrimitive> CoreMachine<P> {
 
     fn schedule_primitive_argument(
         &self,
-        configuration: ConfigOf<P>,
-        primitive: P::Primitive,
-        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
-        remaining: Vec<(usize, Expr<P::Symbol, P::Atom, P::Primitive>)>,
-        environment: Environment<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Vec<ConfigOf<P>> {
+        configuration: RuntimeConfiguration<R>,
+        primitive: R::Primitive,
+        evaluated: Vec<Option<R::Value>>,
+        remaining: Vec<(usize, R::Expr)>,
+        environment: R::Environment,
+    ) -> Vec<RuntimeConfiguration<R>> {
         self.argument_choices(remaining.len())
             .into_iter()
             .map(|choice| {
                 let mut next = configuration.clone();
                 let mut pending = remaining.clone();
                 let (current, expression) = pending.remove(choice);
-                next.continuation.push(HostFrame::PrimitiveArguments {
+                next.continuation.push(MachineFrame::PrimitiveArguments {
                     primitive: primitive.clone(),
                     evaluated: evaluated.clone(),
                     current,
                     remaining: pending,
                     environment: environment.clone(),
                 });
-                next.control = HostControl::Expression(expression);
+                next.control = MachineControl::Expression(expression);
                 next.environment = environment.clone();
                 next
             })
             .collect()
     }
 
-    fn completed_arguments(
-        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
-    ) -> Vec<Value<P::Symbol, P::Atom, P::Primitive>> {
+    fn completed_arguments(evaluated: Vec<Option<R::Value>>) -> Vec<R::Value> {
         evaluated
             .into_iter()
             .map(|value| value.expect("every argument position was evaluated"))
@@ -840,19 +869,19 @@ impl<P: CorePrimitive> CoreMachine<P> {
 
     fn continue_with(
         &self,
-        mut configuration: ConfigOf<P>,
-        value: Value<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
+        mut configuration: RuntimeConfiguration<R>,
+        value: R::Value,
+    ) -> Result<Vec<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
         let Some(frame) = configuration.continuation.pop() else {
             return Ok(Vec::new());
         };
         match frame {
-            HostFrame::If {
+            MachineFrame::If {
                 consequent,
                 alternative,
                 environment,
             } => {
-                configuration.control = HostControl::Expression(
+                configuration.control = MachineControl::Expression(
                     if self
                         .primitives
                         .is_false(self.values(), &value)
@@ -865,7 +894,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 );
                 configuration.environment = environment;
             }
-            HostFrame::Sequence {
+            MachineFrame::Sequence {
                 mut remaining,
                 environment,
             } => {
@@ -873,15 +902,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     .pop()
                     .expect("sequence frames always contain a next expression");
                 if !remaining.is_empty() {
-                    configuration.continuation.push(HostFrame::Sequence {
+                    configuration.continuation.push(MachineFrame::Sequence {
                         remaining,
                         environment: environment.clone(),
                     });
                 }
-                configuration.control = HostControl::Expression(expression);
+                configuration.control = MachineControl::Expression(expression);
                 configuration.environment = environment;
             }
-            HostFrame::ApplyParts {
+            MachineFrame::ApplyParts {
                 mut function,
                 mut evaluated,
                 splice_tail,
@@ -890,8 +919,8 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 environment,
             } => {
                 match current {
-                    HostApplicationPosition::Operator => function = Some(value),
-                    HostApplicationPosition::Argument(index) => evaluated[index] = Some(value),
+                    MachineApplicationPosition::Operator => function = Some(value),
+                    MachineApplicationPosition::Argument(index) => evaluated[index] = Some(value),
                 }
                 if remaining.is_empty() {
                     let function = function.expect("the application operator was evaluated");
@@ -916,7 +945,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     environment,
                 ));
             }
-            HostFrame::PrimitiveArguments {
+            MachineFrame::PrimitiveArguments {
                 primitive,
                 mut evaluated,
                 current,
@@ -930,7 +959,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         .primitives
                         .apply(self.values(), &primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
-                    configuration.control = HostControl::Value(value);
+                    configuration.control = MachineControl::Value(value);
                 } else {
                     return Ok(self.schedule_primitive_argument(
                         configuration,
@@ -947,14 +976,14 @@ impl<P: CorePrimitive> CoreMachine<P> {
 
     fn apply(
         &self,
-        mut configuration: ConfigOf<P>,
-        function: Value<P::Symbol, P::Atom, P::Primitive>,
-        arguments: Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
-    ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
+        mut configuration: RuntimeConfiguration<R>,
+        function: R::Value,
+        arguments: Vec<R::Value>,
+    ) -> Result<Option<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
         let closure = match self
             .values()
             .unroll(&function)
-            .unwrap_or_else(|never| match never {})
+            .map_err(CoreMachineError::Runtime)?
         {
             RuntimeValueLayer::Closure(closure) => closure,
             RuntimeValueLayer::Primitive(primitive) => {
@@ -962,7 +991,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     .primitives
                     .apply(self.values(), &primitive, &arguments)
                     .map_err(CoreMachineError::Primitive)?;
-                configuration.control = HostControl::Value(value);
+                configuration.control = MachineControl::Value(value);
                 return Ok(Some(configuration));
             }
             RuntimeValueLayer::ApplyListProcedure => {
@@ -985,7 +1014,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
         let closure = self
             .closures()
             .open(&closure)
-            .unwrap_or_else(|never| match never {});
+            .map_err(CoreMachineError::Runtime)?;
         if closure.rest.is_none() && closure.parameters.len() != arguments.len() {
             return Err(CoreMachineError::Arity {
                 expected: ArityExpectation::Exactly(closure.parameters.len()),
@@ -1015,7 +1044,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 rest.clone(),
                 self.values()
                     .list(arguments.into_iter().skip(closure.parameters.len()))
-                    .unwrap_or_else(|never| match never {}),
+                    .map_err(CoreMachineError::Runtime)?,
             ));
         }
         let parent = if self.strategy.lexical_scope {
@@ -1032,51 +1061,52 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     .map(|(symbol, value)| RuntimeBinding::new(symbol, value))
                     .collect(),
             )
-            .unwrap_or_else(|never| match never {});
-        configuration.control = HostControl::Expression(closure.body);
+            .map_err(CoreMachineError::Runtime)?;
+        configuration.control = MachineControl::Expression(closure.body);
         Ok(Some(configuration))
     }
 
-    fn proper_list(
-        &self,
-        value: Value<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Result<
-        Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
-        CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>,
-    > {
+    fn proper_list(&self, value: R::Value) -> Result<Vec<R::Value>, RuntimeMachineError<R, P>> {
         self.values()
             .as_list(&value)
-            .unwrap_or_else(|never| match never {})
+            .map_err(CoreMachineError::Runtime)?
             .ok_or(CoreMachineError::ImproperArgumentList)
     }
 }
 
-impl<P: CorePrimitive> CoreMachine<P> {
+impl<R, P> LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
     fn step_successors(
         &self,
-        configuration: &ConfigOf<P>,
-    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
+        configuration: &RuntimeConfiguration<R>,
+    ) -> Result<Vec<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
         let mut next = configuration.clone();
         let control = next.control.clone();
         match control {
-            HostControl::Value(value) => self.continue_with(next, value),
-            HostControl::Expression(expression) => {
+            MachineControl::Value(value) => self.continue_with(next, value),
+            MachineControl::Expression(expression) => {
                 match self
                     .runtime
                     .expressions()
                     .view(&expression)
-                    .unwrap_or_else(|never| match never {})
+                    .map_err(CoreMachineError::Runtime)?
                 {
                     CoreExprLayer::Literal(datum) | CoreExprLayer::Quote(datum) => {
                         let value = inject_datum(self.runtime.data(), self.values(), &datum)
-                            .unwrap_or_else(|error| match error {
-                                RuntimeDatumError::Datum(never)
-                                | RuntimeDatumError::Value(never) => match never {},
+                            .map_err(|error| match error {
+                                RuntimeDatumError::Datum(error)
+                                | RuntimeDatumError::Value(error) => {
+                                    CoreMachineError::Runtime(error)
+                                }
                             });
-                        next.control = HostControl::Value(value);
+                        next.control = MachineControl::Value(value?);
                     }
                     CoreExprLayer::Truth(value) => {
-                        next.control = HostControl::Value(
+                        next.control = MachineControl::Value(
                             self.primitives
                                 .truth(self.values(), value)
                                 .map_err(CoreMachineError::Primitive)?,
@@ -1086,43 +1116,43 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         let value = self
                             .environments()
                             .lookup(&next.environment, &symbol)
-                            .unwrap_or_else(|never| match never {})
+                            .map_err(CoreMachineError::Runtime)?
                             .ok_or(CoreMachineError::UnboundVariable(symbol))?;
-                        next.control = HostControl::Value(value);
+                        next.control = MachineControl::Value(value);
                     }
                     CoreExprLayer::If {
                         condition,
                         consequent,
                         alternative,
                     } => {
-                        next.continuation.push(HostFrame::If {
+                        next.continuation.push(MachineFrame::If {
                             consequent,
                             alternative,
                             environment: next.environment.clone(),
                         });
-                        next.control = HostControl::Expression(condition);
+                        next.control = MachineControl::Expression(condition);
                     }
                     CoreExprLayer::Cond { clauses } => {
                         let syntax = self.runtime.expressions();
                         let mut expression =
-                            syntax.truth(false).unwrap_or_else(|never| match never {});
+                            syntax.truth(false).map_err(CoreMachineError::Runtime)?;
                         for (condition, consequent) in clauses.into_iter().rev() {
                             expression = syntax
                                 .if_then_else(condition, consequent, expression)
-                                .unwrap_or_else(|never| match never {});
+                                .map_err(CoreMachineError::Runtime)?;
                         }
-                        next.control = HostControl::Expression(expression);
+                        next.control = MachineControl::Expression(expression);
                     }
                     CoreExprLayer::Sequence { first, rest } => {
                         if !rest.is_empty() {
                             let mut remaining = rest;
                             remaining.reverse();
-                            next.continuation.push(HostFrame::Sequence {
+                            next.continuation.push(MachineFrame::Sequence {
                                 remaining,
                                 environment: next.environment.clone(),
                             });
                         }
-                        next.control = HostControl::Expression(first);
+                        next.control = MachineControl::Expression(first);
                     }
                     CoreExprLayer::Lambda {
                         name,
@@ -1142,11 +1172,11 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 body,
                                 environment: next.environment.clone(),
                             })
-                            .unwrap_or_else(|never| match never {});
-                        next.control = HostControl::Value(
+                            .map_err(CoreMachineError::Runtime)?;
+                        next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::Closure(closure))
-                                .unwrap_or_else(|never| match never {}),
+                                .map_err(CoreMachineError::Runtime)?,
                         );
                     }
                     CoreExprLayer::Apply {
@@ -1155,9 +1185,9 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     } => {
                         let argument_count = arguments.len();
                         let mut parts = Vec::with_capacity(argument_count + 1);
-                        parts.push(HostApplicationPart::Operator(operator));
+                        parts.push(MachineApplicationPart::Operator(operator));
                         parts.extend(arguments.into_iter().enumerate().map(
-                            |(index, expression)| HostApplicationPart::Argument {
+                            |(index, expression)| MachineApplicationPart::Argument {
                                 index,
                                 expression,
                             },
@@ -1179,9 +1209,9 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         arguments.push(tail);
                         let argument_count = arguments.len();
                         let mut parts = Vec::with_capacity(argument_count + 1);
-                        parts.push(HostApplicationPart::Operator(operator));
+                        parts.push(MachineApplicationPart::Operator(operator));
                         parts.extend(arguments.into_iter().enumerate().map(
-                            |(index, expression)| HostApplicationPart::Argument {
+                            |(index, expression)| MachineApplicationPart::Argument {
                                 index,
                                 expression,
                             },
@@ -1204,11 +1234,11 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         let syntax = self.runtime.expressions();
                         let operator = syntax
                             .lambda(None, parameters, None, body)
-                            .unwrap_or_else(|never| match never {});
-                        next.control = HostControl::Expression(
+                            .map_err(CoreMachineError::Runtime)?;
+                        next.control = MachineControl::Expression(
                             syntax
                                 .apply(operator, arguments)
-                                .unwrap_or_else(|never| match never {}),
+                                .map_err(CoreMachineError::Runtime)?,
                         );
                     }
                     CoreExprLayer::LetRec { bindings, body } => {
@@ -1220,7 +1250,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 .collect(),
                         )?;
                         next.environment = environment;
-                        next.control = HostControl::Expression(body);
+                        next.control = MachineControl::Expression(body);
                     }
                     CoreExprLayer::Primitive {
                         operator,
@@ -1231,7 +1261,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 .primitives
                                 .apply(self.values(), &operator, &[])
                                 .map_err(CoreMachineError::Primitive)?;
-                            next.control = HostControl::Value(value);
+                            next.control = MachineControl::Value(value);
                         } else {
                             let count = arguments.len();
                             return Ok(self.schedule_primitive_argument(
@@ -1244,17 +1274,17 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         }
                     }
                     CoreExprLayer::PrimitiveValue(primitive) => {
-                        next.control = HostControl::Value(
+                        next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::Primitive(primitive))
-                                .unwrap_or_else(|never| match never {}),
+                                .map_err(CoreMachineError::Runtime)?,
                         );
                     }
                     CoreExprLayer::ApplyListProcedure => {
-                        next.control = HostControl::Value(
+                        next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::ApplyListProcedure)
-                                .unwrap_or_else(|never| match never {}),
+                                .map_err(CoreMachineError::Runtime)?,
                         );
                     }
                 }
@@ -1264,8 +1294,20 @@ impl<P: CorePrimitive> CoreMachine<P> {
     }
 }
 
-impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
-    fn next(&self, configuration: &ConfigOf<P>) -> Result<Option<ConfigOf<P>>, Self::Error> {
+impl<R, P> DeterministicStep for LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    R::Expr: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+    R::Primitive: Debug + PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
+    fn next(
+        &self,
+        configuration: &RuntimeConfiguration<R>,
+    ) -> Result<Option<RuntimeConfiguration<R>>, Self::Error> {
         let mut successors = self.step_successors(configuration)?;
         match successors.len() {
             0 => Ok(None),
@@ -1275,9 +1317,18 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
     }
 }
 
-impl<P: CorePrimitive> StepRelation for CoreMachine<P> {
-    type Configuration = ConfigOf<P>;
-    type Error = CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>;
+impl<R, P> StepRelation for LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    R::Expr: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+    R::Primitive: Debug + PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
+    type Configuration = RuntimeConfiguration<R>;
+    type Error = RuntimeMachineError<R, P>;
 
     fn successors(
         &self,
@@ -1287,8 +1338,17 @@ impl<P: CorePrimitive> StepRelation for CoreMachine<P> {
     }
 }
 
-impl<P: CorePrimitive> TerminalValue for CoreMachine<P> {
-    type Value = Value<P::Symbol, P::Atom, P::Primitive>;
+impl<R, P> TerminalValue for LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    R::Expr: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+    R::Primitive: Debug + PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
+    type Value = R::Value;
 
     fn terminal_value(&self, configuration: &Self::Configuration) -> Option<Self::Value> {
         configuration.terminal_value().cloned()
@@ -1526,6 +1586,50 @@ mod tests {
         }
     }
 
+    /// A deliberately distinct runtime owner that delegates to the direct
+    /// representation. This is a conformance harness: if the evaluator
+    /// accidentally specializes itself to `HostRuntime`, this backend stops
+    /// implementing `StepRelation` even though every carrier is compatible.
+    #[derive(Clone, Debug, Default)]
+    struct DelegatingRuntime(HostRuntime<&'static str, &'static str, Primitive>);
+
+    impl LispRuntime for DelegatingRuntime {
+        type Symbol = &'static str;
+        type Atom = &'static str;
+        type Datum = Datum<&'static str>;
+        type Primitive = Primitive;
+        type Expr = Expr<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Value = Value<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Closure = Arc<HostClosure<Self::Symbol, Self::Atom, Self::Primitive>>;
+        type Environment = Environment<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Error = Infallible;
+        type Data = covalence_sexpr_api::Free<Self::Atom>;
+        type Values = HostValues<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Expressions = CoreSyntax<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Closures = HostClosures<Self::Symbol, Self::Atom, Self::Primitive>;
+        type Environments = HostEnvironments<Self::Symbol, Self::Value>;
+
+        fn values(&self) -> &Self::Values {
+            self.0.values()
+        }
+
+        fn data(&self) -> &Self::Data {
+            self.0.data()
+        }
+
+        fn expressions(&self) -> &Self::Expressions {
+            self.0.expressions()
+        }
+
+        fn closures(&self) -> &Self::Closures {
+            self.0.closures()
+        }
+
+        fn environments(&self) -> &Self::Environments {
+            self.0.environments()
+        }
+    }
+
     #[test]
     fn machine_state_is_independent_of_host_runtime_representations() {
         type Alternate = MachineConfiguration<&'static str, u8, Vec<(&'static str, u8)>, ()>;
@@ -1616,6 +1720,34 @@ mod tests {
         let machine = CoreMachine::new(Sector);
         let trace = execute(&machine, HostConfiguration::initial(expression), 16).unwrap();
         assert_eq!(trace.end().terminal_value(), Some(&HostValue::Atom("head")));
+    }
+
+    #[test]
+    fn transition_algorithm_is_generic_over_the_runtime_bundle() {
+        let expression = CoreExpr::Primitive {
+            operator: Primitive::Car,
+            arguments: vec![CoreExpr::Primitive {
+                operator: Primitive::Cons,
+                arguments: vec![
+                    CoreExpr::Literal(Datum::Atom("generic")),
+                    CoreExpr::Literal(Datum::Nil),
+                ],
+            }],
+        };
+        let runtime = DelegatingRuntime::default();
+        let environment = runtime.environments().empty();
+        let machine = LispMachine::with_runtime(runtime, Sector, Strategy::STRICT_LEXICAL);
+        let trace = execute(
+            &machine,
+            MachineConfiguration::with_environment(expression, environment),
+            16,
+        )
+        .unwrap();
+
+        assert_eq!(
+            trace.end().terminal_value(),
+            Some(&HostValue::Atom("generic"))
+        );
     }
 
     fn pair_expression() -> Expr<&'static str, &'static str, Primitive> {

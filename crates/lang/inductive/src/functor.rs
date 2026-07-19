@@ -7,6 +7,75 @@
 
 use crate::polynomial::FunctorExpr;
 
+/// A backend-neutral recipe for constructing `F(f)` from a structural
+/// polynomial declaration.
+///
+/// Constants are retained so an interpreter can resolve their objects and
+/// identity arrows. Only [`Variable`](Self::Variable) applies the input arrow.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum StructuralMapPlan<P> {
+    /// Map on the empty functor.
+    Empty,
+    /// Identity on the unit object.
+    Unit,
+    /// Identity on a declared constant parameter.
+    Constant(P),
+    /// Apply the input arrow.
+    Variable,
+    /// Map each summand and combine by coproduct.
+    Sum(Vec<Self>),
+    /// Map each factor and combine by product.
+    Product(Vec<Self>),
+}
+
+/// Algebra used to interpret an automatically derived [`StructuralMapPlan`].
+///
+/// An implementation may return host functions, typed logic arrows, an IR, or
+/// proof-script syntax. This is construction only; functor-law evidence remains
+/// the separate [`StructuralFunctorLaws`] capability.
+pub trait StructuralMapAlgebra<P> {
+    /// The interpreter's result at each node.
+    type Mapped;
+    /// Interpretation failure.
+    type Error;
+
+    fn empty(&mut self) -> Result<Self::Mapped, Self::Error>;
+    fn unit(&mut self) -> Result<Self::Mapped, Self::Error>;
+    fn constant(&mut self, parameter: &P) -> Result<Self::Mapped, Self::Error>;
+    fn variable(&mut self) -> Result<Self::Mapped, Self::Error>;
+    fn sum(&mut self, terms: Vec<Self::Mapped>) -> Result<Self::Mapped, Self::Error>;
+    fn product(&mut self, terms: Vec<Self::Mapped>) -> Result<Self::Mapped, Self::Error>;
+}
+
+impl<P> StructuralMapPlan<P> {
+    /// Interpret this plan using a backend-selected map algebra.
+    pub fn interpret<A: StructuralMapAlgebra<P>>(
+        &self,
+        algebra: &mut A,
+    ) -> Result<A::Mapped, A::Error> {
+        match self {
+            Self::Empty => algebra.empty(),
+            Self::Unit => algebra.unit(),
+            Self::Constant(parameter) => algebra.constant(parameter),
+            Self::Variable => algebra.variable(),
+            Self::Sum(terms) => {
+                let mapped = terms
+                    .iter()
+                    .map(|term| term.interpret(algebra))
+                    .collect::<Result<Vec<_>, _>>()?;
+                algebra.sum(mapped)
+            }
+            Self::Product(terms) => {
+                let mapped = terms
+                    .iter()
+                    .map(|term| term.interpret(algebra))
+                    .collect::<Result<Vec<_>, _>>()?;
+                algebra.product(mapped)
+            }
+        }
+    }
+}
+
 /// A checked expression in the structural polynomial fragment.
 ///
 /// The private field prevents a backend from accidentally advertising support
@@ -44,6 +113,42 @@ impl<P> StructuralPolynomial<P> {
     pub fn into_expression(self) -> FunctorExpr<P> {
         self.0
     }
+
+    /// Derive the canonical map-construction recipe from the declaration.
+    pub fn derive_map_plan(&self) -> StructuralMapPlan<P>
+    where
+        P: Clone,
+    {
+        fn derive<P: Clone>(expression: &FunctorExpr<P>) -> StructuralMapPlan<P> {
+            match expression {
+                FunctorExpr::Zero => StructuralMapPlan::Empty,
+                FunctorExpr::One => StructuralMapPlan::Unit,
+                FunctorExpr::Param(parameter) => StructuralMapPlan::Constant(parameter.clone()),
+                FunctorExpr::Var => StructuralMapPlan::Variable,
+                FunctorExpr::Sum(terms) => {
+                    StructuralMapPlan::Sum(terms.iter().map(derive).collect())
+                }
+                FunctorExpr::Product(terms) => {
+                    StructuralMapPlan::Product(terms.iter().map(derive).collect())
+                }
+                FunctorExpr::Compose { .. } => {
+                    unreachable!("StructuralPolynomial excludes composition")
+                }
+            }
+        }
+
+        derive(&self.0)
+    }
+}
+
+/// Normalize explicit composition, check the structural fragment, and derive a
+/// map plan. This is the opt-in composition pipeline; callers which require
+/// source-preserving composition should use a stronger capability instead.
+pub fn derive_composed_map_plan<P: Clone>(
+    expression: FunctorExpr<P>,
+) -> Result<StructuralMapPlan<P>, StructuralPolynomialError> {
+    let expanded = expression.expand_composition();
+    Ok(StructuralPolynomial::try_from(expanded)?.derive_map_plan())
 }
 
 impl<P> TryFrom<FunctorExpr<P>> for StructuralPolynomial<P> {
@@ -312,6 +417,53 @@ mod tests {
         assert_eq!(
             StructuralPolynomial::try_from(composed),
             Err(StructuralPolynomialError::CompositionUnsupported)
+        );
+    }
+
+    #[derive(Default)]
+    struct PlanPrinter;
+
+    impl StructuralMapAlgebra<&'static str> for PlanPrinter {
+        type Mapped = String;
+        type Error = std::convert::Infallible;
+
+        fn empty(&mut self) -> Result<String, Self::Error> {
+            Ok("absurd".into())
+        }
+        fn unit(&mut self) -> Result<String, Self::Error> {
+            Ok("id(1)".into())
+        }
+        fn constant(&mut self, parameter: &&'static str) -> Result<String, Self::Error> {
+            Ok(format!("id({parameter})"))
+        }
+        fn variable(&mut self) -> Result<String, Self::Error> {
+            Ok("f".into())
+        }
+        fn sum(&mut self, terms: Vec<String>) -> Result<String, Self::Error> {
+            Ok(format!("sum({})", terms.join(",")))
+        }
+        fn product(&mut self, terms: Vec<String>) -> Result<String, Self::Error> {
+            Ok(format!("product({})", terms.join(",")))
+        }
+    }
+
+    #[test]
+    fn map_plan_is_derived_and_interpretable() {
+        let plan = example().derive_map_plan();
+        assert_eq!(
+            plan.interpret(&mut PlanPrinter).unwrap(),
+            "sum(id(1),product(id(label),f),absurd)"
+        );
+    }
+
+    #[test]
+    fn composition_can_be_normalized_before_plan_derivation() {
+        let maybe = FunctorExpr::Sum(vec![FunctorExpr::One, FunctorExpr::Var]);
+        let pair = FunctorExpr::Product(vec![FunctorExpr::Param("tag"), FunctorExpr::Var]);
+        let plan = derive_composed_map_plan(FunctorExpr::compose(maybe, pair)).unwrap();
+        assert_eq!(
+            plan.interpret(&mut PlanPrinter).unwrap(),
+            "sum(id(1),product(id(tag),f))"
         );
     }
 }

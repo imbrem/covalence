@@ -36,8 +36,8 @@ pub use admission::{
     RecursiveCall, TerminationCertificate, Totalization,
 };
 pub use effect::{
-    EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectState, EffectSuspension,
-    EffectSyntax, HandledEffect,
+    EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectRunError, EffectState,
+    EffectSuspension, EffectSyntax, HandledEffect, HandledRun, handle_to_completion,
 };
 pub use host::{
     CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum, HostConfiguration,

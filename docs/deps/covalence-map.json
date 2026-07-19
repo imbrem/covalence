@@ -245,6 +245,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0025",
+      "kind": "api",
+      "title": "Lisp effect suspension and handling",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/effect.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -700,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35612,
+      "words": 35660,
       "updated": 0
     },
     {
@@ -9326,6 +9335,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/effect.rs",
+      "kind": "file",
+      "title": "effect.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/effect.rs",
+      "words": 178,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/host.rs",
       "kind": "file",
       "title": "host.rs",
@@ -10744,7 +10762,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 896,
+      "words": 882,
       "updated": 0
     },
     {
@@ -15289,7 +15307,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35612,
+      "words": 35660,
       "updated": 0
     },
     {
@@ -22879,6 +22897,24 @@
       "detail": null
     },
     {
+      "source": "api:A0025",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/lisp/src/effect.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0025",
+      "predicate": "depends-on",
+      "target": "api:A0022",
+      "detail": null
+    },
+    {
+      "source": "api:A0025",
+      "predicate": "depends-on",
+      "target": "api:A0023",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -25210,6 +25246,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/admission.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/effect.rs",
       "detail": null
     },
     {
@@ -33519,6 +33561,12 @@
       "title": "Lisp admission and totalization",
       "status": "experimental",
       "path": "crates/kernel/lisp/src/admission.rs"
+    },
+    {
+      "id": "A0025",
+      "title": "Lisp effect suspension and handling",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/effect.rs"
     }
   ],
   "apiImplementations": [

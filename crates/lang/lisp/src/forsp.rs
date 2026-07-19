@@ -743,7 +743,7 @@ impl EffectResume for ForspEffectMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::{HandledEffect, execute};
+    use covalence_kernel_lisp::{execute, handle_to_completion};
 
     fn program(source: &str) -> ForspCode {
         let form = read(source).unwrap().pop().unwrap();
@@ -840,7 +840,6 @@ mod tests {
     #[test]
     fn safe_io_suspends_resumes_and_retains_a_transcript() {
         let machine = ForspEffectMachine;
-        let mut state = ForspEffectMachine::initial(program("(read 1 + print)"));
         let mut handler = ForspIoHandler {
             host: RecordingIo {
                 input: vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(
@@ -849,31 +848,18 @@ mod tests {
                 printed: Vec::new(),
             },
         };
-        let mut transcript = Vec::new();
+        let run = handle_to_completion(
+            &machine,
+            ForspEffectMachine::initial(program("(read 1 + print)")),
+            &mut handler,
+            32,
+        )
+        .unwrap();
 
-        for _ in 0..32 {
-            state = match state {
-                EffectState::Running(_) => machine.next(&state).unwrap().unwrap(),
-                EffectState::Suspended(suspension) => {
-                    let request = suspension.request.clone();
-                    let response = handler.handle(&request).unwrap();
-                    transcript.push(HandledEffect {
-                        request,
-                        response: response.clone(),
-                    });
-                    EffectState::Running(machine.resume(suspension, response).unwrap())
-                }
-                EffectState::Returned(_) => break,
-            };
-        }
-
-        let EffectState::Returned(configuration) = state else {
-            panic!("effectful Forsp program must return")
-        };
-        assert!(configuration.operands.is_empty());
-        assert_eq!(transcript.len(), 2);
-        assert!(matches!(transcript[0].request, ForspRequest::Read));
-        assert!(matches!(transcript[1].request, ForspRequest::Print(_)));
+        assert!(run.returned.operands.is_empty());
+        assert_eq!(run.transcript.len(), 2);
+        assert!(matches!(run.transcript[0].request, ForspRequest::Read));
+        assert!(matches!(run.transcript[1].request, ForspRequest::Print(_)));
         assert_eq!(
             handler.host.printed,
             vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(

@@ -10,7 +10,101 @@
 //!
 //! @covalence-api {"id":"A0026","title":"Lisp runtime values and environments","status":"experimental","dependsOn":["A0005","A0022"]}
 
+use covalence_kernel_data::inductive::{
+    FieldSpec, FixpointSpec, PolynomialSpec, Position, Validated, VariantCase,
+};
 use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
+
+/// External parameter sorts of the canonical Lisp runtime-value functor.
+///
+/// A backend supplies representations for these three leaves, while recursive
+/// pair fields refer to the runtime-value carrier itself. Closures remain
+/// opaque machine resources; the datatype schema does not grant clients a way
+/// to forge their captured code or environment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RuntimeValueParameter {
+    Atom,
+    Closure,
+    Primitive,
+}
+
+/// Constructor tags of the canonical runtime-value fixpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RuntimeValueCase {
+    Atom,
+    Nil,
+    Cons,
+    Closure,
+    Primitive,
+    ApplyListProcedure,
+}
+
+impl RuntimeValueCase {
+    pub const ALL: [Self; 6] = [
+        Self::Atom,
+        Self::Nil,
+        Self::Cons,
+        Self::Closure,
+        Self::Primitive,
+        Self::ApplyListProcedure,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Atom => "atom",
+            Self::Nil => "nil",
+            Self::Cons => "cons",
+            Self::Closure => "closure",
+            Self::Primitive => "primitive",
+            Self::ApplyListProcedure => "apply-list-procedure",
+        }
+    }
+}
+
+/// The canonical polynomial declaration of Lisp runtime values.
+///
+/// In functor notation:
+///
+/// `ValueF X = Atom + 1 + X×X + Closure + Primitive + 1`.
+///
+/// Taking its least fixpoint permits procedures inside pairs while keeping
+/// ordinary quoted S-expressions as the procedure-free subobject. Backends can
+/// realize this declaration through `data/inductive`; [`LispValue`] is the
+/// capability-sized constructor/observer interface over such a realization.
+pub fn runtime_value_fixpoint() -> Validated<FixpointSpec<RuntimeValueParameter>> {
+    use RuntimeValueParameter::{Atom, Closure, Primitive};
+
+    Validated::try_from(FixpointSpec::new(
+        "lisp-value",
+        PolynomialSpec::new(
+            "lisp-value-f",
+            vec![
+                VariantCase::new(
+                    RuntimeValueCase::Atom.name(),
+                    vec![FieldSpec::new("value", Position::Param(Atom))],
+                ),
+                VariantCase::nullary(RuntimeValueCase::Nil.name()),
+                VariantCase::new(
+                    RuntimeValueCase::Cons.name(),
+                    vec![
+                        FieldSpec::new("head", Position::Var),
+                        FieldSpec::new("tail", Position::Var),
+                    ],
+                ),
+                VariantCase::new(
+                    RuntimeValueCase::Closure.name(),
+                    vec![FieldSpec::new("value", Position::Param(Closure))],
+                ),
+                VariantCase::new(
+                    RuntimeValueCase::Primitive.name(),
+                    vec![FieldSpec::new("value", Position::Param(Primitive))],
+                ),
+                VariantCase::nullary(RuntimeValueCase::ApplyListProcedure.name()),
+            ],
+        ),
+    ))
+    .expect("the fixed Lisp runtime-value declaration is valid")
+}
 
 /// One observable layer of a Lisp runtime value.
 ///
@@ -25,6 +119,19 @@ pub enum RuntimeValueView<A, P, V> {
     Closure,
     Primitive(P),
     ApplyListProcedure,
+}
+
+impl<A, P, V> RuntimeValueView<A, P, V> {
+    pub const fn case(&self) -> RuntimeValueCase {
+        match self {
+            Self::Atom(_) => RuntimeValueCase::Atom,
+            Self::Nil => RuntimeValueCase::Nil,
+            Self::Cons { .. } => RuntimeValueCase::Cons,
+            Self::Closure => RuntimeValueCase::Closure,
+            Self::Primitive(_) => RuntimeValueCase::Primitive,
+            Self::ApplyListProcedure => RuntimeValueCase::ApplyListProcedure,
+        }
+    }
 }
 
 /// Construction and one-layer observation of runtime values.
@@ -267,6 +374,42 @@ mod tests {
         assert_eq!(
             project_datum(&data, &values, &contains_procedure).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn runtime_values_have_one_checked_polynomial_shape() {
+        let spec = runtime_value_fixpoint();
+        assert_eq!(spec.name.as_str(), "lisp-value");
+        assert_eq!(
+            spec.functor
+                .variants
+                .iter()
+                .map(|case| case.name.as_str())
+                .collect::<Vec<_>>(),
+            RuntimeValueCase::ALL.map(RuntimeValueCase::name)
+        );
+        assert_eq!(
+            spec.functor.variants[2]
+                .fields
+                .iter()
+                .map(|field| &field.position)
+                .collect::<Vec<_>>(),
+            [&Position::Var, &Position::Var]
+        );
+        assert!(spec.functor.is_recursive());
+
+        let values = HostValues::<&str, &str, &str>::default();
+        assert_eq!(
+            values.view(&HostValue::Atom("value")).unwrap().case(),
+            RuntimeValueCase::Atom
+        );
+        assert_eq!(
+            values
+                .view(&HostValue::Primitive("procedure"))
+                .unwrap()
+                .case(),
+            RuntimeValueCase::Primitive
         );
     }
 }

@@ -154,7 +154,7 @@ pub struct HostClosure<S, A, P> {
     pub environment: Environment<S, A, P>,
 }
 
-/// Runtime values of the host realization.
+/// Direct Rust realization of [`crate::runtime_value_fixpoint`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostValue<S, A, P> {
     Atom(A),

@@ -52,7 +52,8 @@ pub use relation::{
 };
 pub use runtime::{
     LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeDatumError,
-    RuntimeValueView, inject_datum, project_datum,
+    RuntimeValueCase, RuntimeValueParameter, RuntimeValueView, inject_datum, project_datum,
+    runtime_value_fixpoint,
 };
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,

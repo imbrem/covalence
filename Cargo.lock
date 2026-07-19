@@ -1193,6 +1193,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-jq"
+version = "0.0.0"
+dependencies = [
+ "covalence-decimal-api",
+ "covalence-json-api",
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-json"
 version = "0.0.0"
 dependencies = [

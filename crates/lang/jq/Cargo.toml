@@ -1,0 +1,11 @@
+[package]
+name = "covalence-jq"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-json-api = { path = "../json-api" }
+
+[dev-dependencies]
+covalence-decimal-api = { path = "../decimal" }
+covalence-types = { path = "../../lib/types" }

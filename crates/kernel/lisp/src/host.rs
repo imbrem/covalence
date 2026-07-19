@@ -468,81 +468,80 @@ where
 
 /// The active expression or computed value.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostControl<S, A, P> {
-    Expression(Expr<S, A, P>),
-    Value(Value<S, A, P>),
+pub enum MachineControl<E, V> {
+    Expression(E),
+    Value(V),
 }
 
 /// Evaluation-context frames for a strict lexical CEK-style machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostFrame<S, A, P> {
+pub enum MachineFrame<E, V, N, P> {
     If {
-        consequent: Expr<S, A, P>,
-        alternative: Expr<S, A, P>,
-        environment: Environment<S, A, P>,
+        consequent: E,
+        alternative: E,
+        environment: N,
     },
     Sequence {
-        remaining: Vec<Expr<S, A, P>>,
-        environment: Environment<S, A, P>,
+        remaining: Vec<E>,
+        environment: N,
     },
     ApplyParts {
-        function: Option<Value<S, A, P>>,
-        evaluated: Vec<Option<Value<S, A, P>>>,
+        function: Option<V>,
+        evaluated: Vec<Option<V>>,
         splice_tail: bool,
-        current: HostApplicationPosition,
-        remaining: Vec<HostApplicationPart<S, A, P>>,
-        environment: Environment<S, A, P>,
+        current: MachineApplicationPosition,
+        remaining: Vec<MachineApplicationPart<E>>,
+        environment: N,
     },
     PrimitiveArguments {
         primitive: P,
-        evaluated: Vec<Option<Value<S, A, P>>>,
+        evaluated: Vec<Option<V>>,
         current: usize,
-        remaining: Vec<(usize, Expr<S, A, P>)>,
-        environment: Environment<S, A, P>,
+        remaining: Vec<(usize, E)>,
+        environment: N,
     },
 }
 
 /// Position currently being evaluated in an application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HostApplicationPosition {
+pub enum MachineApplicationPosition {
     Operator,
     Argument(usize),
 }
 
 /// One unevaluated part of an application.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostApplicationPart<S, A, P> {
-    Operator(Expr<S, A, P>),
-    Argument {
-        index: usize,
-        expression: Expr<S, A, P>,
-    },
+pub enum MachineApplicationPart<E> {
+    Operator(E),
+    Argument { index: usize, expression: E },
 }
 
 /// A complete machine configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HostConfiguration<S, A, P> {
-    pub control: HostControl<S, A, P>,
-    pub environment: Environment<S, A, P>,
-    pub continuation: Vec<HostFrame<S, A, P>>,
+pub struct MachineConfiguration<E, V, N, P> {
+    pub control: MachineControl<E, V>,
+    pub environment: N,
+    pub continuation: Vec<MachineFrame<E, V, N, P>>,
 }
 
-impl<S, A, P> HostConfiguration<S, A, P> {
-    pub fn initial(expression: Expr<S, A, P>) -> Self {
-        Self::with_environment(expression, HostEnvironment::default())
+impl<E, V, N: Default, P> MachineConfiguration<E, V, N, P> {
+    pub fn initial(expression: E) -> Self {
+        Self::with_environment(expression, N::default())
     }
+}
 
-    pub fn with_environment(expression: Expr<S, A, P>, environment: Environment<S, A, P>) -> Self {
+impl<E, V, N, P> MachineConfiguration<E, V, N, P> {
+    pub fn with_environment(expression: E, environment: N) -> Self {
         Self {
-            control: HostControl::Expression(expression),
+            control: MachineControl::Expression(expression),
             environment,
             continuation: Vec::new(),
         }
     }
 
-    pub fn terminal_value(&self) -> Option<&Value<S, A, P>> {
+    pub fn terminal_value(&self) -> Option<&V> {
         if self.continuation.is_empty()
-            && let HostControl::Value(value) = &self.control
+            && let MachineControl::Value(value) = &self.control
         {
             Some(value)
         } else {
@@ -550,6 +549,13 @@ impl<S, A, P> HostConfiguration<S, A, P> {
         }
     }
 }
+
+pub type HostControl<S, A, P> = MachineControl<Expr<S, A, P>, Value<S, A, P>>;
+pub type HostFrame<S, A, P> = MachineFrame<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
+pub type HostApplicationPosition = MachineApplicationPosition;
+pub type HostApplicationPart<S, A, P> = MachineApplicationPart<Expr<S, A, P>>;
+pub type HostConfiguration<S, A, P> =
+    MachineConfiguration<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
 
 /// Errors from the executable host machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1451,6 +1457,19 @@ mod tests {
                 RuntimeValueView::Nil
             ))
         }
+    }
+
+    #[test]
+    fn machine_state_is_independent_of_host_runtime_representations() {
+        type Alternate = MachineConfiguration<&'static str, u8, Vec<(&'static str, u8)>, ()>;
+
+        let mut configuration = Alternate::initial("expression");
+        assert!(matches!(
+            configuration.control,
+            MachineControl::Expression("expression")
+        ));
+        configuration.control = MachineControl::Value(42);
+        assert_eq!(configuration.terminal_value(), Some(&42));
     }
 
     #[test]

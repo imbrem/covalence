@@ -1177,6 +1177,7 @@ dependencies = [
  "covalence-logic-api",
  "covalence-metamath",
  "covalence-parsing-api",
+ "covalence-regex-parsing",
  "covalence-sexp",
  "covalence-spectec",
  "covalence-types",

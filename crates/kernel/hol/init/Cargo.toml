@@ -26,6 +26,7 @@ covalence-spectec = { path = "../../../lib/wasm/spectec" }
 covalence-k = { path = "../../../lang/k" }
 covalence-computation = { path = "../../../lang/computation" }
 covalence-parsing-api = { path = "../../../lang/parsing" }
+covalence-regex-parsing = { path = "../../../lang/regex-parsing" }
 async-trait = "0.1"
 bytes = "1"
 fnv = "1"

@@ -12,7 +12,8 @@ use covalence_decimal_api::CanonicalDecimal;
 use covalence_inductive::DatatypeFamilyExpr;
 use covalence_parsing_api::{
     InterpretationPer, ParseAttempt, PartialExactParser, PartialParser, PartialPrefixParser,
-    PrefixInterpretation, SameInterpretation, Span,
+    PrefixAdapterError, PrefixInterpretation, SameInterpretation, Span, exact_from_prefix,
+    same_interpretation_by,
 };
 use covalence_types::Int;
 use std::convert::Infallible;
@@ -432,10 +433,7 @@ impl PartialExactParser for JsonSyntaxParser {
         &self,
         source: &[u8],
     ) -> Result<ParseAttempt<(Self::Value, Self::Witness), Self::Diagnostic>, Self::Error> {
-        Ok(match self.parse_diagnostic(source) {
-            Ok(parsed) => ParseAttempt::Match(parsed),
-            Err(diagnostic) => ParseAttempt::NoMatch(diagnostic),
-        })
+        json_exact_from_prefix(self, source)
     }
 }
 
@@ -472,10 +470,26 @@ impl PartialExactParser for JsonParser {
         &self,
         source: &[u8],
     ) -> Result<ParseAttempt<(Self::Value, Self::Witness), Self::Diagnostic>, Self::Error> {
-        Ok(match self.parse_diagnostic(source) {
-            Ok(parsed) => ParseAttempt::Match(parsed),
-            Err(diagnostic) => ParseAttempt::NoMatch(diagnostic),
-        })
+        json_exact_from_prefix(self, source)
+    }
+}
+
+fn json_exact_from_prefix<P>(
+    parser: &P,
+    source: &[u8],
+) -> Result<ParseAttempt<(P::Value, P::Witness), JsonParseError>, Infallible>
+where
+    P: PartialPrefixParser<Source = [u8], Diagnostic = JsonParseError, Error = Infallible>,
+{
+    match exact_from_prefix(parser, source, source.len(), |trailing| JsonParseError {
+        offset: trailing.start,
+        kind: JsonParseErrorKind::TrailingInput,
+    }) {
+        Ok(attempt) => Ok(attempt),
+        Err(PrefixAdapterError::Parse(error)) => match error {},
+        Err(PrefixAdapterError::InvalidExtent { .. }) => {
+            unreachable!("JSON prefix parser constructs internally validated extents")
+        }
     }
 }
 
@@ -512,18 +526,9 @@ impl InterpretationPer for JsonParser {
         Option<SameInterpretation<Self::Value, Self::Witness, Self::EquivalenceWitness>>,
         Self::Error,
     > {
-        let Some((left_value, left_witness)) = self.parse(left)? else {
-            return Ok(None);
-        };
-        let Some((right_value, right_witness)) = self.parse(right)? else {
-            return Ok(None);
-        };
-        Ok((left_value == right_value).then_some(SameInterpretation {
-            value: left_value,
-            left: left_witness,
-            right: right_witness,
-            equivalence: ObservedSemanticEquality,
-        }))
+        same_interpretation_by(self, left, right, |left_value, right_value| {
+            (left_value == right_value).then_some(ObservedSemanticEquality)
+        })
     }
 }
 

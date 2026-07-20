@@ -39,9 +39,10 @@ unless referring to a concrete existing crate.
 
 1. **Rows do not mint facts.** SQL operations manipulate state and evidence;
    theorem construction remains behind checked nucleus transitions.
-2. **SQLite is state, not the logical foundation.** Bugs in a query may cause a
-   failed replay or wrong candidate result, but must not silently fabricate a
-   theorem unless that query is explicitly inside the selected TCB policy.
+2. **Only a small SQL fragment is trusted.** Much of the TCB should be simple
+   queries over trusted in-memory tables, but only typed, fixed query shapes are
+   nucleus transitions. Arbitrary SQL can propose candidate state and cannot
+   promote it.
 3. **Positive observations are finite and explicit.** Hashes, executions,
    signatures, and imports are represented by the observations present in this
    nucleus, not universal claims about an external world.
@@ -151,6 +152,32 @@ handles cannot cross rollback or snapshot replacement. Whether terms are
 interned by digest, integer row ID, arena handle, or a combination remains an
 experiment.
 
+The neutron is the canonical relational form, not merely persistence. Proton
+structures are optimized indexes/witnesses over it. A future e-graph is a third
+optimized form with the same obligation: checked import/export or
+reconstruction against neutron relations. The trusted database operation sketch
+is [`N0057`](./trusted-database-algebra.md).
+
+## Trusted database algebra
+
+The intended TCB is dominated by a small typed relational fragment compiled to
+prepared SQL: trusted lookup, projection, typed selection, compatible union,
+equi-join, semijoin, and intersection. Difference and negative reasoning
+require explicit completeness. Aggregates, recursive CTEs, implicit coercions,
+collations, user functions, and arbitrary SQL are outside the initial trusted
+fragment.
+
+Core multi-database transitions attach trusted and untrusted databases under
+separate capabilities; merge compatible trusted states; compare candidate rows
+with trusted rows or premises; reprove candidates and retain only checked
+conclusions; signature-promote exact snapshots under policy; and extract
+root-reachable trusted subdatabases. Filtering must weaken completeness/global
+claims when it cannot preserve them.
+
+This gives the distributed system its basic unit: every worker receives a DB
+snapshot and returns a whole DB or filtered subDB. Coordination is checked merge
+and selective promotion rather than shared theorem-arena mutation.
+
 ## Signed and untrusted states
 
 A signature does not automatically confer trust. Loading has two modes:
@@ -200,16 +227,18 @@ S0 terminology + invariants
        ↓
 S4 dual in-memory/SQLite witness spike
        ↓
-S5 proton/neutron transition API
- ├─ S6 blob + snapshot identity
- ├─ S7 derivation replay
- └─ S8 trust/signature policies
+S5 trusted query + multi-DB algebra
        ↓
-S9 WASM instance/lifecycle relations
+S6 proton/neutron transition API
+ ├─ S7 blob + snapshot identity
+ ├─ S8 derivation replay
+ └─ S9 trust/signature policies
        ↓
-S10 differential old/new backend
+S10 WASM instance/lifecycle relations
        ↓
-S11 audit, benchmark, then replace old substrate
+S11 differential old/new backend
+       ↓
+S12 audit, benchmark, then replace old substrate
 ```
 
 ## Work packages
@@ -254,7 +283,16 @@ conversion preserving the same `MThm` statement. Measure prepared-query and
 allocation costs; discard the implementation if its types distort the paper
 API.
 
-### S5 — nucleus transition API
+### S5 — trusted query and multi-database algebra
+
+Define the typed query AST and trust propagation for lookup, projection,
+selection, union, equi-join, semijoin, and intersection. Implement multi-DB
+attach, compatible trusted merge, candidate comparison, proof-filtered
+promotion, and root-reachable subDB extraction. Differentially execute every
+primitive against SQLite and a tiny independent relation interpreter. Specify
+exactly which SQLite version/configuration behavior enters the TCB.
+
+### S6 — nucleus transition API
 
 Write the state-transition model and define the sole boundary where proton and
 neutron change together. Separate:
@@ -270,7 +308,7 @@ Candidate shape: prepare evidence, validate against the current state, construct
 theorem and relational deltas, commit transaction, then publish handles. Specify panic,
 OOM, interruption, rollback, concurrency, and stale-handle behavior.
 
-### S6 — content and snapshots
+### S7 — content and snapshots
 
 Implement the finite blob observation relation and canonical snapshot identity.
 Hashing the database requires a canonical logical representation; hashing raw
@@ -278,21 +316,21 @@ SQLite file bytes is only acceptable if byte-level determinism is explicitly
 part of the format. Support database-as-blob without recursively assuming its
 own hash.
 
-### S7 — replay
+### S8 — replay
 
 Define a minimal derivation/event log sufficient to reconstruct exported roots.
 Replay must not trust SQL query results. It should be possible to retain full
 execution evidence, compact it to intermediate checkpoints, or retain only a
 proved theorem, with each choice visible in provenance.
 
-### S8 — signatures
+### S9 — signatures
 
 Keep cryptographic verification separate from authorization policy. Specify
 what exactly is signed: canonical snapshot identity, schema/version,
 interpretation, roots, and possibly trust assumptions. Demonstrate accept and
 replay modes for the same snapshot.
 
-### S9 — WASM lifecycle
+### S10 — WASM lifecycle
 
 Model initialization and linking explicitly rather than jumping straight to a
 single `executes` tuple. Candidate relations include `StartInit`,
@@ -302,13 +340,13 @@ hardware or attestation identity, and timestamps are separate relations or
 metadata. Lift each relation uninterpreted into HOL, then state refinement to
 SpecTec/K/other WASM semantics as ordinary conditional assumptions or proofs.
 
-### S10 — differential backend
+### S11 — differential backend
 
 Run the old implementation and new nucleus behind the same high-level APIs.
 Compare exported statements, assumptions, and proof results—not internal term
 IDs. This is the primary defense against a premature flag day.
 
-### S11 — vertical slice and replacement
+### S12 — vertical slice and replacement
 
 Recommended first three slices:
 
@@ -332,6 +370,8 @@ branches.
 - theorem replay throughput and peak memory;
 - set.mm import wall time and scaling curve;
 - SQLite rows, bytes, transactions, and hot-query latency;
+- trusted query-fragment size and independently cross-checked row count;
+- trusted merge, candidate filtering, and subDB extraction throughput;
 - snapshot size and deterministic rebuild time;
 - number of high-level consumer changes required;
 - trust-dependency size per exported theorem;

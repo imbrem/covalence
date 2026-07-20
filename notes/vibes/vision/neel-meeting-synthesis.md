@@ -207,6 +207,10 @@ Nat wrapper.
 - A split between execution/grounding trust and HOL semantic assumptions.
 - Multiple TCB groundings and multiple substrate implementations over the same
   relational API.
+- A deliberately small trusted SQL algebra for large-scale kernel reasoning,
+  state merge, candidate filtering/promotion, and subdatabase exchange.
+- Proton structures and future e-graphs as optimized physical forms of the
+  canonical neutron relations rather than independent semantic authorities.
 
 ## Questions intentionally left open
 

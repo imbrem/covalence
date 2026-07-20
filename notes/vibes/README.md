@@ -24,11 +24,13 @@ describe implementation gaps; Git preserves deleted design history.
    current vision, extracted from the maintainer's meeting notes.
 2. [`kernel/substrate-rewrite.md`](./kernel/substrate-rewrite.md) — nucleus,
    proton/neutron boundaries, invariants, and first rewrite plan.
-3. [`plans/current-program.md`](./plans/current-program.md) — priorities and the
+3. [`kernel/trusted-database-algebra.md`](./kernel/trusted-database-algebra.md)
+   — the small SQL TCB, multi-DB operations, and distributed state shape.
+4. [`plans/current-program.md`](./plans/current-program.md) — priorities and the
    portfolio DAG.
-4. [`kernel/kernel-design.md`](./kernel/kernel-design.md) — current HOL kernel
+5. [`kernel/kernel-design.md`](./kernel/kernel-design.md) — current HOL kernel
    implementation, useful during migration but not the new architecture.
-5. [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) — current
+6. [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) — current
    trusted surface and audit vocabulary.
 
 ## Organization

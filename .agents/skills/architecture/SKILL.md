@@ -85,7 +85,10 @@ disable-model-invocation: true
     capability because its call-by-push-value semantics is genuinely
     concatenative. Forsp `read`/`print` and optional low-level pointer
     primitives suspend through A0025; the bundled safe host adapter handles
-    only I/O and rejects pointer requests.
+    only I/O and rejects pointer requests. Pure Forsp machines implement the
+    common terminal-value observation and therefore produce checked `MayEval`
+    traces on both the direct and opaque-resource runtimes; effectful runs
+    retain the separate suspension/resume transcript.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

@@ -263,12 +263,21 @@
       "updated": 0
     },
     {
+      "id": "api:A0027",
+      "kind": "api",
+      "title": "General parser combinators",
+      "status": "experimental",
+      "path": "crates/lang/combinator-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 312,
+      "words": 337,
       "updated": 0
     },
     {
@@ -520,7 +529,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7456,
+      "words": 7464,
       "updated": 0
     },
     {
@@ -718,7 +727,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35867,
+      "words": 36399,
       "updated": 0
     },
     {
@@ -5677,7 +5686,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/api/src/lib.rs",
-      "words": 144,
+      "words": 146,
       "updated": 0
     },
     {
@@ -5714,6 +5723,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/api/src/succ.rs",
       "words": 517,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/api/src/wasm.rs",
+      "kind": "file",
+      "title": "wasm.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/api/src/wasm.rs",
+      "words": 1828,
       "updated": 0
     },
     {
@@ -7477,7 +7495,7 @@
       "title": "carved.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/carved.rs",
-      "words": 1563,
+      "words": 1582,
       "updated": 0
     },
     {
@@ -9007,7 +9025,7 @@
       "title": "builtins.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/builtins.rs",
-      "words": 2083,
+      "words": 8549,
       "updated": 0
     },
     {
@@ -9016,7 +9034,7 @@
       "title": "decision.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
-      "words": 582,
+      "words": 1001,
       "updated": 0
     },
     {
@@ -9025,7 +9043,7 @@
       "title": "decs.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/decs.rs",
-      "words": 4568,
+      "words": 4613,
       "updated": 0
     },
     {
@@ -9034,7 +9052,7 @@
       "title": "else_.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/else_.rs",
-      "words": 1601,
+      "words": 1711,
       "updated": 0
     },
     {
@@ -9052,7 +9070,7 @@
       "title": "flatten.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/flatten.rs",
-      "words": 3599,
+      "words": 3623,
       "updated": 0
     },
     {
@@ -9061,7 +9079,16 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/mod.rs",
-      "words": 249,
+      "words": 250,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/wasm/lower/official.rs",
+      "kind": "file",
+      "title": "official.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/wasm/lower/official.rs",
+      "words": 717,
       "updated": 0
     },
     {
@@ -9097,7 +9124,7 @@
       "title": "total.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
-      "words": 1672,
+      "words": 1752,
       "updated": 0
     },
     {
@@ -9115,7 +9142,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/mod.rs",
-      "words": 50,
+      "words": 51,
       "updated": 0
     },
     {
@@ -9124,7 +9151,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "words": 26,
+      "words": 21,
       "updated": 0
     },
     {
@@ -9137,12 +9164,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/wasm/semantic_relation.rs",
+      "kind": "file",
+      "title": "semantic_relation.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/wasm/semantic_relation.rs",
+      "words": 805,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/wasm/sort.rs",
       "kind": "file",
       "title": "sort.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/sort.rs",
-      "words": 228,
+      "words": 5290,
       "updated": 0
     },
     {
@@ -9151,7 +9187,7 @@
       "title": "spec.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/spec.rs",
-      "words": 482,
+      "words": 576,
       "updated": 0
     },
     {
@@ -9160,7 +9196,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
-      "words": 1484,
+      "words": 5467,
       "updated": 0
     },
     {
@@ -9358,7 +9394,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 701,
+      "words": 704,
       "updated": 0
     },
     {
@@ -9764,6 +9800,312 @@
       "status": "tracked",
       "path": "crates/lang/cfg-parsing/src/lib.rs",
       "words": 1316,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/budget.rs",
+      "kind": "file",
+      "title": "budget.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/budget.rs",
+      "words": 210,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/conformance/host.rs",
+      "kind": "file",
+      "title": "host.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/conformance/host.rs",
+      "words": 711,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "words": 249,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "kind": "file",
+      "title": "reference.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "words": 746,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/conformance/syntax.rs",
+      "kind": "file",
+      "title": "syntax.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/conformance/syntax.rs",
+      "words": 973,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/alphabet.rs",
+      "kind": "file",
+      "title": "alphabet.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/alphabet.rs",
+      "words": 37,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/cursor.rs",
+      "kind": "file",
+      "title": "cursor.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/cursor.rs",
+      "words": 220,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 169,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/partial.rs",
+      "kind": "file",
+      "title": "partial.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "words": 819,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/recursion.rs",
+      "kind": "file",
+      "title": "recursion.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/recursion.rs",
+      "words": 905,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/relational.rs",
+      "kind": "file",
+      "title": "relational.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "words": 856,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/total.rs",
+      "kind": "file",
+      "title": "total.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/total.rs",
+      "words": 371,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/host/witness.rs",
+      "kind": "file",
+      "title": "witness.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/host/witness.rs",
+      "words": 158,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/lib.rs",
+      "words": 69,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/agreement.rs",
+      "kind": "file",
+      "title": "agreement.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/agreement.rs",
+      "words": 569,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/check.rs",
+      "kind": "file",
+      "title": "check.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/check.rs",
+      "words": 853,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "kind": "file",
+      "title": "compile.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 1369,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 341,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/narrow.rs",
+      "kind": "file",
+      "title": "narrow.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/narrow.rs",
+      "words": 90,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/observe.rs",
+      "kind": "file",
+      "title": "observe.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/observe.rs",
+      "words": 263,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "kind": "file",
+      "title": "widen.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "words": 304,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/sharing.rs",
+      "kind": "file",
+      "title": "sharing.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/sharing.rs",
+      "words": 62,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "kind": "file",
+      "title": "embed.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "words": 68,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/env.rs",
+      "kind": "file",
+      "title": "env.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
+      "words": 256,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "words": 601,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/partial.rs",
+      "kind": "file",
+      "title": "partial.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/partial.rs",
+      "words": 451,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "kind": "file",
+      "title": "relational.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "words": 615,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/signature.rs",
+      "kind": "file",
+      "title": "signature.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/signature.rs",
+      "words": 30,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/term.rs",
+      "kind": "file",
+      "title": "term.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/term.rs",
+      "words": 84,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/total.rs",
+      "kind": "file",
+      "title": "total.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
+      "words": 319,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/syntax/witness.rs",
+      "kind": "file",
+      "title": "witness.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/syntax/witness.rs",
+      "words": 121,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/src/theory.rs",
+      "kind": "file",
+      "title": "theory.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 25,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/combinator-parsing/tests/non_collapse.rs",
+      "kind": "file",
+      "title": "non_collapse.rs",
+      "status": "tracked",
+      "path": "crates/lang/combinator-parsing/tests/non_collapse.rs",
+      "words": 1047,
       "updated": 0
     },
     {
@@ -15406,7 +15748,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35867,
+      "words": 36399,
       "updated": 0
     },
     {
@@ -15424,7 +15766,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 320,
+      "words": 323,
       "updated": 0
     },
     {
@@ -15433,7 +15775,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 1066,
+      "words": 1075,
       "updated": 0
     },
     {
@@ -15442,7 +15784,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 240,
+      "words": 242,
       "updated": 0
     },
     {
@@ -15451,7 +15793,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1898,
+      "words": 1916,
       "updated": 0
     },
     {
@@ -15514,7 +15856,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3559,
+      "words": 3859,
       "updated": 0
     },
     {
@@ -16247,6 +16589,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "kind": "file",
+      "title": "lisp-foundation-refactor-handoff.md",
+      "status": "tracked",
+      "path": "notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "words": 102,
+      "updated": 0
+    },
+    {
       "id": "file:notes/vibes/k/",
       "kind": "file",
       "title": "notes/vibes/k/",
@@ -16936,7 +17287,7 @@
       "title": "spectec-resync-handoff.md",
       "status": "tracked",
       "path": "notes/vibes/logics/spectec-resync-handoff.md",
-      "words": 109,
+      "words": 176,
       "updated": 0
     },
     {
@@ -16945,7 +17296,7 @@
       "title": "spectec-total-load.md",
       "status": "tracked",
       "path": "notes/vibes/logics/spectec-total-load.md",
-      "words": 782,
+      "words": 1207,
       "updated": 0
     },
     {
@@ -16973,6 +17324,15 @@
       "status": "tracked",
       "path": "notes/vibes/logics/verified-io.md",
       "words": 96,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/logics/wasm-semantics-facade.md",
+      "kind": "file",
+      "title": "wasm-semantics-facade.md",
+      "status": "tracked",
+      "path": "notes/vibes/logics/wasm-semantics-facade.md",
+      "words": 131,
       "updated": 0
     },
     {
@@ -18242,7 +18602,7 @@
       "status": "draft",
       "path": "notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
       "words": 595,
-      "updated": 1784578646
+      "updated": 1784579030
     },
     {
       "id": "note:notes/vibes/k/README.md",
@@ -18889,8 +19249,8 @@
       "title": "SpecTec/WASM resync handoff",
       "status": "draft",
       "path": "notes/vibes/logics/spectec-resync-handoff.md",
-      "words": 585,
-      "updated": 1784475603
+      "words": 1071,
+      "updated": 1784578495
     },
     {
       "id": "note:notes/vibes/logics/spectec-total-load.md",
@@ -18898,8 +19258,8 @@
       "title": "Total-load: the entire WASM 3.0 SpecTec spec as one kernel-checked rule set",
       "status": "draft",
       "path": "notes/vibes/logics/spectec-total-load.md",
-      "words": 6419,
-      "updated": 1784475603
+      "words": 9581,
+      "updated": 1784578495
     },
     {
       "id": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -18927,6 +19287,15 @@
       "path": "notes/vibes/logics/verified-io.md",
       "words": 585,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/logics/wasm-semantics-facade.md",
+      "kind": "note",
+      "title": "First-class WebAssembly semantics facade",
+      "status": "draft",
+      "path": "notes/vibes/logics/wasm-semantics-facade.md",
+      "words": 798,
+      "updated": 1784541973
     },
     {
       "id": "note:notes/vibes/logics/wasm-spec.md",
@@ -21307,7 +21676,7 @@
     {
       "id": "todo:kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg",
       "kind": "todo",
-      "title": "Give exact clauses to the remaining 67 float and related builtin declarations.",
+      "title": "Close the remaining 15 zero-clause tags: 10 numeric (fsqrt, strict add/sub, four relaxed float ops, relaxedtrunc, and two relaxed integer ops) and five SpecTec/environment scaffolds (allocX, dots, ieee, instrdots, s33tou32). Reuse the checked ExactRatio -> normalized ratio -> QuantumCase -> ties-even staging now exercised by fmul and fdiv; do not count the five scaffolds as IEEE semantics.",
       "status": "severe",
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
       "words": 0,
@@ -21316,18 +21685,18 @@
     {
       "id": "todo:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased",
       "kind": "todo",
-      "title": "Case/field refinement premises (prs) erased: 56 across 29 spec types",
+      "title": "Lower the 3 instr refinements (VSHUFFLE length, VNARROW width, VEXTRACTLANE signedness) after dependent tuple families such as CONST numtype num(numtype) have an exact sigma carrier and the self-recursive instr carrier has checked U constructors/observation; every rigid indexed operator family is exact.",
       "status": "severe",
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "path": "crates/kernel/hol/init/src/wasm/sort.rs",
       "words": 0,
       "updated": 0
     },
     {
       "id": "todo:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free",
       "kind": "todo",
-      "title": "Church types are polymorphic + term-free: ChurchBackend gives Φ⟨'r⟩ with a",
+      "title": "Seal simultaneous Church signatures as closed recursive carriers; open rank-1 signatures now have constructors, β laws, and checked observations only.",
       "status": "severe",
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
       "words": 0,
       "updated": 0
     },
@@ -21343,9 +21712,9 @@
     {
       "id": "todo:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded",
       "kind": "todo",
-      "title": "Constructor freeness lemmas not threaded: denote renders variant case",
+      "title": "On a closed carrier, discharge 41 injectivity/183 distinctness laws (10 recursive payloads hit rank-1 reconstruction) and thread them into denotation.",
       "status": "severe",
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
       "words": 0,
       "updated": 0
     },
@@ -21395,20 +21764,38 @@
       "updated": 0
     },
     {
-      "id": "todo:kernel.hol.init.src.wasm.mutually-recursive-variant-types",
-      "kind": "todo",
-      "title": "Mutually-recursive variant types: wasm::syntax renders aliases /",
-      "status": "severe",
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:kernel.hol.init.src.wasm.no-end-to-end-parsedefs-test",
       "kind": "todo",
       "title": "No end-to-end parsedefs test: Derivation tests build the rel AST",
       "status": "minor",
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:kernel.hol.init.src.wasm.opaque-composite-decision-schemas",
+      "kind": "todo",
+      "title": "Install closed totality/adequacy schemas for reference-cast and array-data composite applicability, then remove their five opaque premises.",
+      "status": "severe",
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:kernel.hol.init.src.wasm.opaque-immut-reachable-decision",
+      "kind": "todo",
+      "title": "Decide ImmutReachable universally and use its certified false graph for NotImmutReachable.",
+      "status": "severe",
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:kernel.hol.init.src.wasm.opaque-vcvtop-existential-decision",
+      "kind": "todo",
+      "title": "Decide the existential applicability of preceding vcvtop clauses with a closed positive graph schema.",
+      "status": "severe",
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
       "words": 0,
       "updated": 0
     },
@@ -21424,9 +21811,9 @@
     {
       "id": "todo:kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started",
       "kind": "todo",
-      "title": "Relations → HOL predicates over those types (leg B) not started: Once",
+      "title": "Extend beyond the exact 5/125 bundled relations: all 120 remaining carriers need recursive structural lifting of exact nested invariants; 57 still reach ground fNmag(32/64) through the legacy whole-carrier renderer before its exact CasePredicate can be applied; nonempty cross-relation SCCs still need simultaneous closure.",
       "status": "severe",
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "path": "crates/kernel/hol/init/src/wasm/semantic_relation.rs",
       "words": 0,
       "updated": 0
     },
@@ -21598,6 +21985,267 @@
       "title": "la family beyond lageneric: lamultpos/lamultneg,",
       "status": "minor",
       "path": "crates/kernel/smt/open_work.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.bind-associativity-only-up-to-observation",
+      "kind": "todo",
+      "title": "§e.14",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.choice-union-refinement-theorem",
+      "kind": "todo",
+      "title": "\"Ordered",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.collapse-agreeing-ignores-order",
+      "kind": "todo",
+      "title": "Under",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compilation-agreement-unproved",
+      "kind": "todo",
+      "title": "N1 — that a",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compile-rebuilds-bind-continuations",
+      "kind": "todo",
+      "title": "Core::Bind",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compile-rebuilds-rule-bodies",
+      "kind": "todo",
+      "title": "Core::Rule",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compiled-relational-not-erasable",
+      "kind": "todo",
+      "title": "A compiled",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.continuation-allocation",
+      "kind": "todo",
+      "title": "Environment resolve",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.env-coherence-unchecked",
+      "kind": "todo",
+      "title": "deterministicinto",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.fragment-agreement-theorem",
+      "kind": "todo",
+      "title": "\"A deterministic",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-applicative-laws",
+      "kind": "todo",
+      "title": "The host law fixture fixes",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-recursion-unbounded",
+      "kind": "todo",
+      "title": "This module no longer",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-relational-limit-threading",
+      "kind": "todo",
+      "title": "RelationalLimits",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-relational-sharing",
+      "kind": "todo",
+      "title": "No derivation sharing in",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.mode-generic-encoding",
+      "kind": "todo",
+      "title": "A Mode-GAT encoding",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.morphism-theory",
+      "kind": "todo",
+      "title": "CombinatorTheory<L: Logic>",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.negation-fragment",
+      "kind": "todo",
+      "title": "A Not combinator would make",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.no-take-first",
+      "kind": "todo",
+      "title": "Do not add a first(),",
+      "status": "severe",
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.prefix-traits-to-a0015",
+      "kind": "todo",
+      "title": "Promote",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.reference-ordered-rules",
+      "kind": "todo",
+      "title": "The ordered",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.refinement-inequation-unproved",
+      "kind": "todo",
+      "title": "M3⁺ is a",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.relational-recomputation",
+      "kind": "todo",
+      "title": "st.active is cycle",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.relational-sharing",
+      "kind": "todo",
+      "title": "No derivation sharing, and",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.repetition-combinators",
+      "kind": "todo",
+      "title": "No many/some in either",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.sentinel-values-undetected",
+      "kind": "todo",
+      "title": "The",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/check.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.stackless-eval",
+      "kind": "todo",
+      "title": "Syntax evaluators are recursive",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.static-well-formedness",
+      "kind": "todo",
+      "title": "Check map/ap arity and",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/term.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.total-start-precondition",
+      "kind": "todo",
+      "title": "TotalPrefixParser",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.widening-laws-unproved",
+      "kind": "todo",
+      "title": "M1, M2 and M5 are",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
       "words": 0,
       "updated": 0
     },
@@ -22556,15 +23204,6 @@
       "updated": 0
     },
     {
-      "id": "todo:wasm.spectec.decision-family-universal",
-      "kind": "todo",
-      "title": "Specialize closed quantified adequacy, totality, and determinacy theorems into ground cases.",
-      "status": "major",
-      "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:wasm.spectec.indexed-grammar-lowering",
       "kind": "todo",
       "title": "Lower capture-sensitive reference arguments and semantic premises into the HOL relation.",
@@ -23083,6 +23722,18 @@
       "source": "api:A0026",
       "predicate": "depends-on",
       "target": "api:A0022",
+      "detail": null
+    },
+    {
+      "source": "api:A0027",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0027",
+      "predicate": "depends-on",
+      "target": "api:A0015",
       "detail": null
     },
     {
@@ -23761,6 +24412,12 @@
       "source": "file:crates/kernel/hol/api/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/api/src/succ.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/api/src/wasm.rs",
       "detail": null
     },
     {
@@ -25308,6 +25965,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/wasm/lower/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/wasm/lower/official.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/wasm/lower/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/lower/slice.rs",
       "detail": null
     },
@@ -25357,6 +26020,12 @@
       "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/wasm/semantic_relation.rs",
       "detail": null
     },
     {
@@ -25537,6 +26206,192 @@
       "source": "file:crates/kernel/smt/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/smt/src/replay.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/conformance/host.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/conformance/syntax.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/alphabet.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/cursor.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/partial.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/recursion.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/relational.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/total.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/witness.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/budget.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/host/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/sharing.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/agreement.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/check.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/narrow.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/observe.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/env.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/partial.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/signature.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/term.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/total.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/combinator-parsing/src/syntax/witness.rs",
       "detail": null
     },
     {
@@ -30748,6 +31603,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/logics/wasm-semantics-facade.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/logics/wasm-spec.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -33648,8 +34509,14 @@
       "format": "covalence-toml-v1"
     },
     {
-      "noteId": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "noteId": "note:notes/vibes/logics/wasm-semantics-facade.md",
       "stableId": "N0047",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "stableId": "N0048",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
     }
@@ -33810,6 +34677,12 @@
       "title": "Lisp runtime values and environments",
       "status": "experimental",
       "path": "crates/kernel/lisp/src/runtime.rs"
+    },
+    {
+      "id": "A0027",
+      "title": "General parser combinators",
+      "status": "experimental",
+      "path": "crates/lang/combinator-parsing/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -34888,7 +35761,7 @@
       "noteId": "note:notes/vibes/logics/spectec-resync-handoff.md",
       "actorId": "agent:gpt-5.6-sol",
       "role": "author",
-      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
       "source": "resync-handoff",
       "agent": "gpt-5.6-sol",
       "harness": "codex",
@@ -34932,6 +35805,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/wasm-semantics-facade.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "native",
+      "agent": "codex",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -35384,6 +36267,11 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "commit": "ec6345bdfe2d131f62d936728cc3d3f3ac4de304",
+      "committedAt": 1784579030
+    },
+    {
       "noteId": "note:notes/vibes/k/README.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -35740,13 +36628,13 @@
     },
     {
       "noteId": "note:notes/vibes/logics/spectec-resync-handoff.md",
-      "commit": "2bc8cd03f4de3aa39898aadf4bf6dcd8d86bfefa",
-      "committedAt": 1784475603
+      "commit": "78a222d9eed9d54b966f31083a369c45222af85c",
+      "committedAt": 1784578495
     },
     {
       "noteId": "note:notes/vibes/logics/spectec-total-load.md",
-      "commit": "2bc8cd03f4de3aa39898aadf4bf6dcd8d86bfefa",
-      "committedAt": 1784475603
+      "commit": "78a222d9eed9d54b966f31083a369c45222af85c",
+      "committedAt": 1784578495
     },
     {
       "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -35762,6 +36650,11 @@
       "noteId": "note:notes/vibes/logics/verified-io.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/logics/wasm-semantics-facade.md",
+      "commit": "e52dde8dc695ae4ce49a4a944caf745af2842740",
+      "committedAt": 1784541973
     },
     {
       "noteId": "note:notes/vibes/logics/wasm-spec.md",

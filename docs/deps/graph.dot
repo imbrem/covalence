@@ -8,6 +8,7 @@ digraph deps {
   "arrow";
   "cfg-parsing";
   "client";
+  "combinator-parsing";
   "computation";
   "core" [style=filled, fillcolor="#ffd6d6"];
   "core-test-guest";
@@ -107,6 +108,8 @@ digraph deps {
   "client" -> "hash";
   "client" -> "shell";
   "client" -> "store";
+  "combinator-parsing" -> "logic-api";
+  "combinator-parsing" -> "parsing-api";
   "computation" -> "kernel-data";
   "computation" -> "logic-api";
   "core" -> "pure";

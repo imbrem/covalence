@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 355,
-  "structured": 355,
+  "count": 385,
+  "structured": 385,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -2088,30 +2088,30 @@
       "id": "kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Give exact clauses to the remaining 67 float and related builtin declarations.",
-      "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 13,
-      "crate": "covalence-init"
-    },
-    {
-      "id": "kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased",
-      "kind": "TODO",
-      "severity": "severe",
-      "summary": "Case/field refinement premises (prs) erased: 56 across 29 spec types",
+      "summary": "Close the remaining 15 zero-clause tags: 10 numeric (fsqrt, strict add/sub, four relaxed float ops, relaxedtrunc, and two relaxed integer ops) and five SpecTec/environment scaffolds (allocX, dots, ieee, instrdots, s33tou32). Reuse the checked ExactRatio -> normalized ratio -> QuantumCase -> ties-even staging now exercised by fmul and fdiv; do not count the five scaffolds as IEEE semantics.",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
       "line": 9,
       "crate": "covalence-init"
     },
     {
+      "id": "kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Lower the 3 instr refinements (VSHUFFLE length, VNARROW width, VEXTRACTLANE signedness) after dependent tuple families such as CONST numtype num(numtype) have an exact sigma carrier and the self-recursive instr carrier has checked U constructors/observation; every rigid indexed operator family is exact.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/sort.rs",
+      "line": 151,
+      "crate": "covalence-init"
+    },
+    {
       "id": "kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Church types are polymorphic + term-free: ChurchBackend gives Φ⟨'r⟩ with a",
+      "summary": "Seal simultaneous Church signatures as closed recursive carriers; open rank-1 signatures now have constructors, β laws, and checked observations only.",
       "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 10,
+      "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
+      "line": 988,
       "crate": "covalence-init"
     },
     {
@@ -2121,17 +2121,17 @@
       "summary": "Combined-set kernel ops need big stacks: ClosedL over 1787 clauses is",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 16,
+      "line": 12,
       "crate": "covalence-init"
     },
     {
       "id": "kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Constructor freeness lemmas not threaded: denote renders variant case",
+      "summary": "On a closed carrier, discharge 41 injectivity/183 distinctness laws (10 recursive payloads hit rank-1 reconstruction) and thread them into denotation.",
       "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 11,
+      "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
+      "line": 989,
       "crate": "covalence-init"
     },
     {
@@ -2141,7 +2141,7 @@
       "summary": "Dec functions as real HOL defines: (the denotational mirror of the",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 17,
+      "line": 13,
       "crate": "covalence-init"
     },
     {
@@ -2151,7 +2151,7 @@
       "summary": "Dec graph-relation residue: (combined-set census, spec::coveragereport;",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 12,
+      "line": 8,
       "crate": "covalence-init"
     },
     {
@@ -2161,7 +2161,7 @@
       "summary": "Encoding coarseness residue: (post R1-F1/F2 injectivity — iteration",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 15,
+      "line": 11,
       "crate": "covalence-init"
     },
     {
@@ -2171,7 +2171,7 @@
       "summary": "int literals unaligned across legs: encode carries int literals as a",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 21,
+      "line": 16,
       "crate": "covalence-init"
     },
     {
@@ -2181,17 +2181,7 @@
       "summary": "Mirror-principle cross-check not started: SpecTec ⟶ our-prover vs",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 25,
-      "crate": "covalence-init"
-    },
-    {
-      "id": "kernel.hol.init.src.wasm.mutually-recursive-variant-types",
-      "kind": "TODO",
-      "severity": "severe",
-      "summary": "Mutually-recursive variant types: wasm::syntax renders aliases /",
-      "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 7,
+      "line": 20,
       "crate": "covalence-init"
     },
     {
@@ -2201,7 +2191,37 @@
       "summary": "No end-to-end parsedefs test: Derivation tests build the rel AST",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 22,
+      "line": 17,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.opaque-composite-decision-schemas",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Install closed totality/adequacy schemas for reference-cast and array-data composite applicability, then remove their five opaque premises.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
+      "line": 106,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.opaque-immut-reachable-decision",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Decide ImmutReachable universally and use its certified false graph for NotImmutReachable.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
+      "line": 108,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.opaque-vcvtop-existential-decision",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Decide the existential applicability of preceding vcvtop clauses with a closed positive graph schema.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
+      "line": 107,
       "crate": "covalence-init"
     },
     {
@@ -2211,17 +2231,17 @@
       "summary": "Preset slices are name-classified approximations: (lower/slice.rs",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 19,
+      "line": 14,
       "crate": "covalence-init"
     },
     {
       "id": "kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Relations → HOL predicates over those types (leg B) not started: Once",
+      "summary": "Extend beyond the exact 5/125 bundled relations: all 120 remaining carriers need recursive structural lifting of exact nested invariants; 57 still reach ground fNmag(32/64) through the legacy whole-carrier renderer before its exact CasePredicate can be applied; nonempty cross-relation SCCs still need simultaneous closure.",
       "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 18,
+      "path": "crates/kernel/hol/init/src/wasm/semantic_relation.rs",
+      "line": 371,
       "crate": "covalence-init"
     },
     {
@@ -2231,7 +2251,7 @@
       "summary": "Rule condition residue: (combined-set census; exact per-tag counts in",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 14,
+      "line": 10,
       "crate": "covalence-init"
     },
     {
@@ -2241,7 +2261,7 @@
       "summary": "Slice-path store writes stay coarse: Upd/Ext along Dot/Idx",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 8,
+      "line": 7,
       "crate": "covalence-init"
     },
     {
@@ -2261,7 +2281,7 @@
       "summary": "Trace certification (WASM acceleration payoff) not started: Run a WASM engine",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 24,
+      "line": 19,
       "crate": "covalence-init"
     },
     {
@@ -2271,7 +2291,7 @@
       "summary": "Trace driver is an explicit chain API: lower/trace.rs chains",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 23,
+      "line": 18,
       "crate": "covalence-init"
     },
     {
@@ -2281,7 +2301,7 @@
       "summary": "Transport is per-theorem: slice::transport lifts one",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
-      "line": 20,
+      "line": 15,
       "crate": "covalence-init"
     },
     {
@@ -2393,6 +2413,296 @@
       "path": "crates/kernel/smt/open_work.rs",
       "line": 10,
       "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "lang.combinator-parsing.bind-associativity-only-up-to-observation",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "§e.14",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 145,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.choice-union-refinement-theorem",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "\"Ordered",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 16,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.collapse-agreeing-ignores-order",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Under",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 138,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compilation-agreement-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "N1 — that a",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 71,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compile-rebuilds-bind-continuations",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "Core::Bind",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 89,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compile-rebuilds-rule-bodies",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "Core::Rule",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 79,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compiled-relational-not-erasable",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A compiled",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 1085,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.continuation-allocation",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "Environment resolve",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
+      "line": 94,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.env-coherence-unchecked",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "deterministicinto",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "line": 20,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.fragment-agreement-theorem",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "\"A deterministic",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 21,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-applicative-laws",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The host law fixture fixes",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "line": 218,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-recursion-unbounded",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "This module no longer",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "line": 42,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-relational-limit-threading",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "RelationalLimits",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "line": 47,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-relational-sharing",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "No derivation sharing in",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "line": 53,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.mode-generic-encoding",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A Mode-GAT encoding",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 161,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.morphism-theory",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "CombinatorTheory<L: Logic>",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 10,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.negation-fragment",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A Not combinator would make",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "line": 16,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.no-take-first",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Do not add a first(),",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "line": 31,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.prefix-traits-to-a0015",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Promote",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 157,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.reference-ordered-rules",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The ordered",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "line": 227,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.refinement-inequation-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "M3⁺ is a",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 153,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.relational-recomputation",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "st.active is cycle",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "line": 58,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.relational-sharing",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "No derivation sharing, and",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "line": 41,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.repetition-combinators",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No many/some in either",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 167,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.sentinel-values-undetected",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/check.rs",
+      "line": 99,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.stackless-eval",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Syntax evaluators are recursive",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "line": 61,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.static-well-formedness",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Check map/ap arity and",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/term.rs",
+      "line": 46,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.total-start-precondition",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "TotalPrefixParser",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
+      "line": 29,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.widening-laws-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "M1, M2 and M5 are",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "line": 40,
+      "crate": "covalence-combinator-parsing"
     },
     {
       "id": "lang.forsp.forsp-web-export-wiring-is-unbuilt",
@@ -3433,16 +3743,6 @@
       "path": "extensions/covalence-vscode/src/server.ts",
       "line": 99,
       "crate": null
-    },
-    {
-      "id": "wasm.spectec.decision-family-universal",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Specialize closed quantified adequacy, totality, and determinacy theorems into ground cases.",
-      "structured": true,
-      "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
-      "line": 171,
-      "crate": "covalence-init"
     },
     {
       "id": "wasm.spectec.indexed-grammar-lowering",

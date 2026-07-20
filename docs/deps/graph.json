@@ -8,6 +8,7 @@
     "covalence-arrow",
     "covalence-cfg-parsing",
     "covalence-client",
+    "covalence-combinator-parsing",
     "covalence-computation",
     "covalence-core",
     "covalence-core-test-guest",
@@ -186,6 +187,14 @@
     {
       "from": "covalence-client",
       "to": "covalence-store"
+    },
+    {
+      "from": "covalence-combinator-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-combinator-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-computation",

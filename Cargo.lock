@@ -980,6 +980,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-combinator-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-computation"
 version = "0.0.0"
 dependencies = [

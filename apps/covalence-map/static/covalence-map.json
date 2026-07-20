@@ -9322,7 +9322,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/sexpr/src/lib.rs",
-      "words": 734,
+      "words": 779,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 72,
+      "words": 74,
       "updated": 0
     },
     {
@@ -9403,7 +9403,7 @@
       "title": "stack.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/stack.rs",
-      "words": 67,
+      "words": 186,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 882,
+      "words": 1292,
       "updated": 0
     },
     {

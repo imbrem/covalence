@@ -100,6 +100,34 @@ pub trait SExprSyntax {
 /// One-layer observation/destruction.
 pub trait SExprView: SExprSyntax {
     fn view(&self, value: &Self::Value) -> Result<SExprF<Self::Payload, Self::Value>, Self::Error>;
+
+    /// Structural equality derived solely from one-layer observation.
+    ///
+    /// Handle-backed representations can use the default implementation
+    /// without exposing handle identity as Lisp data equality.
+    fn equivalent(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error>
+    where
+        Self::Payload: PartialEq,
+    {
+        Ok(match (self.view(left)?, self.view(right)?) {
+            (SExprF::Atom(left), SExprF::Atom(right)) => left == right,
+            (SExprF::Nil, SExprF::Nil) => true,
+            (
+                SExprF::Cons {
+                    head: left_head,
+                    tail: left_tail,
+                },
+                SExprF::Cons {
+                    head: right_head,
+                    tail: right_tail,
+                },
+            ) => {
+                self.equivalent(&left_head, &right_head)?
+                    && self.equivalent(&left_tail, &right_tail)?
+            }
+            _ => false,
+        })
+    }
 }
 
 /// Proper-list construction and observation as a derived capability.
@@ -673,6 +701,23 @@ mod tests {
         assert_eq!(spec.variants[constructor::ATOM].name, "atom");
         assert_eq!(spec.variants[constructor::NIL].name, "nil");
         assert_eq!(spec.variants[constructor::CONS].name, "cons");
+    }
+
+    #[test]
+    fn structural_equality_is_derived_from_observation() {
+        let api = Free::<&str>::new();
+        let left = FreeSExpr::list([
+            FreeSExpr::Atom("a"),
+            FreeSExpr::list([FreeSExpr::Atom("b")]),
+        ]);
+        let same = left.clone();
+        let different = FreeSExpr::list([
+            FreeSExpr::Atom("a"),
+            FreeSExpr::list([FreeSExpr::Atom("c")]),
+        ]);
+
+        assert!(api.equivalent(&left, &same).unwrap());
+        assert!(!api.equivalent(&left, &different).unwrap());
     }
 
     #[test]

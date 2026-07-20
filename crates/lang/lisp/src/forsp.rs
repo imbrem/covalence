@@ -6,14 +6,18 @@
 //! implementation deliberately excludes I/O and unsafe pointer primitives;
 //! those are effects above the pure operational core.
 
-use core::fmt::{Display, Formatter};
+use core::convert::Infallible;
+use core::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
     Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
-    HostEnvironment, StackConfiguration, StackContinuation, StackInstructionSyntax,
-    StackProgramSyntax, StepRelation, TerminalValue,
+    HostEnvironment, HostEnvironments, LispEnvironment, RuntimeBinding, StackClosure,
+    StackClosureRecord, StackConfiguration, StackContinuation, StackInstructionSyntax,
+    StackMachineValue, StackProgramSyntax, StackRuntime, StackValue, StackValueLayer,
+    StackValueView, StepRelation, TerminalValue,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -73,6 +77,164 @@ pub enum ForspValue {
 
 pub type ForspEnvironment = HostEnvironment<String, ForspValue>;
 pub type ForspConfiguration = StackConfiguration<ForspCode, ForspValue, ForspEnvironment>;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspValues;
+
+impl StackValue for ForspValues {
+    type Datum = Datum<CoreAtom>;
+    type Value = ForspValue;
+    type Error = Infallible;
+
+    fn datum(&self, datum: Self::Datum) -> Result<Self::Value, Self::Error> {
+        Ok(ForspValue::Datum(datum))
+    }
+
+    fn view(&self, value: &Self::Value) -> Result<StackValueView<Self::Datum>, Self::Error> {
+        Ok(match value {
+            ForspValue::Datum(datum) => StackValueView::Datum(datum.clone()),
+            ForspValue::Closure(_) => StackValueView::Closure,
+        })
+    }
+
+    fn equivalent(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
+}
+
+impl StackMachineValue for ForspValues {
+    type Closure = Arc<ForspClosure>;
+
+    fn roll(
+        &self,
+        layer: StackValueLayer<Self::Datum, Self::Closure>,
+    ) -> Result<Self::Value, Self::Error> {
+        Ok(match layer {
+            StackValueLayer::Datum(datum) => ForspValue::Datum(datum),
+            StackValueLayer::Closure(closure) => ForspValue::Closure(closure),
+        })
+    }
+
+    fn unroll(
+        &self,
+        value: &Self::Value,
+    ) -> Result<StackValueLayer<Self::Datum, Self::Closure>, Self::Error> {
+        Ok(match value {
+            ForspValue::Datum(datum) => StackValueLayer::Datum(datum.clone()),
+            ForspValue::Closure(closure) => StackValueLayer::Closure(Arc::clone(closure)),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspClosures;
+
+impl StackClosure for ForspClosures {
+    type Code = ForspCode;
+    type Environment = ForspEnvironment;
+    type Closure = Arc<ForspClosure>;
+    type Error = Infallible;
+
+    fn close(
+        &self,
+        record: StackClosureRecord<Self::Code, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error> {
+        Ok(Arc::new(ForspClosure {
+            code: record.code,
+            environment: record.environment,
+        }))
+    }
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<StackClosureRecord<Self::Code, Self::Environment>, Self::Error> {
+        Ok(StackClosureRecord {
+            code: closure.code.clone(),
+            environment: closure.environment.clone(),
+        })
+    }
+}
+
+/// Direct Rust realization of the abstract concatenative runtime.
+#[derive(Clone, Debug)]
+pub struct ForspRuntime {
+    data: Free<CoreAtom>,
+    syntax: ForspSyntax,
+    values: ForspValues,
+    closures: ForspClosures,
+    environments: HostEnvironments<String, ForspValue>,
+}
+
+impl Default for ForspRuntime {
+    fn default() -> Self {
+        Self {
+            data: Free::new(),
+            syntax: ForspSyntax,
+            values: ForspValues,
+            closures: ForspClosures,
+            environments: HostEnvironments::default(),
+        }
+    }
+}
+
+impl StackRuntime for ForspRuntime {
+    type Symbol = String;
+    type Atom = CoreAtom;
+    type Datum = Datum<CoreAtom>;
+    type Primitive = ForspPrimitive;
+    type Instruction = ForspInstruction;
+    type Code = ForspCode;
+    type Value = ForspValue;
+    type Closure = Arc<ForspClosure>;
+    type Environment = ForspEnvironment;
+    type Error = Infallible;
+    type Data = Free<CoreAtom>;
+    type Syntax = ForspSyntax;
+    type Values = ForspValues;
+    type Closures = ForspClosures;
+    type Environments = HostEnvironments<String, ForspValue>;
+
+    fn data(&self) -> &Self::Data {
+        &self.data
+    }
+
+    fn syntax(&self) -> &Self::Syntax {
+        &self.syntax
+    }
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+
+    fn data_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn syntax_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn value_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn closure_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn environment_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ForspRequest {
@@ -453,86 +615,197 @@ fn effect(name: &str) -> Option<ForspEffect> {
     })
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ForspMachine;
+type StackConfigurationOf<R> = StackConfiguration<
+    <R as StackRuntime>::Code,
+    <R as StackRuntime>::Value,
+    <R as StackRuntime>::Environment,
+>;
 
-impl ForspMachine {
-    pub fn initial(code: ForspCode) -> ForspConfiguration {
-        StackConfiguration::new(code, HostEnvironment::default())
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeForspError<E> {
+    Language(ForspError),
+    Runtime(E),
+}
+
+impl<E: Display> Display for RuntimeForspError<E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Language(error) => Display::fmt(error, f),
+            Self::Runtime(error) => write!(f, "Forsp runtime failed: {error}"),
+        }
+    }
+}
+
+impl<E: Debug + Display> core::error::Error for RuntimeForspError<E> {}
+
+impl<E> From<ForspError> for RuntimeForspError<E> {
+    fn from(error: ForspError) -> Self {
+        Self::Language(error)
+    }
+}
+
+/// Concatenative evaluator over an abstract stack runtime.
+#[derive(Clone, Debug)]
+pub struct RuntimeForspMachine<R> {
+    runtime: R,
+}
+
+impl<R> RuntimeForspMachine<R> {
+    pub fn new(runtime: R) -> Self {
+        Self { runtime }
     }
 
-    fn pop(configuration: &mut ForspConfiguration) -> Result<ForspValue, ForspError> {
-        configuration.operands.pop().ok_or(ForspError::EmptyStack)
+    pub fn runtime(&self) -> &R {
+        &self.runtime
+    }
+}
+
+impl<R> RuntimeForspMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+{
+    pub fn initial(&self, code: R::Code) -> StackConfigurationOf<R> {
+        StackConfiguration::new(code, self.runtime.environments().empty())
     }
 
-    fn pop_datum(configuration: &mut ForspConfiguration) -> Result<Datum<CoreAtom>, ForspError> {
-        match Self::pop(configuration)? {
-            ForspValue::Datum(datum) => Ok(datum),
-            ForspValue::Closure(_) => Err(ForspError::ExpectedDatum),
+    fn pop(
+        configuration: &mut StackConfigurationOf<R>,
+    ) -> Result<R::Value, RuntimeForspError<R::Error>> {
+        configuration
+            .operands
+            .pop()
+            .ok_or_else(|| ForspError::EmptyStack.into())
+    }
+
+    fn pop_datum(
+        &self,
+        configuration: &mut StackConfigurationOf<R>,
+    ) -> Result<R::Datum, RuntimeForspError<R::Error>> {
+        match self
+            .runtime
+            .values()
+            .unroll(&Self::pop(configuration)?)
+            .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?
+        {
+            StackValueLayer::Datum(datum) => Ok(datum),
+            StackValueLayer::Closure(_) => Err(ForspError::ExpectedDatum.into()),
         }
     }
 
-    fn pop_integer(configuration: &mut ForspConfiguration) -> Result<Int, ForspError> {
-        match Self::pop_datum(configuration)? {
-            Datum::Atom(CoreAtom::Integer(integer)) => Ok(integer),
-            _ => Err(ForspError::ExpectedInteger),
+    fn pop_integer(
+        &self,
+        configuration: &mut StackConfigurationOf<R>,
+    ) -> Result<Int, RuntimeForspError<R::Error>> {
+        let datum = self.pop_datum(configuration)?;
+        match self
+            .runtime
+            .data()
+            .view(&datum)
+            .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?
+        {
+            SExprF::Atom(CoreAtom::Integer(integer)) => Ok(integer),
+            _ => Err(ForspError::ExpectedInteger.into()),
         }
     }
 
-    fn truth(value: bool) -> ForspValue {
-        ForspValue::Datum(if value {
-            Datum::Atom(CoreAtom::symbol("t"))
+    fn datum_value(&self, datum: R::Datum) -> Result<R::Value, RuntimeForspError<R::Error>> {
+        self.runtime
+            .values()
+            .datum(datum)
+            .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))
+    }
+
+    fn truth(&self, value: bool) -> Result<R::Value, RuntimeForspError<R::Error>> {
+        let datum = if value {
+            self.runtime
+                .data()
+                .atom(CoreAtom::symbol("t"))
+                .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?
         } else {
-            Datum::Nil
-        })
+            self.runtime.data().nil()
+        };
+        self.datum_value(datum)
     }
 
-    fn invoke(configuration: &mut ForspConfiguration, closure: Arc<ForspClosure>) {
+    fn invoke(
+        &self,
+        configuration: &mut StackConfigurationOf<R>,
+        closure: R::Closure,
+    ) -> Result<(), RuntimeForspError<R::Error>> {
+        let closure = self
+            .runtime
+            .closures()
+            .open(&closure)
+            .map_err(|error| RuntimeForspError::Runtime(self.runtime.closure_error(error)))?;
         configuration.continuations.push(StackContinuation {
             code: configuration.code.clone(),
             cursor: configuration.cursor,
             environment: configuration.environment.clone(),
         });
-        configuration.code = closure.code.clone();
+        configuration.code = closure.code;
         configuration.cursor = 0;
-        configuration.environment = closure.environment.clone();
+        configuration.environment = closure.environment;
+        Ok(())
     }
 
     fn apply(
         &self,
         primitive: ForspPrimitive,
-        configuration: &mut ForspConfiguration,
-    ) -> Result<(), ForspError> {
+        configuration: &mut StackConfigurationOf<R>,
+    ) -> Result<(), RuntimeForspError<R::Error>> {
         match primitive {
             ForspPrimitive::Eq => {
-                let right = Self::pop_datum(configuration)?;
-                let left = Self::pop_datum(configuration)?;
-                configuration.operands.push(Self::truth(left == right));
+                let right = self.pop_datum(configuration)?;
+                let left = self.pop_datum(configuration)?;
+                let equal = self
+                    .runtime
+                    .data()
+                    .equivalent(&left, &right)
+                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?;
+                configuration.operands.push(self.truth(equal)?);
             }
             ForspPrimitive::Cons => {
-                let head = Self::pop_datum(configuration)?;
-                let tail = Self::pop_datum(configuration)?;
-                configuration
-                    .operands
-                    .push(ForspValue::Datum(Datum::cons(head, tail)));
+                let head = self.pop_datum(configuration)?;
+                let tail = self.pop_datum(configuration)?;
+                let datum =
+                    self.runtime.data().cons(head, tail).map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.data_error(error))
+                    })?;
+                configuration.operands.push(self.datum_value(datum)?);
             }
-            ForspPrimitive::Car => {
-                let value = Self::pop_datum(configuration)?;
-                let Datum::Cons(head, _) = value else {
-                    return Err(ForspError::ExpectedCons);
+            ForspPrimitive::Car | ForspPrimitive::Cdr => {
+                let value = self.pop_datum(configuration)?;
+                let SExprF::Cons { head, tail } =
+                    self.runtime.data().view(&value).map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.data_error(error))
+                    })?
+                else {
+                    return Err(ForspError::ExpectedCons.into());
                 };
-                configuration.operands.push(ForspValue::Datum(*head));
-            }
-            ForspPrimitive::Cdr => {
-                let value = Self::pop_datum(configuration)?;
-                let Datum::Cons(_, tail) = value else {
-                    return Err(ForspError::ExpectedCons);
-                };
-                configuration.operands.push(ForspValue::Datum(*tail));
+                configuration.operands.push(self.datum_value(
+                    if primitive == ForspPrimitive::Car {
+                        head
+                    } else {
+                        tail
+                    },
+                )?);
             }
             ForspPrimitive::Cswap => {
-                let condition = Self::pop_datum(configuration)?;
-                if !matches!(condition, Datum::Nil) {
+                let condition = self.pop_datum(configuration)?;
+                let false_value = matches!(
+                    self.runtime.data().view(&condition).map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.data_error(error))
+                    })?,
+                    SExprF::Nil
+                );
+                if !false_value {
                     let right = Self::pop(configuration)?;
                     let left = Self::pop(configuration)?;
                     configuration.operands.push(right);
@@ -540,39 +813,60 @@ impl ForspMachine {
                 }
             }
             ForspPrimitive::Add | ForspPrimitive::Subtract | ForspPrimitive::Multiply => {
-                let right = Self::pop_integer(configuration)?;
-                let left = Self::pop_integer(configuration)?;
+                let right = self.pop_integer(configuration)?;
+                let left = self.pop_integer(configuration)?;
                 let result = match primitive {
                     ForspPrimitive::Add => left + right,
                     ForspPrimitive::Subtract => left - right,
                     ForspPrimitive::Multiply => left * right,
                     _ => unreachable!(),
                 };
-                configuration
-                    .operands
-                    .push(ForspValue::Datum(Datum::Atom(CoreAtom::Integer(result))));
+                let datum = self
+                    .runtime
+                    .data()
+                    .atom(CoreAtom::Integer(result))
+                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?;
+                configuration.operands.push(self.datum_value(datum)?);
             }
             ForspPrimitive::Stack => {
-                let stack = Datum::list(configuration.operands.iter().rev().map(
-                    |value| match value {
-                        ForspValue::Datum(datum) => datum.clone(),
-                        ForspValue::Closure(_) => Datum::Atom(CoreAtom::symbol("<closure>")),
-                    },
-                ));
-                configuration.operands.push(ForspValue::Datum(stack));
+                let mut datums = Vec::with_capacity(configuration.operands.len());
+                for value in configuration.operands.iter().rev() {
+                    datums.push(
+                        match self.runtime.values().view(value).map_err(|error| {
+                            RuntimeForspError::Runtime(self.runtime.value_error(error))
+                        })? {
+                            StackValueView::Datum(datum) => datum,
+                            StackValueView::Closure => self
+                                .runtime
+                                .data()
+                                .atom(CoreAtom::symbol("<closure>"))
+                                .map_err(|error| {
+                                    RuntimeForspError::Runtime(self.runtime.data_error(error))
+                                })?,
+                        },
+                    );
+                }
+                let stack =
+                    self.runtime.data().list(datums).map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.data_error(error))
+                    })?;
+                configuration.operands.push(self.datum_value(stack)?);
             }
         }
         Ok(())
     }
-}
 
-impl DeterministicStep for ForspMachine {
-    fn next(
+    fn next_configuration(
         &self,
-        configuration: &ForspConfiguration,
-    ) -> Result<Option<ForspConfiguration>, ForspError> {
+        configuration: &StackConfigurationOf<R>,
+    ) -> Result<Option<StackConfigurationOf<R>>, RuntimeForspError<R::Error>> {
         let mut next = configuration.clone();
-        if next.cursor == next.code.len() {
+        let instructions = self
+            .runtime
+            .syntax()
+            .instructions(&next.code)
+            .map_err(|error| RuntimeForspError::Runtime(self.runtime.syntax_error(error)))?;
+        if next.cursor == instructions.len() {
             let Some(caller) = next.continuations.pop() else {
                 return Ok(None);
             };
@@ -581,44 +875,144 @@ impl DeterministicStep for ForspMachine {
             next.environment = caller.environment;
             return Ok(Some(next));
         }
-        let instruction = next.code[next.cursor].clone();
+        let instruction = instructions[next.cursor].clone();
         next.cursor += 1;
         match instruction {
             ForspInstruction::Literal(datum) | ForspInstruction::Quote(datum) => {
-                next.operands.push(ForspValue::Datum(datum));
+                next.operands.push(self.datum_value(datum)?);
             }
             ForspInstruction::Closure(code) => {
-                next.operands
-                    .push(ForspValue::Closure(Arc::new(ForspClosure {
+                let closure = self
+                    .runtime
+                    .closures()
+                    .close(StackClosureRecord {
                         code,
                         environment: next.environment.clone(),
-                    })));
+                    })
+                    .map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.closure_error(error))
+                    })?;
+                let value = self
+                    .runtime
+                    .values()
+                    .roll(StackValueLayer::Closure(closure))
+                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?;
+                next.operands.push(value);
             }
             ForspInstruction::Bind(name) => {
                 let value = Self::pop(&mut next)?;
-                next.environment = next.environment.extend([(name, value)]);
+                next.environment = self
+                    .runtime
+                    .environments()
+                    .extend(&next.environment, vec![RuntimeBinding::new(name, value)])
+                    .map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
+                    })?;
             }
             ForspInstruction::PushBinding(name) => {
-                let value = next
-                    .environment
-                    .lookup(&name)
-                    .ok_or(ForspError::Unbound(name))?;
+                let value = self
+                    .runtime
+                    .environments()
+                    .lookup(&next.environment, &name)
+                    .map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
+                    })?
+                    .ok_or_else(|| {
+                        RuntimeForspError::Language(ForspError::Unbound(name.clone()))
+                    })?;
                 next.operands.push(value);
             }
             ForspInstruction::Resolve(name) => {
-                let value = next
-                    .environment
-                    .lookup(&name)
-                    .ok_or(ForspError::Unbound(name))?;
-                match value {
-                    ForspValue::Closure(closure) => Self::invoke(&mut next, closure),
-                    datum @ ForspValue::Datum(_) => next.operands.push(datum),
+                let value = self
+                    .runtime
+                    .environments()
+                    .lookup(&next.environment, &name)
+                    .map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
+                    })?
+                    .ok_or_else(|| {
+                        RuntimeForspError::Language(ForspError::Unbound(name.clone()))
+                    })?;
+                match self
+                    .runtime
+                    .values()
+                    .unroll(&value)
+                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?
+                {
+                    StackValueLayer::Closure(closure) => self.invoke(&mut next, closure)?,
+                    StackValueLayer::Datum(_) => next.operands.push(value),
                 }
             }
             ForspInstruction::Primitive(primitive) => self.apply(primitive, &mut next)?,
-            ForspInstruction::Effect(effect) => return Err(ForspError::UnhandledEffect(effect)),
+            ForspInstruction::Effect(effect) => {
+                return Err(ForspError::UnhandledEffect(effect).into());
+            }
         }
         Ok(Some(next))
+    }
+}
+
+impl<R> StepRelation for RuntimeForspMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    type Configuration = StackConfigurationOf<R>;
+    type Error = RuntimeForspError<R::Error>;
+
+    fn successors(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Vec<Self::Configuration>, Self::Error> {
+        Ok(self
+            .next_configuration(configuration)?
+            .into_iter()
+            .collect())
+    }
+}
+
+impl<R> DeterministicStep for RuntimeForspMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    fn next(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Option<Self::Configuration>, Self::Error> {
+        self.next_configuration(configuration)
+    }
+}
+
+/// Compatibility façade for the direct Forsp runtime.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspMachine;
+
+impl ForspMachine {
+    pub fn initial(code: ForspCode) -> ForspConfiguration {
+        RuntimeForspMachine::new(ForspRuntime::default()).initial(code)
+    }
+
+    fn pop(configuration: &mut ForspConfiguration) -> Result<ForspValue, ForspError> {
+        configuration.operands.pop().ok_or(ForspError::EmptyStack)
     }
 }
 
@@ -628,9 +1022,24 @@ impl StepRelation for ForspMachine {
 
     fn successors(
         &self,
-        configuration: &ForspConfiguration,
-    ) -> Result<Vec<ForspConfiguration>, ForspError> {
-        Ok(self.next(configuration)?.into_iter().collect())
+        configuration: &Self::Configuration,
+    ) -> Result<Vec<Self::Configuration>, Self::Error> {
+        self.next(configuration)
+            .map(|next| next.into_iter().collect())
+    }
+}
+
+impl DeterministicStep for ForspMachine {
+    fn next(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Option<Self::Configuration>, Self::Error> {
+        RuntimeForspMachine::new(ForspRuntime::default())
+            .next(configuration)
+            .map_err(|error| match error {
+                RuntimeForspError::Language(error) => error,
+                RuntimeForspError::Runtime(never) => match never {},
+            })
     }
 }
 
@@ -751,7 +1160,8 @@ mod tests {
     }
 
     fn run(source: &str) -> ForspConfiguration {
-        let trace = execute(&ForspMachine, ForspMachine::initial(program(source)), 128).unwrap();
+        let machine = RuntimeForspMachine::new(ForspRuntime::default());
+        let trace = execute(&machine, machine.initial(program(source)), 128).unwrap();
         trace.end().clone()
     }
 

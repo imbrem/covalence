@@ -63,7 +63,9 @@ pub use runtime::{
     RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
-    StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
+    StackClosure, StackClosureRecord, StackConfiguration, StackContinuation,
+    StackInstructionSyntax, StackMachineValue, StackProgramSyntax, StackRuntime, StackValue,
+    StackValueLayer, StackValueView,
 };
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,

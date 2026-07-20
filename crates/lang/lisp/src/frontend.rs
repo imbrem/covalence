@@ -14,8 +14,8 @@ use std::str::FromStr;
 use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
     Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
-    LispEnvironment, LispMachine, LispRuntime, LispValue, PrimitiveSemantics, RuntimeBinding,
-    RuntimeValueView, execute,
+    LispEnvironment, LispMachine, LispRuntime, LispValue, MachineConfiguration, MayEval,
+    PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -96,6 +96,21 @@ pub type FrontendExpr = CoreExpr<String, Datum<CoreAtom>, Primitive>;
 pub type FrontendValue = HostValue<String, CoreAtom, Primitive>;
 pub type FrontendConfiguration = HostConfiguration<String, CoreAtom, Primitive>;
 pub type FrontendEnvironment = HostEnvironment<String, FrontendValue>;
+
+/// A checked common-machine evaluation over an arbitrary Lisp runtime.
+///
+/// Keeping this alias public lets ACL2 admission, Scheme conformance suites,
+/// and future WIT adapters exchange the same `MayEval` witness without naming
+/// a concrete value or environment representation.
+pub type RuntimeEvaluation<R> = MayEval<
+    MachineConfiguration<
+        <R as LispRuntime>::Expr,
+        <R as LispRuntime>::Value,
+        <R as LispRuntime>::Environment,
+        <R as LispRuntime>::Primitive,
+    >,
+    <R as LispRuntime>::Value,
+>;
 
 /// A surface-to-core lowering error.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1095,20 +1110,31 @@ where
         &self,
         expression: &FrontendExpr,
     ) -> Result<R::Value, RuntimeSessionError<R>> {
+        Ok(self.evaluate_core_evidence(expression)?.value)
+    }
+
+    /// Evaluate lowered syntax and retain checked `MayEval` evidence.
+    ///
+    /// This is still proof-free evidence: a theorem-producing backend must
+    /// replay its trace through the kernel relation. Unlike returning only a
+    /// value, however, it preserves the exact finite execution needed by the
+    /// admission adequacy bridge.
+    pub fn evaluate_core_evidence(
+        &self,
+        expression: &FrontendExpr,
+    ) -> Result<RuntimeEvaluation<R>, RuntimeSessionError<R>> {
         let trace = execute(
             &self.machine,
-            covalence_kernel_lisp::MachineConfiguration::with_environment(
-                expression.clone(),
-                self.environment.clone(),
-            ),
+            MachineConfiguration::with_environment(expression.clone(), self.environment.clone()),
             self.fuel,
         )
         .map_err(SessionError::Execute)?;
-        trace
+        let value = trace
             .end()
             .terminal_value()
             .cloned()
-            .ok_or(SessionError::DefinitionDidNotProduceClosure)
+            .ok_or(SessionError::DefinitionDidNotProduceClosure)?;
+        MayEval::check(&self.machine, trace, value).map_err(SessionError::Execute)
     }
 }
 

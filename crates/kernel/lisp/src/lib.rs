@@ -35,8 +35,9 @@ pub use covalence_kernel_data as data;
 pub use covalence_sexpr_api as sexpr;
 
 pub use admission::{
-    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
-    RecursiveCall, SourcedDefinition, TerminationCertificate, Totalization,
+    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, EvaluationExistence,
+    EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
+    SourcedDefinition, TerminationCertificate, Totalization,
 };
 pub use arena::{
     ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaRecursiveCell,

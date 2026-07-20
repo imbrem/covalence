@@ -287,14 +287,14 @@ pub struct Acl2HolReplayEvidence {
 }
 
 impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {
-    type Evidence = Acl2HolReplayEvidence;
+    type Termination = Acl2HolReplayEvidence;
     type Error = String;
 
     fn replay_termination(
         &self,
         definition: &Acl2Definition,
         certificate: &Acl2Admission,
-    ) -> Result<Self::Evidence, Self::Error> {
+    ) -> Result<Self::Termination, Self::Error> {
         let tm = &*self.env.tm;
         if definition.core.rest.is_some() {
             return Err("ACL2 logical definitions must have fixed arity".into());

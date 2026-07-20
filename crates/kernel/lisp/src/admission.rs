@@ -106,28 +106,76 @@ pub trait AdmissionPolicy<D> {
     fn inspect(&self, definition: &D) -> Result<Self::Certificate, Self::Error>;
 }
 
-/// Proof-producing replay of admission evidence.
+/// Proof-producing replay of termination/admissibility evidence.
+///
+/// This phase may establish that a definition has a total logical model, but
+/// it does not by itself connect that model to the common partial Lisp
+/// execution relation. That connection belongs to [`ExecutionAdequacyReplay`].
 pub trait AdmissionReplay<D, C> {
-    type Evidence;
+    type Termination;
     type Error;
 
     fn replay_termination(
         &self,
         definition: &D,
         certificate: &C,
-    ) -> Result<Self::Evidence, Self::Error>;
+    ) -> Result<Self::Termination, Self::Error>;
 }
 
-/// Evidence that the relational evaluation result exists and is unique.
+/// Evidence that relational evaluation has at least one result.
+///
+/// The carrier is deliberately backend-defined: in a HOL backend it will
+/// normally be a theorem universally quantified over the definition's inputs.
 #[derive(Clone, Debug)]
-pub struct ExistenceUniqueness<T> {
-    pub existence: T,
-    pub uniqueness: T,
+pub struct EvaluationExistence<T> {
+    pub theorem: T,
+}
+
+/// Evidence that any two relational evaluation results are equal.
+///
+/// Existence and uniqueness are kept as different types because proof systems
+/// frequently represent or derive them differently.
+#[derive(Clone, Debug)]
+pub struct EvaluationUniqueness<T> {
+    pub theorem: T,
+}
+
+/// Evidence that the common relational evaluation result exists and is unique.
+#[derive(Clone, Debug)]
+pub struct ExistenceUniqueness<E, U = E> {
+    pub existence: EvaluationExistence<E>,
+    pub uniqueness: EvaluationUniqueness<U>,
+}
+
+/// Proof-producing bridge from language admission to the common partial Lisp
+/// execution relation.
+///
+/// For a definition `d`, implementations must replay the two universal facts
+///
+/// ```text
+/// ∀ inputs. ∃ value. MayEval(d inputs, value)
+/// ∀ inputs value₁ value₂.
+///   MayEval(d inputs, value₁) ∧ MayEval(d inputs, value₂) → value₁ = value₂
+/// ```
+///
+/// against the same operational semantics used by checked finite traces.
+/// Host execution, syntactic termination checks, and a defining equation for
+/// an independently constructed total model are not sufficient evidence.
+pub trait ExecutionAdequacyReplay<D, T> {
+    type Existence;
+    type Uniqueness;
+    type Error;
+
+    fn replay_execution_adequacy(
+        &self,
+        definition: &D,
+        termination: &T,
+    ) -> Result<ExistenceUniqueness<Self::Existence, Self::Uniqueness>, Self::Error>;
 }
 
 /// Capability for conservatively introducing a total interpretation only
 /// after existence and uniqueness have been established.
-pub trait Totalization<D, T> {
+pub trait Totalization<D, E, U = E> {
     type Constant;
     type Theorem;
     type Error;
@@ -135,13 +183,48 @@ pub trait Totalization<D, T> {
     fn define_total(
         &self,
         definition: &D,
-        evidence: ExistenceUniqueness<T>,
+        evidence: ExistenceUniqueness<E, U>,
     ) -> Result<(Self::Constant, Self::Theorem), Self::Error>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TerminationProof(&'static str);
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct ExistenceProof(&'static str);
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct UniquenessProof(&'static str);
+
+    struct MockAdequacy;
+
+    impl ExecutionAdequacyReplay<&'static str, TerminationProof> for MockAdequacy {
+        type Existence = ExistenceProof;
+        type Uniqueness = UniquenessProof;
+        type Error = &'static str;
+
+        fn replay_execution_adequacy(
+            &self,
+            definition: &&'static str,
+            termination: &TerminationProof,
+        ) -> Result<ExistenceUniqueness<Self::Existence, Self::Uniqueness>, Self::Error> {
+            if *definition != "append" || termination.0 != "structural recursion" {
+                return Err("wrong evidence");
+            }
+            Ok(ExistenceUniqueness {
+                existence: EvaluationExistence {
+                    theorem: ExistenceProof("every input reaches a value"),
+                },
+                uniqueness: EvaluationUniqueness {
+                    theorem: UniquenessProof("reachable values are equal"),
+                },
+            })
+        }
+    }
 
     #[test]
     fn fixed_and_variadic_definitions_become_named_recursive_lambdas() {
@@ -177,5 +260,20 @@ mod tests {
                 ..
             } if parameters.is_empty()
         ));
+    }
+
+    #[test]
+    fn execution_adequacy_keeps_existence_and_uniqueness_distinct() {
+        let evidence = MockAdequacy
+            .replay_execution_adequacy(&"append", &TerminationProof("structural recursion"))
+            .unwrap();
+        assert_eq!(
+            evidence.existence.theorem,
+            ExistenceProof("every input reaches a value")
+        );
+        assert_eq!(
+            evidence.uniqueness.theorem,
+            UniquenessProof("reachable values are equal")
+        );
     }
 }

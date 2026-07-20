@@ -457,8 +457,6 @@ impl CompletenessReport {
     }
 }
 
-// TODO(cov:acl2.progress.cli-completeness-gate, major): Expose the same structured report through a `cov acl2` progress/import completeness gate without duplicating classification logic.
-
 impl fmt::Display for ImportManifest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "import classes: {:?}", self.classes)?;

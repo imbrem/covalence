@@ -25,6 +25,9 @@ fn main() {
     match cli.command {
         None => println!("covalence {VERSION_LONG}"),
 
+        #[cfg(all(feature = "acl2", not(target_family = "wasm")))]
+        Some(cmd::Command::Acl2(args)) => cmd::run_or_exit(cmd::acl2::run(args)),
+
         #[cfg(all(feature = "cogit", not(target_family = "wasm")))]
         Some(cmd::Command::Cog(args)) => cmd::cog::run(args),
 

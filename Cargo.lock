@@ -901,6 +901,7 @@ dependencies = [
  "covalence-hash",
  "covalence-hol",
  "covalence-init",
+ "covalence-lisp",
  "covalence-lsp",
  "covalence-object",
  "covalence-opentheory",

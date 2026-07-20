@@ -209,6 +209,20 @@ The executable tracker makes this matrix repeatable against any pinned
 checkout:
 
 ```sh
+cargo run -p covalence -- acl2 progress \
+  /path/to/community-books REVISION BOOK...
+
+# Fail closed unless every selected target is a strict source-green island:
+cargo run -p covalence -- acl2 check \
+  /path/to/community-books REVISION BOOK...
+
+# Pin and later enforce the exact source/include/event ledger:
+cargo run -p covalence -- acl2 progress --manifest \
+  /path/to/community-books REVISION BOOK... > expected.tsv
+cargo run -p covalence -- acl2 check --expected-manifest expected.tsv \
+  /path/to/community-books REVISION BOOK...
+
+# The library example remains available as a thin runner:
 cargo run -p covalence-lisp --features hol --example acl2_progress -- \
   /path/to/community-books REVISION BOOK...
 
@@ -226,6 +240,13 @@ closure counts, replay from inventory mode, logical-green from strict
 source-green, theorem-neutral interfaces, load failures, and sorted blockers.
 The output is untrusted progress evidence: theorem numerators originate only
 from `BookReport` events that already crossed checked replay.
+
+`cov acl2 progress` is deliberately observational, so corpus surveys retain
+load-error rows while exiting successfully. `cov acl2 check` consumes the same
+structured `CorpusProgress` gate as library callers and exits nonzero for load
+errors, incomplete source/include ledgers, unmet event/definition/theorem
+levels, proof-bearing requests made in inventory mode, or exact manifest
+drift. The CLI does not parse TSV or duplicate outcome classification.
 
 Every successful run can also emit the deterministic
 `acl2-corpus-manifest-v1` ledger. It pins the caller-supplied revision, exact

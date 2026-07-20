@@ -1,5 +1,7 @@
 use clap::Subcommand;
 
+#[cfg(all(feature = "acl2", not(target_family = "wasm")))]
+pub mod acl2;
 #[cfg(all(feature = "cogit", not(target_family = "wasm")))]
 pub mod cog;
 #[cfg(all(feature = "hol", not(target_family = "wasm")))]
@@ -15,6 +17,10 @@ pub mod serve;
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// ACL2 book import progress and completeness gates
+    #[cfg(all(feature = "acl2", not(target_family = "wasm")))]
+    Acl2(acl2::Acl2Args),
+
     /// Cogit VCS
     #[cfg(all(feature = "cogit", not(target_family = "wasm")))]
     Cog(cog::CogArgs),

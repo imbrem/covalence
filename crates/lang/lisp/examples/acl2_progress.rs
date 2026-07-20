@@ -12,9 +12,8 @@
 
 use std::path::Path;
 
-use covalence_lisp::acl2::Acl2Session;
-use covalence_lisp::book::{BookConfig, run_book_with_config};
-use covalence_lisp::progress::CorpusProgress;
+use covalence_lisp::book::BookConfig;
+use covalence_lisp::progress::{ProgressMode, run_corpus};
 
 fn usage(program: &str) -> ! {
     eprintln!("usage: {program} [--inventory] [--manifest] ROOT CORPUS-ID BOOK [BOOK ...]");
@@ -46,21 +45,13 @@ fn main() {
     }
 
     let root = Path::new(&root);
-    let mut config = BookConfig::new(root).with_dir_root("system", root);
-    let mut progress = CorpusProgress::new(corpus);
-    if inventory {
-        config = config.inventory_only();
-        progress = progress.inventory_only();
-    }
-    for book in books {
-        match Acl2Session::new() {
-            Ok(mut session) => match run_book_with_config(&mut session, &config, &book) {
-                Ok(report) => progress.record_owned_report(report),
-                Err(error) => progress.record_load_error(book, error.to_string()),
-            },
-            Err(error) => progress.record_load_error(book, error.to_string()),
-        }
-    }
+    let config = BookConfig::new(root).with_dir_root("system", root);
+    let mode = if inventory {
+        ProgressMode::Inventory
+    } else {
+        ProgressMode::Replay
+    };
+    let progress = run_corpus(config, corpus, books, mode);
     if manifest {
         print!("{}", progress.to_manifest_tsv());
     } else {

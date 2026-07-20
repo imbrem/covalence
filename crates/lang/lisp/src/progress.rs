@@ -5,11 +5,13 @@
 //! theorem numerators come exclusively from reports whose events have already
 //! crossed the checked replay boundary.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
+use crate::acl2::Acl2Session;
 use crate::book::{
-    BookReport, CompletenessCount, CompletenessLevel, CompletenessReport, EventOutcome,
+    BookConfig, BookReport, CompletenessCount, CompletenessLevel, CompletenessReport, EventOutcome,
     IncludeStatus, SourceClosureStatus, SourceIdentity, SourceRole, SourceStatus,
+    run_book_with_config,
 };
 
 /// Import capability exercised by a corpus progress run.
@@ -30,6 +32,122 @@ impl ProgressMode {
         }
     }
 }
+
+/// Fail-closed corpus level requested by an automation gate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompletenessRequirement {
+    /// Every observed event is represented and every include resolves.
+    EventCompatible,
+    /// Additionally, every logical definition has conservative admission
+    /// evidence. Inventory can establish this coverage stage without making
+    /// any theorem-completeness claim.
+    DefinitionsComplete,
+    /// Every exported theorem is checked and theorem-neutral interfaces may
+    /// represent source-only documentation dependencies.
+    LogicalGreen,
+    /// Strict recursive source closure with every theorem checked.
+    SourceGreen,
+}
+
+/// Stable reason a corpus completeness gate failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompletenessGateCode {
+    /// No target book was supplied.
+    NoBooks,
+    /// Inventory mode cannot establish the requested proof-bearing level.
+    InventoryMode,
+    /// A target failed before a [`BookReport`] could be produced.
+    LoadError,
+    /// The same target path occurred more than once.
+    DuplicateTarget,
+    /// Exact source-attempt evidence was absent or blocked.
+    SourceLedger,
+    /// An include edge was blocked.
+    IncludeLedger,
+    /// The observed event stream did not reach event compatibility.
+    EventCompatibility,
+    /// Some logical definition lacked conservative admission evidence.
+    Definitions,
+    /// The logical export closure was not green.
+    LogicalGreen,
+    /// The complete recursive source closure was not green.
+    SourceGreen,
+}
+
+impl CompletenessGateCode {
+    /// Stable protocol spelling used by CLI automation.
+    pub const fn protocol_name(self) -> &'static str {
+        match self {
+            Self::NoBooks => "gate.no-books",
+            Self::InventoryMode => "gate.inventory-mode",
+            Self::LoadError => "gate.load-error",
+            Self::DuplicateTarget => "gate.duplicate-target",
+            Self::SourceLedger => "gate.source-ledger",
+            Self::IncludeLedger => "gate.include-ledger",
+            Self::EventCompatibility => "gate.event-compatibility",
+            Self::Definitions => "gate.definitions",
+            Self::LogicalGreen => "gate.logical-green",
+            Self::SourceGreen => "gate.source-green",
+        }
+    }
+}
+
+/// One target-specific completeness failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompletenessGateFailure {
+    /// Target book, or `None` for a corpus-wide failure.
+    pub book: Option<String>,
+    /// Stable failure class.
+    pub code: CompletenessGateCode,
+}
+
+/// All failures from one deterministic corpus gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompletenessGateRejection {
+    /// Failures sorted in target iteration order, preceded by corpus-wide
+    /// failures.
+    pub failures: Vec<CompletenessGateFailure>,
+}
+
+impl fmt::Display for CompletenessGateRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, failure) in self.failures.iter().enumerate() {
+            if index > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", failure.code.protocol_name())?;
+            if let Some(book) = &failure.book {
+                write!(f, ":{book}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for CompletenessGateRejection {}
+
+/// Exact canonical-manifest mismatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManifestMismatch {
+    /// First differing byte, or the shared prefix length when one side ends.
+    pub first_difference: usize,
+    /// Required byte length.
+    pub expected_len: usize,
+    /// Observed byte length.
+    pub actual_len: usize,
+}
+
+impl fmt::Display for ManifestMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "manifest.mismatch:byte={}:expected-len={}:actual-len={}",
+            self.first_difference, self.expected_len, self.actual_len
+        )
+    }
+}
+
+impl std::error::Error for ManifestMismatch {}
 
 /// Whether an event contributes to the public book world or is scoped under
 /// ACL2's `local` wrapper.
@@ -509,6 +627,204 @@ impl CorpusProgress {
         }
         out
     }
+
+    /// Check every requested target against one shared completeness policy.
+    ///
+    /// This consumes only structured [`BookReport`] fields; CLI callers do
+    /// not classify outcomes or parse diagnostic prose themselves.
+    pub fn check(
+        &self,
+        requirement: CompletenessRequirement,
+    ) -> Result<(), CompletenessGateRejection> {
+        let mut failures = Vec::new();
+        if self.books.is_empty() {
+            failures.push(CompletenessGateFailure {
+                book: None,
+                code: CompletenessGateCode::NoBooks,
+            });
+        }
+        if self.mode == ProgressMode::Inventory
+            && matches!(
+                requirement,
+                CompletenessRequirement::LogicalGreen | CompletenessRequirement::SourceGreen
+            )
+        {
+            failures.push(CompletenessGateFailure {
+                book: None,
+                code: CompletenessGateCode::InventoryMode,
+            });
+        }
+
+        let mut books: Vec<_> = self.books.iter().collect();
+        books.sort_by(|left, right| left.path().cmp(right.path()));
+        let mut previous = None;
+        for book in books {
+            if previous == Some(book.path()) {
+                failures.push(CompletenessGateFailure {
+                    book: Some(book.path().into()),
+                    code: CompletenessGateCode::DuplicateTarget,
+                });
+            }
+            previous = Some(book.path());
+            match book {
+                BookProgress::LoadError { path, .. } => {
+                    failures.push(CompletenessGateFailure {
+                        book: Some(path.clone()),
+                        code: CompletenessGateCode::LoadError,
+                    });
+                }
+                BookProgress::Report { report } => {
+                    let target_source = report.sources.iter().any(|source| {
+                        source.role == SourceRole::Target
+                            && source.identity.path == report.path
+                            && source.status == SourceStatus::Replayed
+                    });
+                    let sources_valid = target_source
+                        && report.sources.iter().all(|source| {
+                            matches!(
+                                source.status,
+                                SourceStatus::Replayed | SourceStatus::Interface
+                            )
+                        })
+                        && report.dependency_interfaces.iter().all(|interface| {
+                            report.sources.iter().any(|source| {
+                                source.role == SourceRole::Interface
+                                    && source.identity.root == interface.root
+                                    && source.identity.path == interface.source
+                                    && source.status == SourceStatus::Interface
+                                    && source.sha256.as_ref().is_some_and(|digest| {
+                                        hex_digest(digest) == interface.sha256
+                                    })
+                            })
+                        });
+                    if !sources_valid {
+                        failures.push(CompletenessGateFailure {
+                            book: Some(report.path.clone()),
+                            code: CompletenessGateCode::SourceLedger,
+                        });
+                    }
+                    if report.includes.iter().any(|include| {
+                        !matches!(
+                            include.status,
+                            IncludeStatus::Replayed
+                                | IncludeStatus::Idempotent
+                                | IncludeStatus::Interface
+                        )
+                    }) {
+                        failures.push(CompletenessGateFailure {
+                            book: Some(report.path.clone()),
+                            code: CompletenessGateCode::IncludeLedger,
+                        });
+                    }
+                    if report.dependency_interfaces.iter().any(|interface| {
+                        !report.includes.iter().any(|include| {
+                            include.status == IncludeStatus::Interface
+                                && include.resolved.as_ref().is_some_and(|source| {
+                                    source.root == interface.root && source.path == interface.source
+                                })
+                        })
+                    }) {
+                        failures.push(CompletenessGateFailure {
+                            book: Some(report.path.clone()),
+                            code: CompletenessGateCode::IncludeLedger,
+                        });
+                    }
+                    let completeness = report.completeness();
+                    let satisfied = match requirement {
+                        CompletenessRequirement::EventCompatible => {
+                            completeness.level >= CompletenessLevel::EventCompatible
+                        }
+                        CompletenessRequirement::DefinitionsComplete => {
+                            completeness.level >= CompletenessLevel::DefinitionsComplete
+                        }
+                        CompletenessRequirement::LogicalGreen => {
+                            completeness.is_logical_green_island()
+                        }
+                        CompletenessRequirement::SourceGreen => completeness.is_green_island(),
+                    };
+                    if !satisfied {
+                        let code = match requirement {
+                            CompletenessRequirement::EventCompatible => {
+                                CompletenessGateCode::EventCompatibility
+                            }
+                            CompletenessRequirement::DefinitionsComplete => {
+                                CompletenessGateCode::Definitions
+                            }
+                            CompletenessRequirement::LogicalGreen => {
+                                CompletenessGateCode::LogicalGreen
+                            }
+                            CompletenessRequirement::SourceGreen => {
+                                CompletenessGateCode::SourceGreen
+                            }
+                        };
+                        failures.push(CompletenessGateFailure {
+                            book: Some(report.path.clone()),
+                            code,
+                        });
+                    }
+                }
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(CompletenessGateRejection { failures })
+        }
+    }
+
+    /// Compare exact canonical bytes with a pinned expected manifest.
+    pub fn check_manifest(&self, expected: &[u8]) -> Result<(), ManifestMismatch> {
+        let actual = self.to_manifest_tsv();
+        if actual.as_bytes() == expected {
+            return Ok(());
+        }
+        let first_difference = actual
+            .bytes()
+            .zip(expected.iter().copied())
+            .position(|(actual, expected)| actual != expected)
+            .unwrap_or_else(|| actual.len().min(expected.len()));
+        Err(ManifestMismatch {
+            first_difference,
+            expected_len: expected.len(),
+            actual_len: actual.len(),
+        })
+    }
+}
+
+/// Run the shared ACL2 corpus importer used by examples and application CLIs.
+///
+/// Each target gets a fresh logical session, matching independent ACL2 book
+/// certification. Host loading and aggregation remain untrusted.
+pub fn run_corpus<I, S>(
+    config: BookConfig,
+    revision: impl Into<String>,
+    books: I,
+    mode: ProgressMode,
+) -> CorpusProgress
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let config = if mode == ProgressMode::Inventory {
+        config.inventory_only()
+    } else {
+        config
+    };
+    let mut progress = CorpusProgress::new(revision);
+    if mode == ProgressMode::Inventory {
+        progress = progress.inventory_only();
+    }
+    for book in books {
+        let book = book.into();
+        match Acl2Session::new() {
+            Ok(mut session) => match run_book_with_config(&mut session, &config, &book) {
+                Ok(report) => progress.record_owned_report(report),
+                Err(error) => progress.record_load_error(book, error.to_string()),
+            },
+            Err(error) => progress.record_load_error(book, error.to_string()),
+        }
+    }
+    progress
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -799,8 +1115,8 @@ fn hex_digest(digest: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CorpusProgress, DenominatorMismatchCode, NormalizedEventIdentity, NormalizedEventScope,
-        PinnedNormalizedDenominator, ProgressMode,
+        CompletenessGateCode, CompletenessRequirement, CorpusProgress, DenominatorMismatchCode,
+        NormalizedEventIdentity, NormalizedEventScope, PinnedNormalizedDenominator, ProgressMode,
     };
     use crate::book::{
         BookReport, DependencyInterfaceRecord, EventOutcome, EventRecord, IncludeRecord,
@@ -851,7 +1167,14 @@ mod tests {
                 EventOutcome::Transported,
             )],
             dependency_interfaces: Vec::new(),
-            sources: Vec::new(),
+            sources: vec![SourceRecord {
+                attempt_ordinal: 0,
+                identity: SourceIdentity::new(None, "strict.lisp"),
+                role: SourceRole::Target,
+                sha256: Some([0xaa; 32]),
+                status: SourceStatus::Replayed,
+                detail: None,
+            }],
             includes: Vec::new(),
         };
 
@@ -1083,6 +1406,135 @@ mod tests {
         reverse.record_report(&a);
 
         assert_eq!(forward.to_manifest_tsv(), reverse.to_manifest_tsv());
+    }
+
+    #[test]
+    fn shared_completeness_gate_distinguishes_inventory_logical_and_source_green() {
+        let strict = BookReport {
+            path: "strict.lisp".into(),
+            events: vec![event(
+                "strict.lisp",
+                "defthm",
+                "truth",
+                EventOutcome::Transported,
+            )],
+            dependency_interfaces: Vec::new(),
+            sources: vec![SourceRecord {
+                attempt_ordinal: 0,
+                identity: SourceIdentity::new(None, "strict.lisp"),
+                role: SourceRole::Target,
+                sha256: Some([0xaa; 32]),
+                status: SourceStatus::Replayed,
+                detail: None,
+            }],
+            includes: Vec::new(),
+        };
+        let mut replay = CorpusProgress::new("pin");
+        replay.record_report(&strict);
+        for requirement in [
+            CompletenessRequirement::EventCompatible,
+            CompletenessRequirement::DefinitionsComplete,
+            CompletenessRequirement::LogicalGreen,
+            CompletenessRequirement::SourceGreen,
+        ] {
+            replay.check(requirement).unwrap();
+        }
+
+        let mut inventory = CorpusProgress::new("pin").inventory_only();
+        inventory.record_report(&strict);
+        let rejected = inventory
+            .check(CompletenessRequirement::SourceGreen)
+            .unwrap_err();
+        assert_eq!(
+            rejected.failures[0].code,
+            CompletenessGateCode::InventoryMode
+        );
+
+        let mut interfaced = strict;
+        interfaced.events.insert(
+            0,
+            event(
+                "strict.lisp",
+                "include-book",
+                "docs",
+                EventOutcome::DependencyInterface {
+                    sha256: "00".repeat(32),
+                },
+            ),
+        );
+        interfaced
+            .dependency_interfaces
+            .push(DependencyInterfaceRecord {
+                requested_by: "strict.lisp".into(),
+                root: None,
+                source: "docs.lisp".into(),
+                sha256: "00".repeat(32),
+                capability: TheoremNeutralCapability::TransparentDefsection,
+                rationale: "fixture".into(),
+            });
+        interfaced.sources.push(SourceRecord {
+            attempt_ordinal: 1,
+            identity: SourceIdentity::new(None, "docs.lisp"),
+            role: SourceRole::Interface,
+            sha256: Some([0; 32]),
+            status: SourceStatus::Interface,
+            detail: None,
+        });
+        interfaced.includes.push(IncludeRecord {
+            encounter_ordinal: 0,
+            requested_by: SourceIdentity::new(None, "strict.lisp"),
+            request: "docs".into(),
+            root: None,
+            resolved: Some(SourceIdentity::new(None, "docs.lisp")),
+            status: IncludeStatus::Interface,
+            detail: None,
+        });
+        let mut progress = CorpusProgress::new("pin");
+        progress.record_report(&interfaced);
+        progress
+            .check(CompletenessRequirement::LogicalGreen)
+            .unwrap();
+        assert_eq!(
+            progress
+                .check(CompletenessRequirement::SourceGreen)
+                .unwrap_err()
+                .failures[0]
+                .code,
+            CompletenessGateCode::SourceGreen
+        );
+    }
+
+    #[test]
+    fn shared_gate_rejects_load_errors_empty_corpora_and_manifest_drift() {
+        let empty = CorpusProgress::new("pin");
+        assert_eq!(
+            empty
+                .check(CompletenessRequirement::EventCompatible)
+                .unwrap_err()
+                .failures[0]
+                .code,
+            CompletenessGateCode::NoBooks
+        );
+
+        let mut failed = CorpusProgress::new("pin");
+        failed.record_load_error("missing.lisp", "not found");
+        assert_eq!(
+            failed
+                .check(CompletenessRequirement::EventCompatible)
+                .unwrap_err()
+                .failures[0]
+                .code,
+            CompletenessGateCode::LoadError
+        );
+
+        let canonical = failed.to_manifest_tsv();
+        failed.check_manifest(canonical.as_bytes()).unwrap();
+        let mut drifted = canonical.clone();
+        drifted.push('x');
+        let mismatch = failed.check_manifest(drifted.as_bytes()).unwrap_err();
+        assert_eq!(mismatch.first_difference, canonical.len());
+        assert_eq!(mismatch.actual_len, canonical.len());
+        assert_eq!(mismatch.expected_len, drifted.len());
     }
 
     fn pinned_green_report() -> BookReport {

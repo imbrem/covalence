@@ -108,6 +108,10 @@ disable-model-invocation: true
     read/write protocol used by both Scheme's applicative dictionary and
     Forsp's stack-effect policy; Forsp layers its unsafe pointer requests around
     that protocol rather than defining a second I/O vocabulary.
+    `lang/lisp::SchemeSession` specializes the generic stateful
+    `RuntimeSession<R, P>` with that dictionary and returns a value plus the
+    complete handled-effect transcript; the default `P = StandardPrimitives`
+    preserves the pure Scheme/Sector/ACL2 session API.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

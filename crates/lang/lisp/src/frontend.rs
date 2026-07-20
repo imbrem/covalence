@@ -106,15 +106,8 @@ pub type FrontendEnvironment = HostEnvironment<String, FrontendValue>;
 /// Keeping this alias public lets ACL2 admission, Scheme conformance suites,
 /// and future WIT adapters exchange the same `MayEval` witness without naming
 /// a concrete value or environment representation.
-pub type RuntimeEvaluation<R> = MayEval<
-    MachineConfiguration<
-        <R as LispRuntime>::Expr,
-        <R as LispRuntime>::Value,
-        <R as LispRuntime>::Environment,
-        <R as LispRuntime>::Primitive,
-    >,
-    <R as LispRuntime>::Value,
->;
+pub type RuntimeEvaluation<R, P = StandardPrimitives> =
+    MayEval<covalence_kernel_lisp::LispConfiguration<R, P>, <R as LispRuntime>::Value>;
 
 /// A surface-to-core lowering error.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -951,8 +944,11 @@ pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
 
 type ValueErrorOf<R> = <<R as LispRuntime>::Values as LispValue>::Error;
 type EnvironmentErrorOf<R> = <<R as LispRuntime>::Environments as LispEnvironment>::Error;
-pub type RuntimeSessionMachineError<R> =
-    CoreMachineError<String, PrimitiveExecutionError<ValueErrorOf<R>>, <R as LispRuntime>::Error>;
+pub type RuntimeSessionMachineError<R, P = StandardPrimitives> = CoreMachineError<
+    String,
+    <P as PrimitiveSemantics<<R as LispRuntime>::Values>>::Error,
+    <R as LispRuntime>::Error,
+>;
 
 #[derive(Debug)]
 pub enum SessionError<M, V, E> {
@@ -989,25 +985,26 @@ where
 {
 }
 
-pub type RuntimeSessionError<R> =
-    SessionError<RuntimeSessionMachineError<R>, ValueErrorOf<R>, EnvironmentErrorOf<R>>;
+pub type RuntimeSessionError<R, P = StandardPrimitives> =
+    SessionError<RuntimeSessionMachineError<R, P>, ValueErrorOf<R>, EnvironmentErrorOf<R>>;
 
 /// Stateful proof-free frontend execution over a selected runtime backend.
 ///
 /// Definitions are lexical named closures. Recursive calls may diverge; fuel
 /// exhaustion is an ordinary result and carries no ACL2 admission claim.
 #[derive(Clone, Debug)]
-pub struct RuntimeSession<R>
+pub struct RuntimeSession<R, P = StandardPrimitives>
 where
     R: LispRuntime,
+    P: PrimitiveSemantics<R::Values>,
 {
     frontend: Frontend,
-    machine: LispMachine<R, StandardPrimitives>,
+    machine: LispMachine<R, P>,
     environment: R::Environment,
     fuel: usize,
 }
 
-impl<R> RuntimeSession<R>
+impl<R, P> RuntimeSession<R, P>
 where
     R: LispRuntime<
             Symbol = String,
@@ -1018,12 +1015,14 @@ where
         >,
     R::Value: Debug + PartialEq,
     R::Environment: Debug + PartialEq,
+    P: PrimitiveSemantics<R::Values>,
 {
-    pub fn with_runtime(
+    pub fn with_runtime_and_primitives(
         dialect: SurfaceDialect,
         fuel: usize,
         runtime: R,
-    ) -> Result<Self, RuntimeSessionError<R>> {
+        primitives: P,
+    ) -> Result<Self, RuntimeSessionError<R, P>> {
         let environment =
             initial_environment_for(runtime.values(), runtime.environments(), dialect)
                 .map_err(SessionError::Setup)?;
@@ -1031,7 +1030,7 @@ where
             frontend: Frontend::new(dialect),
             machine: LispMachine::with_runtime(
                 runtime,
-                StandardPrimitives,
+                primitives,
                 covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
             ),
             environment,
@@ -1043,16 +1042,46 @@ where
         self.machine.runtime()
     }
 
+    pub fn machine(&self) -> &LispMachine<R, P> {
+        &self.machine
+    }
+
+    pub fn frontend(&self) -> &Frontend {
+        &self.frontend
+    }
+
     pub fn environment(&self) -> &R::Environment {
         &self.environment
     }
 
-    pub fn evaluate(&self, form: &SExpr) -> Result<R::Value, RuntimeSessionError<R>> {
+    pub fn bind_value(
+        &mut self,
+        name: String,
+        value: R::Value,
+    ) -> Result<(), RuntimeSessionError<R, P>> {
+        self.environment = self
+            .machine
+            .runtime()
+            .environments()
+            .extend(&self.environment, vec![RuntimeBinding::new(name, value)])
+            .map_err(|error| {
+                SessionError::Machine(CoreMachineError::Runtime(
+                    self.machine.runtime().environment_error(error),
+                ))
+            })?;
+        Ok(())
+    }
+
+    pub fn fuel(&self) -> usize {
+        self.fuel
+    }
+
+    pub fn evaluate(&self, form: &SExpr) -> Result<R::Value, RuntimeSessionError<R, P>> {
         let expression = self.frontend.lower(form).map_err(SessionError::Lower)?;
         self.evaluate_core(&expression)
     }
 
-    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R>> {
+    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R, P>> {
         let Some((name, expression)) = self
             .frontend
             .definition(form)
@@ -1061,19 +1090,7 @@ where
             return Ok(None);
         };
         let value = self.evaluate_core(&expression)?;
-        self.environment = self
-            .machine
-            .runtime()
-            .environments()
-            .extend(
-                &self.environment,
-                vec![RuntimeBinding::new(name.clone(), value)],
-            )
-            .map_err(|error| {
-                SessionError::Machine(CoreMachineError::Runtime(
-                    self.machine.runtime().environment_error(error),
-                ))
-            })?;
+        self.bind_value(name.clone(), value)?;
         Ok(Some(name))
     }
 
@@ -1086,7 +1103,7 @@ where
     pub fn define_core(
         &mut self,
         definition: LispDefinition<String, FrontendExpr>,
-    ) -> Result<String, RuntimeSessionError<R>> {
+    ) -> Result<String, RuntimeSessionError<R, P>> {
         let name = definition.name.clone();
         let expression = definition.into_recursive_lambda();
         self.environment = self
@@ -1101,7 +1118,10 @@ where
     ///
     /// Every closure captures the same newly allocated lexical generation, so
     /// definitions may refer forward as well as backward within the group.
-    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, RuntimeSessionError<R>> {
+    pub fn define_group(
+        &mut self,
+        forms: &[SExpr],
+    ) -> Result<Vec<String>, RuntimeSessionError<R, P>> {
         let mut names = Vec::with_capacity(forms.len());
         let mut bindings = Vec::with_capacity(forms.len());
         for (index, form) in forms.iter().enumerate() {
@@ -1130,7 +1150,7 @@ where
     pub fn evaluate_core(
         &self,
         expression: &FrontendExpr,
-    ) -> Result<R::Value, RuntimeSessionError<R>> {
+    ) -> Result<R::Value, RuntimeSessionError<R, P>> {
         Ok(self.evaluate_core_evidence(expression)?.value)
     }
 
@@ -1143,7 +1163,7 @@ where
     pub fn evaluate_core_evidence(
         &self,
         expression: &FrontendExpr,
-    ) -> Result<RuntimeEvaluation<R>, RuntimeSessionError<R>> {
+    ) -> Result<RuntimeEvaluation<R, P>, RuntimeSessionError<R, P>> {
         let trace = execute(
             &self.machine,
             MachineConfiguration::with_environment(expression.clone(), self.environment.clone()),
@@ -1163,6 +1183,27 @@ pub type HostFrontendRuntime = covalence_kernel_lisp::HostRuntime<String, CoreAt
 pub type HostSession = RuntimeSession<HostFrontendRuntime>;
 pub type HostSessionError = RuntimeSessionError<HostFrontendRuntime>;
 pub type ArenaSession = RuntimeSession<ArenaFrontendRuntime>;
+
+impl<R> RuntimeSession<R, StandardPrimitives>
+where
+    R: LispRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = Primitive,
+            Expr = FrontendExpr,
+        >,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    pub fn with_runtime(
+        dialect: SurfaceDialect,
+        fuel: usize,
+        runtime: R,
+    ) -> Result<Self, RuntimeSessionError<R>> {
+        Self::with_runtime_and_primitives(dialect, fuel, runtime, StandardPrimitives)
+    }
+}
 
 impl RuntimeSession<HostFrontendRuntime> {
     pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {

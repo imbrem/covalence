@@ -4,12 +4,18 @@
 //! module does not perform I/O: a host, WASM component, or proof-producing
 //! replay layer supplies a handler separately.
 
+use core::fmt::{Debug, Display, Formatter};
+
 use covalence_kernel_lisp::{
-    LispIoRequest, LispIoResponse, LispValue, PrimitiveOutcome, PrimitiveSemantics,
+    EffectHandler, EffectRunError, EffectState, HandledEffect, LispEffectMachine, LispIoRequest,
+    LispIoResponse, LispMachineError, LispRuntime, LispValue, MachineConfiguration,
+    PrimitiveOutcome, PrimitiveSemantics, handle_to_completion,
 };
+use covalence_sexp::SExpr;
 
 use crate::frontend::{
-    CoreAtom, Primitive, PrimitiveError, PrimitiveExecutionError, StandardPrimitives,
+    CoreAtom, FrontendExpr, LowerError, Primitive, PrimitiveError, PrimitiveExecutionError,
+    RuntimeSession, RuntimeSessionError, StandardPrimitives, SurfaceDialect,
 };
 
 /// Observable Scheme operations supported by the initial interactive policy.
@@ -98,6 +104,160 @@ where
     }
 }
 
+pub type SchemeSession<R> = RuntimeSession<R, SchemePrimitives>;
+pub type SchemeMachineError<R> = LispMachineError<R, SchemePrimitives>;
+
+/// High-level result of one handled Scheme evaluation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SchemeEvaluation<V> {
+    pub value: V,
+    pub transcript: Vec<HandledEffect<LispIoRequest<V>, LispIoResponse<V>>>,
+    pub steps: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SchemeEvaluationError<M, H> {
+    Lower(LowerError),
+    Run(EffectRunError<M, H>),
+    MissingValue,
+}
+
+impl<M: Display, H: Display> Display for SchemeEvaluationError<M, H> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Lower(error) => Display::fmt(error, f),
+            Self::Run(error) => Display::fmt(error, f),
+            Self::MissingValue => f.write_str("handled Scheme evaluation returned no value"),
+        }
+    }
+}
+
+impl<M, H> core::error::Error for SchemeEvaluationError<M, H>
+where
+    M: Debug + Display,
+    H: Debug + Display,
+{
+}
+
+impl<R> RuntimeSession<R, SchemePrimitives>
+where
+    R: LispRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = covalence_kernel_lisp::Datum<CoreAtom>,
+            Primitive = Primitive,
+            Expr = FrontendExpr,
+        > + Clone,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    pub fn scheme(
+        fuel: usize,
+        runtime: R,
+    ) -> Result<Self, RuntimeSessionError<R, SchemePrimitives>> {
+        Self::with_runtime_and_primitives(SurfaceDialect::Scheme, fuel, runtime, SchemePrimitives)
+    }
+
+    pub fn evaluate_handled<H>(
+        &self,
+        form: &SExpr,
+        handler: &mut H,
+    ) -> Result<SchemeEvaluation<R::Value>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
+    where
+        H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
+    {
+        let expression = self
+            .frontend()
+            .lower(form)
+            .map_err(SchemeEvaluationError::Lower)?;
+        self.evaluate_core_handled(&expression, handler)
+    }
+
+    pub fn evaluate_core_handled<H>(
+        &self,
+        expression: &FrontendExpr,
+        handler: &mut H,
+    ) -> Result<SchemeEvaluation<R::Value>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
+    where
+        H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
+    {
+        let machine = LispEffectMachine::new(self.machine().clone());
+        let run = handle_to_completion(
+            &machine,
+            EffectState::Running(MachineConfiguration::with_environment(
+                expression.clone(),
+                self.environment().clone(),
+            )),
+            handler,
+            self.fuel(),
+        )
+        .map_err(SchemeEvaluationError::Run)?;
+        let value = run
+            .returned
+            .terminal_value()
+            .cloned()
+            .ok_or(SchemeEvaluationError::MissingValue)?;
+        Ok(SchemeEvaluation {
+            value,
+            transcript: run.transcript,
+            steps: run.steps,
+        })
+    }
+
+    /// Evaluate a single non-recursive definition's right-hand side with an
+    /// explicit handler, then extend the lexical session environment.
+    pub fn define_handled<H>(
+        &mut self,
+        form: &SExpr,
+        handler: &mut H,
+    ) -> Result<
+        Option<(String, SchemeEvaluation<R::Value>)>,
+        DefineHandledError<
+            RuntimeSessionError<R, SchemePrimitives>,
+            SchemeEvaluationError<SchemeMachineError<R>, H::Error>,
+        >,
+    >
+    where
+        H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
+    {
+        let Some((name, expression)) = self
+            .frontend()
+            .definition(form)
+            .map_err(|error| DefineHandledError::Evaluation(SchemeEvaluationError::Lower(error)))?
+        else {
+            return Ok(None);
+        };
+        let evaluation = self
+            .evaluate_core_handled(&expression, handler)
+            .map_err(DefineHandledError::Evaluation)?;
+        self.bind_value(name.clone(), evaluation.value.clone())
+            .map_err(DefineHandledError::Session)?;
+        Ok(Some((name, evaluation)))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DefineHandledError<S, E> {
+    Session(S),
+    Evaluation(E),
+}
+
+impl<S: Display, E: Display> Display for DefineHandledError<S, E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Session(error) => Display::fmt(error, f),
+            Self::Evaluation(error) => Display::fmt(error, f),
+        }
+    }
+}
+
+impl<S, E> core::error::Error for DefineHandledError<S, E>
+where
+    S: Debug + Display,
+    E: Debug + Display,
+{
+}
+
 fn require_arity<V>(arguments: &[V], expected: usize) -> Result<(), PrimitiveError> {
     if arguments.len() == expected {
         Ok(())
@@ -114,15 +274,11 @@ mod tests {
     use core::convert::Infallible;
 
     use covalence_kernel_lisp::{
-        ArenaRuntime, EffectState, HostRuntime, LispEffectMachine, LispIo, LispIoHandler,
-        LispMachine, LispRuntime, LispValue, MachineConfiguration, RuntimeValueView, Strategy,
-        handle_to_completion,
+        ArenaRuntime, HostRuntime, LispIo, LispIoHandler, LispRuntime, LispValue, RuntimeValueView,
     };
     use covalence_types::Int;
 
     use super::*;
-    use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect, initial_environment_for};
-
     struct Scripted<V> {
         read: Option<V>,
     }
@@ -139,89 +295,91 @@ mod tests {
         }
     }
 
-    fn expression() -> FrontendExpr {
-        let form = crate::reader::read("(begin (write (quote hello)) (read))")
-            .unwrap()
-            .pop()
-            .unwrap();
-        Frontend::new(SurfaceDialect::Scheme).lower(&form).unwrap()
+    fn form(source: &str) -> SExpr {
+        crate::reader::read(source).unwrap().pop().unwrap()
     }
 
     #[test]
     fn scheme_io_is_explicit_and_runtime_representation_independent() {
         let runtime = HostRuntime::<String, CoreAtom, Primitive>::default();
-        let environment = initial_environment_for(
-            runtime.values(),
-            runtime.environments(),
-            SurfaceDialect::Scheme,
-        )
-        .unwrap();
         let expected = runtime
             .values()
             .atom(CoreAtom::Integer(Int::from(42)))
             .unwrap();
-        let machine = LispEffectMachine::new(LispMachine::with_runtime(
-            runtime,
-            SchemePrimitives,
-            Strategy::STRICT_LEXICAL,
-        ));
-        let run = handle_to_completion(
-            &machine,
-            EffectState::Running(MachineConfiguration::with_environment(
-                expression(),
-                environment,
-            )),
-            &mut LispIoHandler {
-                host: Scripted {
-                    read: Some(expected.clone()),
+        let session = SchemeSession::scheme(64, runtime).unwrap();
+        let run = session
+            .evaluate_handled(
+                &form("(begin (write (quote hello)) (read))"),
+                &mut LispIoHandler {
+                    host: Scripted {
+                        read: Some(expected.clone()),
+                    },
                 },
-            },
-            64,
-        )
-        .unwrap();
+            )
+            .unwrap();
         assert_eq!(run.transcript.len(), 2);
         assert!(matches!(
             &run.transcript[0].request,
             LispIoRequest::Write(_)
         ));
-        assert_eq!(run.returned.terminal_value(), Some(&expected));
+        assert_eq!(run.value, expected);
 
         let runtime = ArenaRuntime::<String, CoreAtom, Primitive>::default();
-        let environment = initial_environment_for(
-            runtime.values(),
-            runtime.environments(),
-            SurfaceDialect::Scheme,
-        )
-        .unwrap();
         let expected = runtime
             .values()
             .atom(CoreAtom::Integer(Int::from(42)))
             .unwrap();
-        let machine = LispEffectMachine::new(LispMachine::with_runtime(
-            runtime,
-            SchemePrimitives,
-            Strategy::STRICT_LEXICAL,
-        ));
-        let run = handle_to_completion(
-            &machine,
-            EffectState::Running(MachineConfiguration::with_environment(
-                expression(),
-                environment,
-            )),
-            &mut LispIoHandler {
-                host: Scripted {
-                    read: Some(expected),
+        let session = SchemeSession::scheme(64, runtime).unwrap();
+        let run = session
+            .evaluate_handled(
+                &form("(begin (write (quote hello)) (read))"),
+                &mut LispIoHandler {
+                    host: Scripted {
+                        read: Some(expected),
+                    },
                 },
-            },
-            64,
-        )
-        .unwrap();
+            )
+            .unwrap();
         assert_eq!(run.transcript.len(), 2);
-        let value = run.returned.terminal_value().expect("terminal value");
         assert_eq!(
-            machine.runtime().values().view(value).unwrap(),
+            session.runtime().values().view(&run.value).unwrap(),
             RuntimeValueView::Atom(CoreAtom::Integer(Int::from(42)))
         );
+    }
+
+    #[test]
+    fn handled_definitions_extend_the_stateful_scheme_environment() {
+        let runtime = HostRuntime::<String, CoreAtom, Primitive>::default();
+        let expected = runtime
+            .values()
+            .atom(CoreAtom::Integer(Int::from(42)))
+            .unwrap();
+        let mut session = SchemeSession::scheme(64, runtime).unwrap();
+        let (name, definition) = session
+            .define_handled(
+                &form("(define answer (begin (write (quote loading)) (read)))"),
+                &mut LispIoHandler {
+                    host: Scripted {
+                        read: Some(expected.clone()),
+                    },
+                },
+            )
+            .unwrap()
+            .expect("definition");
+        assert_eq!(name, "answer");
+        assert_eq!(definition.value, expected);
+        assert_eq!(definition.transcript.len(), 2);
+
+        let evaluation = session
+            .evaluate_handled(
+                &form("answer"),
+                &mut LispIoHandler {
+                    host: Scripted { read: None },
+                },
+            )
+            .unwrap();
+        assert_eq!(evaluation.value, expected);
+        assert!(evaluation.transcript.is_empty());
     }
 
     #[test]

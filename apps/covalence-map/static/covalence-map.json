@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 36676,
+      "words": 37255,
       "updated": 0
     },
     {
@@ -9335,6 +9335,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp",
+      "kind": "file",
+      "title": "crates/kernel/lisp",
+      "status": null,
+      "path": "crates/kernel/lisp",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -15856,7 +15865,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 36676,
+      "words": 37255,
       "updated": 0
     },
     {
@@ -16220,12 +16229,21 @@
       "updated": 0
     },
     {
+      "id": "file:notes/**/*.md",
+      "kind": "file",
+      "title": "notes/**/*.md",
+      "status": null,
+      "path": "notes/**/*.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:notes/README.md",
       "kind": "file",
       "title": "README.md",
       "status": "tracked",
       "path": "notes/README.md",
-      "words": 83,
+      "words": 87,
       "updated": 0
     },
     {
@@ -16352,6 +16370,87 @@
       "status": "tracked",
       "path": "notes/design/rust-api-metadata.md",
       "words": 105,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/README.md",
+      "kind": "file",
+      "title": "README.md",
+      "status": "tracked",
+      "path": "notes/history/README.md",
+      "words": 28,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/README.md",
+      "kind": "file",
+      "title": "README.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/README.md",
+      "words": 73,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/acl2.md",
+      "kind": "file",
+      "title": "acl2.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/acl2.md",
+      "words": 44,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/k.md",
+      "kind": "file",
+      "title": "k.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/k.md",
+      "words": 40,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/lisp.md",
+      "kind": "file",
+      "title": "lisp.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/lisp.md",
+      "words": 41,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/metamath.md",
+      "kind": "file",
+      "title": "metamath.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/metamath.md",
+      "words": 39,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/smt-sat.md",
+      "kind": "file",
+      "title": "smt-sat.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/smt-sat.md",
+      "words": 43,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/substrate.md",
+      "kind": "file",
+      "title": "substrate.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/substrate.md",
+      "words": 54,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/history/cd384d36/wasm.md",
+      "kind": "file",
+      "title": "wasm.md",
+      "status": "tracked",
+      "path": "notes/history/cd384d36/wasm.md",
+      "words": 43,
       "updated": 0
     },
     {
@@ -16639,7 +16738,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/README.md",
-      "words": 64,
+      "words": 67,
       "updated": 0
     },
     {
@@ -18511,8 +18610,8 @@
       "title": "notes/ — the map",
       "status": "draft",
       "path": "notes/README.md",
-      "words": 438,
-      "updated": 1784580813
+      "words": 463,
+      "updated": 1784585472
     },
     {
       "id": "note:notes/chats/neel_meeting_1.md",
@@ -18614,6 +18713,87 @@
       "updated": 1784418491
     },
     {
+      "id": "note:notes/history/README.md",
+      "kind": "note",
+      "title": "Historical snapshots",
+      "status": "draft",
+      "path": "notes/history/README.md",
+      "words": 127,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/README.md",
+      "kind": "note",
+      "title": "Repository snapshot: `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/README.md",
+      "words": 342,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/acl2.md",
+      "kind": "note",
+      "title": "ACL2 at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/acl2.md",
+      "words": 208,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/k.md",
+      "kind": "note",
+      "title": "K at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/k.md",
+      "words": 168,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/lisp.md",
+      "kind": "note",
+      "title": "Lisp at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/lisp.md",
+      "words": 168,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/metamath.md",
+      "kind": "note",
+      "title": "Metamath at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/metamath.md",
+      "words": 155,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/smt-sat.md",
+      "kind": "note",
+      "title": "SMT and SAT at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/smt-sat.md",
+      "words": 167,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/substrate.md",
+      "kind": "note",
+      "title": "Substrate at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/substrate.md",
+      "words": 232,
+      "updated": 1784585472
+    },
+    {
+      "id": "note:notes/history/cd384d36/wasm.md",
+      "kind": "note",
+      "title": "WASM and SpecTec at `cd384d36`",
+      "status": "draft",
+      "path": "notes/history/cd384d36/wasm.md",
+      "words": 190,
+      "updated": 1784585472
+    },
+    {
       "id": "note:notes/plans/atoms.md",
       "kind": "note",
       "title": "notes/plans/atoms.md",
@@ -18664,8 +18844,8 @@
       "title": "Design corpus",
       "status": "draft",
       "path": "notes/vibes/README.md",
-      "words": 338,
-      "updated": 1784584541
+      "words": 348,
+      "updated": 1784585472
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -28422,6 +28602,12 @@
     {
       "source": "note:notes/README.md",
       "predicate": "links-to",
+      "target": "note:notes/history/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/README.md",
+      "predicate": "links-to",
       "target": "note:notes/plans/next-stage.md",
       "detail": null
     },
@@ -28864,6 +29050,204 @@
       "detail": null
     },
     {
+      "source": "note:notes/history/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/README.md",
+      "predicate": "documents",
+      "target": "file:notes/**/*.md",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/history/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/acl2.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/k.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/lisp.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/metamath.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/smt-sat.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/substrate.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/cd384d36/wasm.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/plans/current-program.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/acl2.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/k.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/k.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/k",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/lisp.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/lisp.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/lisp",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/lisp.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/lisp",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/metamath.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/metamath.md",
+      "predicate": "documents",
+      "target": "file:crates/proof/metamath",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/smt-sat.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/smt-sat.md",
+      "predicate": "documents",
+      "target": "file:crates/proof/alethe",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/core",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "documents",
+      "target": "file:crates/store/core",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "documents",
+      "target": "file:crates/store/kv",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "documents",
+      "target": "file:crates/vcs/object",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/relational-design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/substrate.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/history/cd384d36/wasm.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/history/cd384d36/wasm.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/wasm/spectec",
+      "detail": null
+    },
+    {
       "source": "note:notes/plans/atoms.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -28909,6 +29293,12 @@
       "source": "note:notes/vibes/README.md",
       "predicate": "documents",
       "target": "file:notes/vibes/",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/history/README.md",
       "detail": null
     },
     {
@@ -34324,6 +34714,60 @@
       "stableId": "N0057",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/README.md",
+      "stableId": "N0058",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/substrate.md",
+      "stableId": "N0059",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/metamath.md",
+      "stableId": "N005A",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/lisp.md",
+      "stableId": "N005B",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/acl2.md",
+      "stableId": "N005C",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/k.md",
+      "stableId": "N005D",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/wasm.md",
+      "stableId": "N005E",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/smt-sat.md",
+      "stableId": "N005F",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/history/README.md",
+      "stableId": "N005G",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -34743,6 +35187,96 @@
       "role": "author",
       "contributedAt": "2026-07-19T00:45:35+01:00",
       "source": "api-metadata-design",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/README.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "history-system",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/README.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/acl2.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/k.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/lisp.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/metamath.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/smt-sat.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/substrate.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/wasm.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "repository-snapshot-cd384d36",
       "agent": "gpt-5.6-sol",
       "harness": "codex",
       "ordinal": 0
@@ -36008,8 +36542,8 @@
   "revisions": [
     {
       "noteId": "note:notes/README.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
     },
     {
       "noteId": "note:notes/chats/neel_meeting_1.md",
@@ -36067,6 +36601,51 @@
       "committedAt": 1784418491
     },
     {
+      "noteId": "note:notes/history/README.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/README.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/acl2.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/k.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/lisp.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/metamath.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/smt-sat.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/substrate.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
+      "noteId": "note:notes/history/cd384d36/wasm.md",
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
+    },
+    {
       "noteId": "note:notes/plans/atoms.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -36093,8 +36672,8 @@
     },
     {
       "noteId": "note:notes/vibes/README.md",
-      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
-      "committedAt": 1784584541
+      "commit": "0790bd60af875fbb848406034237e045445eea40",
+      "committedAt": 1784585472
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",

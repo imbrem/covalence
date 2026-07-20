@@ -59,6 +59,7 @@ use crate::budget::{
 use crate::host::partial::DynPartial;
 use crate::host::total::DynTotal;
 use crate::host::{RelationalPrefixParser, TotalPrefixParser};
+use crate::sharing::clone_unless_last;
 use crate::syntax::{
     Core, CoreWitness, Deterministic, DeterministicWitness, Ordered, OrderedEnv, OrderedWitness,
     Relational, RelationalEnv, RelationalWitness, Signature, TotalEnv,
@@ -75,11 +76,20 @@ use covalence_parsing_api::{
 // `theory::CombinatorMorphismLaws::compilation_preserves_semantics`. No amount of host
 // evaluation may mint it.
 
-// PERF(cov:lang.combinator-parsing.compile-rebuilds-rule-bodies, minor): `Core::Rule` and
-// `Core::Bind` compile their target on every entry at every offset, because a rule body may
-// be recursive and a continuation's program is not known until its value is. The syntax
-// encoding's indexed rule table is the in-tree answer for grammars that feel this; measure
-// before caching compiled bodies behind an `Rc`.
+// PERF(cov:lang.combinator-parsing.compile-rebuilds-rule-bodies, major): `Core::Rule`
+// recompiles its whole body into a fresh closure tree on every entry at every offset, at a
+// cost of O(|body|) allocations *before* any parsing happens. Measured against the
+// interpreter on a right-recursive rule over a 256-atom source: at body width 0 compilation
+// wins (0.8x), at width 32 it is 4.5x slower, and at width 128 it is 8.6x slower with 67x
+// the allocations. A keyword or operator table is exactly that shape, so compiling inverts
+// its own purpose there. The body is value- and offset-independent and keyed by rule index
+// alone, so an `Rc<OnceCell<Step>>` per index filled on first entry is the standard knot-tie
+// and handles recursive bodies.
+
+// PERF(cov:lang.combinator-parsing.compile-rebuilds-bind-continuations, minor): `Core::Bind`
+// also recompiles its target per entry, but unlike `Core::Rule` it cannot be cached: the
+// continuation's program depends on the value, so there is no offset- and value-independent
+// key. Recorded separately so the fixable half above is not held hostage to this one.
 
 /// Per-evaluation mutable state, mirroring each syntax evaluator's own local state.
 ///
@@ -886,9 +896,16 @@ where
                 Box::new(move |source, at, st| {
                     let mut out = Vec::new();
                     for (f, wf, mid) in functions(source, at, st)? {
-                        for (x, wx, end) in arguments(source, mid, st)? {
+                        // As in the evaluator: the function value and witness are cloned
+                        // once per argument result, except on the last, which can move them.
+                        let argument_results = arguments(source, mid, st)?;
+                        let steps = argument_results.len();
+                        let mut f = Some(f);
+                        let mut wf = Some(wf);
+                        for (step, (x, wx, end)) in argument_results.into_iter().enumerate() {
+                            let last = step + 1 == steps;
                             let value = env
-                                .apply_value(f.clone(), x)
+                                .apply_value(clone_unless_last(&mut f, last), x)
                                 .map_err(CombinatorEvalError::Environment)?;
                             st.charge_witness()?;
                             let span = Span::new(at, end).expect("forward step");
@@ -899,7 +916,7 @@ where
                                     value,
                                     RelationalWitness::Core(CoreWitness::Ap {
                                         span,
-                                        function: Box::new(wf.clone()),
+                                        function: Box::new(clone_unless_last(&mut wf, last)),
                                         argument: Box::new(wx),
                                         split: mid,
                                     }),
@@ -925,7 +942,14 @@ where
                         let next = env
                             .relational_resolve(&continuation, &value)
                             .map_err(CombinatorEvalError::Environment)?;
-                        for (value, wc, end) in relational_step(&next, env)(source, mid, st)? {
+                        // As in the evaluator: the head witness is cloned once per
+                        // continuation result, except on the last, which can move it.
+                        let continuation_results = relational_step(&next, env)(source, mid, st)?;
+                        let steps = continuation_results.len();
+                        let mut wh = Some(wh);
+                        for (step, (value, wc, end)) in continuation_results.into_iter().enumerate()
+                        {
+                            let last = step + 1 == steps;
                             st.charge_witness()?;
                             let span = Span::new(at, end).expect("forward step");
                             push(
@@ -935,7 +959,7 @@ where
                                     value,
                                     RelationalWitness::Core(CoreWitness::Bind {
                                         span,
-                                        head: Box::new(wh.clone()),
+                                        head: Box::new(clone_unless_last(&mut wh, last)),
                                         continuation: Box::new(wc),
                                         split: mid,
                                     }),

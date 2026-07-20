@@ -5,6 +5,7 @@ use crate::budget::{
     check_primitive_extent,
 };
 use crate::host::RelationalPrefixParser;
+use crate::sharing::clone_unless_last;
 use crate::syntax::{Core, CoreWitness, Relational, RelationalEnv, RelationalWitness, Signature};
 use covalence_parsing_api::{
     ParserSyntax, PrefixInterpretation, RelationalParseResult, RelationalParser, Span,
@@ -37,10 +38,31 @@ pub struct RelationalEvaluator<'p, 'e, S: Signature, E: ?Sized> {
     limits: RelationalLimits,
 }
 
-// PERF(cov:lang.combinator-parsing.relational-sharing, major): No derivation sharing. A
-// packed forest as in cfg-parsing needs value-level sharing the untyped universe does not
-// provide; max_results and max_work are the only defence and truncation is always reported
-// as `ResourceExhausted` rather than silently dropping results.
+// PERF(cov:lang.combinator-parsing.relational-sharing, major): No derivation sharing, and
+// the two halves have different answers. Value-level sharing — a packed forest as in
+// cfg-parsing — needs more than the untyped universe provides. *Witness*-level sharing does
+// not: `CoreWitness<S, R>` is already generic in its recursion knot, so tying the relational
+// witness through `Rc` instead of `Box` would drop witness allocation from
+// O(results x depth) to O(results) while leaving Deterministic and Ordered untouched, and
+// `Rc` preserves the derived Clone/Debug/PartialEq/Eq that witness comparison relies on.
+// The deterministic half of this is already paid off: not cloning on an inner loop's final
+// iteration (`sharing::clone_unless_last`) took an unambiguous left-nested Ap chain at depth
+// 128 from 16770 allocations to 514, i.e. from quadratic to linear. What is left is the
+// genuinely ambiguous case, where each retained alternative still deep-copies a witness of
+// its own depth: measured on a 2^k-result Ap chain, allocations per result still climb about
+// +3 per level (12.5 at k=3 to 33.1 at k=10), so the total is O(2^k x k) where retention
+// alone requires O(2^k). Only `Rc` removes that; until then max_results and max_work are the
+// only defence, and truncation is always reported as `ResourceExhausted` rather than silently
+// dropping results.
+
+// PERF(cov:lang.combinator-parsing.relational-recomputation, major): `st.active` is cycle
+// detection, not memoization, so a rule reachable by p distinct paths at one offset
+// re-evaluates its whole subtree p times — the classic backtracking blow-up, whose failure
+// mode here is a *truncated* answer reported as `ResourceExhausted` rather than merely a slow
+// one. A `(rule, offset)` memo is type-feasible since `Signature` already requires
+// `Value: Clone`, but every hit clones each cached value and witness, so it is only clearly a
+// win after the witness sharing above. Needs an ambiguous-grammar corpus to measure; the
+// crate has none.
 
 /// Per-call mutable state. A0015's methods take `&self`, so this is a local, never a field
 /// and never interior mutability.
@@ -286,12 +308,18 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                 Core::Ap(functions, arguments) => {
                     let mut out = Vec::new();
                     for (f, wf, mid) in self.eval(functions, source, at, st)? {
-                        // One function value is consumed once per argument result, so it
-                        // is cloned per continuation rather than moved.
-                        for (x, wx, end) in self.eval(arguments, source, mid, st)? {
+                        // One function value and one function witness are consumed once per
+                        // argument result, so each is cloned per continuation — except on
+                        // the last, which nothing follows and can therefore move them.
+                        let argument_results = self.eval(arguments, source, mid, st)?;
+                        let steps = argument_results.len();
+                        let mut f = Some(f);
+                        let mut wf = Some(wf);
+                        for (step, (x, wx, end)) in argument_results.into_iter().enumerate() {
+                            let last = step + 1 == steps;
                             let value = self
                                 .env
-                                .apply_value(f.clone(), x)
+                                .apply_value(clone_unless_last(&mut f, last), x)
                                 .map_err(CombinatorEvalError::Environment)?;
                             self.charge_witness(st)?;
                             let span = Span::new(at, end).expect("forward step");
@@ -302,7 +330,7 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                                     value,
                                     RelationalWitness::Core(CoreWitness::Ap {
                                         span,
-                                        function: Box::new(wf.clone()),
+                                        function: Box::new(clone_unless_last(&mut wf, last)),
                                         argument: Box::new(wx),
                                         split: mid,
                                     }),
@@ -331,7 +359,14 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                             .env
                             .relational_resolve(continuation, &value)
                             .map_err(CombinatorEvalError::Environment)?;
-                        for (value, wc, end) in self.eval(&next, source, mid, st)? {
+                        // The head witness is consumed once per continuation result, so it
+                        // is cloned per result — except on the last, which can move it.
+                        let continuation_results = self.eval(&next, source, mid, st)?;
+                        let steps = continuation_results.len();
+                        let mut wh = Some(wh);
+                        for (step, (value, wc, end)) in continuation_results.into_iter().enumerate()
+                        {
+                            let last = step + 1 == steps;
                             self.charge_witness(st)?;
                             let span = Span::new(at, end).expect("forward step");
                             self.push_result(
@@ -341,7 +376,7 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                                     value,
                                     RelationalWitness::Core(CoreWitness::Bind {
                                         span,
-                                        head: Box::new(wh.clone()),
+                                        head: Box::new(clone_unless_last(&mut wh, last)),
                                         continuation: Box::new(wc),
                                         split: mid,
                                     }),

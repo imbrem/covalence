@@ -39,15 +39,13 @@ use crate::host::Marker;
 use crate::host::cursor::{CombinatorError, SourceExtent, check_step, join_steps};
 use crate::host::witness::{ChoiceWitness, SeqWitness};
 
-// FIXME(cov:lang.combinator-parsing.host-recursion-unbounded, major): A knot tied through
-// `Lazy` (or through any hand-written `parse_prefix` impl) is bounded only by the native
-// stack, so a left-recursive expression built from *this* module still overflows.
-// `host::recursion` is the bounded route and returns a Depth limit instead, but `Lazy`
-// cannot be routed through it: `parse_prefix` takes no evaluator state, and the only other
-// channels surviving a call into an opaque sub-parser are per-node storage and the source
-// carrier, both rejected in that module's header. Closing this needs either an
-// evaluator-state parameter in A0015 or the removal of `Lazy` in favour of
-// `recursion::Recurse`.
+// TODO(cov:lang.combinator-parsing.host-recursion-unbounded, minor): This module no longer
+// ships an unbounded knot — `Lazy` was removed in favour of the bounded
+// `recursion::Recurse`, which reports a Depth limit. What remains is a property of A0015
+// rather than of this crate: `parse_prefix` carries no evaluator state, so a *caller*
+// hand-writing a recursive `PartialPrefixParser` impl is still bounded only by the native
+// stack, and no combinator here can detect that. Closing this needs an evaluator-state
+// parameter in A0015; see `prefix-traits-to-a0015`.
 
 /// Consumes nothing and always yields the same interpretation.
 ///
@@ -172,49 +170,6 @@ impl<S: ?Sized, V, W, D, E> PartialPrefixParser for DynPartial<'_, S, V, W, D, E
 
     fn parse_prefix(&self, source: &S, start: usize) -> PrefixParseResult<V, W, D, E> {
         self.0.parse_prefix(source, start)
-    }
-}
-
-/// Recursion, by rebuilding the sub-expression on entry.
-///
-/// **Unbounded.** This operator ties its knot through `parse_prefix`, which carries no
-/// evaluator state, so a left-recursive expression built with it overflows the native stack
-/// rather than reporting a bound. For a knot that is bounded, use
-/// [`recursion::Recurse`](crate::host::recursion::Recurse), whose expression reports a
-/// [`CombinatorResource::Depth`](crate::budget::CombinatorResource::Depth) limit and reaches
-/// `PartialPrefixParser` through
-/// [`recursion::PartialEvaluation`](crate::host::recursion::PartialEvaluation). This one is
-/// kept for knots already known to be productive, where rebuilding is all that is wanted.
-pub struct Lazy<F> {
-    pub make: F,
-}
-
-/// Construct a [`Lazy`].
-pub fn lazy<F>(make: F) -> Lazy<F> {
-    Lazy { make }
-}
-
-// PERF(cov:lang.combinator-parsing.lazy-rebuilds-subtree, minor): host::Lazy rebuilds its
-// expression on every entry at every offset, not one allocation per nonterminal. The syntax
-// encoding's indexed Rule table is the in-tree answer for grammars that feel this.
-
-impl<F, P> PartialPrefixParser for Lazy<F>
-where
-    F: Fn() -> P,
-    P: PartialPrefixParser,
-{
-    type Source = P::Source;
-    type Value = P::Value;
-    type Witness = P::Witness;
-    type Diagnostic = P::Diagnostic;
-    type Error = P::Error;
-
-    fn parse_prefix(
-        &self,
-        source: &P::Source,
-        start: usize,
-    ) -> PrefixParseResult<P::Value, P::Witness, P::Diagnostic, P::Error> {
-        (self.make)().parse_prefix(source, start)
     }
 }
 

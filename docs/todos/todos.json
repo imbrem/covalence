@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 373,
-  "structured": 373,
+  "count": 374,
+  "structured": 374,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -2431,17 +2431,27 @@
       "summary": "N1 — that a",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
-      "line": 70,
+      "line": 71,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compile-rebuilds-bind-continuations",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "Core::Bind",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 89,
       "crate": "covalence-combinator-parsing"
     },
     {
       "id": "lang.combinator-parsing.compile-rebuilds-rule-bodies",
       "kind": "PERF",
-      "severity": "minor",
-      "summary": "Core::Rule and",
+      "severity": "major",
+      "summary": "Core::Rule",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
-      "line": 78,
+      "line": 79,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2451,7 +2461,7 @@
       "summary": "A compiled",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
-      "line": 1061,
+      "line": 1085,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2496,9 +2506,9 @@
     },
     {
       "id": "lang.combinator-parsing.host-recursion-unbounded",
-      "kind": "FIXME",
-      "severity": "major",
-      "summary": "A knot tied through",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "This module no longer",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/host/partial.rs",
       "line": 42,
@@ -2511,7 +2521,7 @@
       "summary": "RelationalLimits",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/host/relational.rs",
-      "line": 46,
+      "line": 47,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2521,17 +2531,7 @@
       "summary": "No derivation sharing in",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/host/relational.rs",
-      "line": 52,
-      "crate": "covalence-combinator-parsing"
-    },
-    {
-      "id": "lang.combinator-parsing.lazy-rebuilds-subtree",
-      "kind": "PERF",
-      "severity": "minor",
-      "summary": "host::Lazy rebuilds its",
-      "structured": true,
-      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
-      "line": 197,
+      "line": 53,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2605,13 +2605,23 @@
       "crate": "covalence-combinator-parsing"
     },
     {
+      "id": "lang.combinator-parsing.relational-recomputation",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "st.active is cycle",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "line": 58,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
       "id": "lang.combinator-parsing.relational-sharing",
       "kind": "PERF",
       "severity": "major",
-      "summary": "No derivation sharing. A",
+      "summary": "No derivation sharing, and",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
-      "line": 40,
+      "line": 41,
       "crate": "covalence-combinator-parsing"
     },
     {

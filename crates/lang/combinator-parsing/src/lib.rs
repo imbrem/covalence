@@ -63,5 +63,6 @@ pub mod budget;
 pub mod conformance;
 pub mod host;
 pub mod morphism;
+mod sharing;
 pub mod syntax;
 pub mod theory;

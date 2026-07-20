@@ -47,10 +47,10 @@
 //!
 //! It bounds recursion tied through [`Recurse`] within a bounded expression. It does **not**
 //! bound a [`Leaf`]'s own internals: a foreign leaf that recurses inside itself is opaque
-//! here, exactly as a foreign relational leaf cannot be bounded from the inside. Nor does it
-//! bound [`partial::Lazy`](crate::host::partial::Lazy), which ties its knot through
-//! `parse_prefix` and has no context to consult; that is the residue recorded on the marker
-//! in [`partial`](crate::host::partial).
+//! here, exactly as a foreign relational leaf cannot be bounded from the inside. Nor can it
+//! bound a knot a caller ties by hand in their own `parse_prefix` impl, which has no context
+//! to consult; that is the residue recorded on the marker in
+//! [`partial`](crate::host::partial).
 
 use covalence_parsing_api::{
     ParseAttempt, PartialPrefixParser, PrefixInterpretation, PrefixParseResult,
@@ -255,11 +255,11 @@ impl<S: ?Sized, V, W, D, E> BoundedPartial for DynBounded<'_, S, V, W, D, E> {
 
 /// A recursion point: rebuilds its sub-expression on entry, under the depth bound.
 ///
-/// This is the bounded counterpart of [`partial::Lazy`](crate::host::partial::Lazy), and the
-/// **only** operator in this module that charges [`RecursionCtx`]. A grammar that ties its
-/// knot here gets a [`CombinatorError::Limit`] naming
-/// [`CombinatorResource::Depth`](crate::budget::CombinatorResource::Depth) where the
-/// unbounded encoding overflows the native stack.
+/// This is the crate's **only** route to host-encoding recursion, and the only operator in
+/// this module that charges [`RecursionCtx`]. A grammar that ties its knot here gets a
+/// [`CombinatorError::Limit`] naming
+/// [`CombinatorResource::Depth`](crate::budget::CombinatorResource::Depth) where a knot tied
+/// directly through `parse_prefix` overflows the native stack.
 pub struct Recurse<F> {
     pub make: F,
 }

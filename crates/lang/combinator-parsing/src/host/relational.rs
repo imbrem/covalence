@@ -42,6 +42,7 @@ use crate::budget::{CombinatorLimit, CombinatorResource, RelationalLimits};
 use crate::host::cursor::{CombinatorError, SourceExtent, check_step, join_steps};
 use crate::host::witness::{SeqWitness, UnionWitness};
 use crate::host::{Marker, PrefixEnumeration, RelationalPrefixParser};
+use crate::sharing::clone_unless_last;
 
 // TODO(cov:lang.combinator-parsing.host-relational-limit-threading, major): RelationalLimits
 // reach host::relational::{Union, Bind} through the outer RelationalEvaluation wrapper
@@ -51,8 +52,10 @@ use crate::host::{Marker, PrefixEnumeration, RelationalPrefixParser};
 
 // PERF(cov:lang.combinator-parsing.host-relational-sharing, major): No derivation sharing in
 // the host encoding either. Ap and Bind clone one head value or witness per continuation
-// result; the result limits are the only defence and truncation is always reported as an
-// error rather than silently applied. Distinct from the syntax encoding's
+// result — all but the last, which moves instead (`sharing::clone_unless_last`), so a
+// single-result inner loop now clones nothing. Genuine ambiguity still copies one witness per
+// retained alternative; the result limits are the only defence and truncation is always
+// reported as an error rather than silently applied. Distinct from the syntax encoding's
 // relational-sharing, which has its own value universe to fix.
 
 /// Per-evaluation relational state.
@@ -409,18 +412,26 @@ where
             let function =
                 check_step(start, source_len, function).map_err(CombinatorError::Cursor)?;
             let split = function.remainder;
+            let function_extent = function.consumed;
+            // The function value and witness are consumed once per argument result, so each
+            // is cloned per result — except on the last, which nothing follows and can
+            // therefore move them.
+            let mut function_value = Some(function.value);
+            let mut function_witness = Some(function.witness);
             let arguments = self.arguments.parse_prefixes_within(source, split, ctx)?;
-            for argument in arguments {
+            let steps = arguments.len();
+            for (step, argument) in arguments.into_iter().enumerate() {
+                let last = step + 1 == steps;
                 let argument =
                     check_step(split, source_len, argument).map_err(CombinatorError::Cursor)?;
-                let consumed = join_steps(start, source_len, function.consumed, &argument)?;
+                let consumed = join_steps(start, source_len, function_extent, &argument)?;
                 // Each pair is a *new* result rather than one of the inputs relayed, so the
                 // cross product is charged: this is where an ambiguity blow-up is bounded.
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
-                    value: (function.value.clone())(argument.value),
+                    value: (clone_unless_last(&mut function_value, last))(argument.value),
                     witness: SeqWitness {
-                        first: function.witness.clone(),
+                        first: clone_unless_last(&mut function_witness, last),
                         second: argument.witness,
                         split,
                     },
@@ -469,16 +480,23 @@ where
         for head in heads {
             let head = check_step(start, source_len, head).map_err(CombinatorError::Cursor)?;
             let split = head.remainder;
+            let head_extent = head.consumed;
+            // The head witness feeds one continuation result each, so it is cloned per
+            // result — except on the last, which can move it.
+            let mut head_witness = Some(head.witness);
             let next = (self.continuation)(head.value);
-            for tail in next.parse_prefixes_within(source, split, ctx)? {
+            let tails = next.parse_prefixes_within(source, split, ctx)?;
+            let steps = tails.len();
+            for (step, tail) in tails.into_iter().enumerate() {
+                let last = step + 1 == steps;
                 let tail = check_step(split, source_len, tail).map_err(CombinatorError::Cursor)?;
-                let consumed = join_steps(start, source_len, head.consumed, &tail)?;
+                let consumed = join_steps(start, source_len, head_extent, &tail)?;
                 // As in `Ap`: each (head, tail) pair is a new result, so it is charged.
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
                     value: tail.value,
                     witness: SeqWitness {
-                        first: head.witness.clone(),
+                        first: clone_unless_last(&mut head_witness, last),
                         second: tail.witness,
                         split,
                     },

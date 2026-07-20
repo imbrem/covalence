@@ -121,6 +121,9 @@ disable-model-invocation: true
   - ACL2 definitions are installed in a private `RuntimeSession` as well as
     the legacy HOL value semantics, and `Acl2Session::operational_evidence`
     returns checked concrete `MayEval` traces in the common partial relation.
+    `operational_hol_evidence` transports the same concrete run through the
+    equational HOL adapter and retains recursive definition equations as
+    explicit theorem hypotheses.
     This is not universal adequacy. `admit_total` fixes the required authority
     order—inspection, termination replay, common-relation existence and
     uniqueness, then conservative totalization—and the ACL2 backend does not

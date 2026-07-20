@@ -682,7 +682,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+page.svelte",
-      "words": 510,
+      "words": 665,
       "updated": 0
     },
     {
@@ -700,7 +700,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/notes/[...path]/+page.svelte",
-      "words": 109,
+      "words": 110,
       "updated": 0
     },
     {

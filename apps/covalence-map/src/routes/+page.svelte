@@ -24,6 +24,12 @@
 		review: string;
 		format: string;
 	};
+	type HistorySnapshot = {
+		commit: string;
+		overview: MapNode | null;
+		reports: MapNode[];
+		updated: number;
+	};
 
 	let { data } = $props();
 	let allNodes = $state<MapNode[]>(data.map.nodes);
@@ -151,18 +157,35 @@
 			: [],
 	);
 	let visibleNotes = $derived(visibleNodes.filter((node) => node.kind === 'note'));
-	let visibleHistory = $derived(
-		[...visibleNotes].sort((a, b) => {
-			if (a.path === 'notes/history/README.md') return -1;
-			if (b.path === 'notes/history/README.md') return 1;
-			const [aSnapshot, aFile] = a.path.slice('notes/history/'.length).split('/');
-			const [bSnapshot, bFile] = b.path.slice('notes/history/'.length).split('/');
-			if (aSnapshot !== bSnapshot) return bSnapshot.localeCompare(aSnapshot);
-			if (aFile === 'README.md') return -1;
-			if (bFile === 'README.md') return 1;
-			return aFile.localeCompare(bFile);
-		}),
+	let historyIndex = $derived(
+		allNodes.find((node) => node.kind === 'note' && node.path === 'notes/history/README.md') ?? null,
 	);
+	let historySnapshots = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		const snapshots = new Map<string, HistorySnapshot>();
+		for (const node of allNodes) {
+			if (node.kind !== 'note' || !node.path.startsWith('notes/history/') || node === historyIndex) continue;
+			const [commit, file] = node.path.slice('notes/history/'.length).split('/');
+			if (!commit || !file) continue;
+			const snapshot = snapshots.get(commit) ?? { commit, overview: null, reports: [], updated: 0 };
+			if (file === 'README.md') snapshot.overview = node;
+			else snapshot.reports.push(node);
+			snapshot.updated = Math.max(snapshot.updated, node.updated);
+			snapshots.set(commit, snapshot);
+		}
+		return [...snapshots.values()]
+			.filter((snapshot) => {
+				if (!q) return true;
+				return [snapshot.overview, ...snapshot.reports]
+					.filter((node): node is MapNode => node !== null)
+					.some((node) => `${node.title} ${node.path} ${node.id}`.toLowerCase().includes(q));
+			})
+			.map((snapshot) => ({
+				...snapshot,
+				reports: snapshot.reports.sort((a, b) => a.title.localeCompare(b.title)),
+			}))
+			.sort((a, b) => b.commit.localeCompare(a.commit));
+	});
 	let visibleFiles = $derived(visibleNodes.filter((node) => node.kind === 'file'));
 	let missingCount = $derived(visibleNodes.filter((node) => node.status === 'missing').length);
 
@@ -189,12 +212,23 @@
 		taskId = next;
 		selectedId = next;
 	}
+
+	function noteHref(note: MapNode): string {
+		return `/notes/${note.path.slice('notes/'.length)}`;
+	}
+
+	function formatDate(timestamp: number): string {
+		return timestamp > 0
+			? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp * 1000)
+			: 'date unavailable';
+	}
 </script>
 
 <svelte:head><title>Covalence map</title></svelte:head>
 
 <main>
-		<details class="toolbar" open={mode === 'history' || mode === 'notes' || mode === 'source'}>
+	{#if mode !== 'history'}
+		<details class="toolbar" open={mode === 'notes' || mode === 'source'}>
 		<summary>
 			<span>{mode === 'tasks' ? 'task DAG' : mode}</span>
 			<em>{visibleNodes.length} nodes · {visibleEdges.length} edges</em>
@@ -250,23 +284,67 @@
 			<strong class:warning={missingCount > 0}>{missingCount}</strong> missing targets
 		</div>
 		</div>
-	</details>
+		</details>
+	{/if}
 
 	<div class="workspace">
-		{#if mode === 'history' || mode === 'notes' || mode === 'source'}
-			<section class="note-list" aria-label={mode === 'history' ? 'History' : mode === 'notes' ? 'Notes' : 'Source files'}>
-				{#if mode === 'history' && visibleHistory.length === 0}
-					<p class="empty">No historical snapshots match this search.</p>
-				{/if}
-				{#each mode === 'history' ? visibleHistory : mode === 'notes' ? visibleNotes : visibleFiles as note}
+		{#if mode === 'history'}
+			<section class="history-page" aria-label="History timeline">
+				<header class="history-header">
+					<div>
+						<p class="eyebrow">Repository record</p>
+						<h1>History</h1>
+						<p>Immutable, commit-addressed snapshots of what exists, what is missing, and what comes next.</p>
+					</div>
+					<div class="history-actions">
+						<input bind:value={query} aria-label="Search history" placeholder="search snapshots and reports…" spellcheck="false" />
+						{#if historyIndex}<a href={noteHref(historyIndex)}>history conventions →</a>{/if}
+					</div>
+				</header>
+
+				<div class="timeline">
+					{#if historySnapshots.length === 0}
+						<p class="empty">No historical snapshots match this search.</p>
+					{/if}
+					{#each historySnapshots as snapshot}
+						<article class="snapshot">
+							<div class="timeline-marker" aria-hidden="true"></div>
+							<div class="snapshot-card">
+								<div class="snapshot-heading">
+									<div>
+										<span class="commit">{snapshot.commit}</span>
+										<h2>{snapshot.overview?.title ?? `Snapshot ${snapshot.commit}`}</h2>
+									</div>
+									<time>{formatDate(snapshot.updated)}</time>
+								</div>
+								{#if snapshot.overview}
+									<a class="overview-link" href={noteHref(snapshot.overview)}>read snapshot overview →</a>
+								{/if}
+								<div class="report-grid">
+									{#each snapshot.reports as report}
+										<a href={noteHref(report)}>
+											<b>{noteStableIds.get(report.id)}</b>
+											<strong>{report.title}</strong>
+											<em>{report.words} words</em>
+										</a>
+									{/each}
+								</div>
+							</div>
+						</article>
+					{/each}
+				</div>
+			</section>
+		{:else if mode === 'notes' || mode === 'source'}
+			<section class="note-list" aria-label={mode === 'notes' ? 'Notes' : 'Source files'}>
+				{#each mode === 'notes' ? visibleNotes : visibleFiles as note}
 					<a
 						title={note.title}
-						href={mode === 'notes' || mode === 'history'
+						href={mode === 'notes'
 							? `/notes/${note.path.slice('notes/'.length)}`
 							: `/source?path=${encodeURIComponent(note.path)}`}
 					>
 						<strong>
-							{#if mode === 'notes' || mode === 'history'}<b>{noteStableIds.get(note.id)}</b>{/if}
+							{#if mode === 'notes'}<b>{noteStableIds.get(note.id)}</b>{/if}
 							{note.title}
 						</strong>
 						<span>{note.path}</span>
@@ -417,6 +495,79 @@
 		position: absolute;
 		inset: 0;
 	}
+	.history-page {
+		height: 100%;
+		overflow: auto;
+		padding: 6rem max(1.25rem, calc((100vw - 76rem) / 2)) 5rem;
+		background:
+			radial-gradient(circle at 85% 5%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 28rem),
+			var(--bg);
+	}
+	.history-header {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 2rem;
+		margin-bottom: 3rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.history-header h1 { margin: 0.15rem 0 0.5rem; font-size: clamp(2rem, 5vw, 4.5rem); letter-spacing: -0.06em; }
+	.history-header p { max-width: 48rem; margin: 0; color: var(--muted); line-height: 1.6; }
+	.eyebrow { color: var(--accent) !important; font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; }
+	.history-actions { display: grid; flex: 0 1 27rem; gap: 0.65rem; }
+	.history-actions input { width: 100%; min-width: 0; }
+	.history-actions a { color: var(--accent); font-size: 0.75rem; text-align: right; text-decoration: none; }
+	.timeline { position: relative; padding-left: 2.4rem; }
+	.timeline::before {
+		content: '';
+		position: absolute;
+		top: 0.8rem;
+		bottom: 0;
+		left: 0.45rem;
+		width: 1px;
+		background: linear-gradient(var(--accent), var(--border) 75%, transparent);
+	}
+	.snapshot { position: relative; margin-bottom: 2rem; }
+	.timeline-marker {
+		position: absolute;
+		top: 0.65rem;
+		left: -2.38rem;
+		width: 0.9rem;
+		height: 0.9rem;
+		border: 3px solid var(--bg);
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	.snapshot-card {
+		padding: 1.3rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--surface) 94%, transparent);
+		box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+	}
+	.snapshot-heading { display: flex; justify-content: space-between; gap: 1rem; }
+	.snapshot-heading h2 { margin: 0.35rem 0 0.8rem; font-size: 1.15rem; }
+	.snapshot-heading time { color: var(--muted); font-size: 0.7rem; white-space: nowrap; }
+	.commit { color: var(--accent); font-size: 0.75rem; }
+	.overview-link { display: inline-block; margin-bottom: 1rem; color: var(--accent); font-size: 0.8rem; text-decoration: none; }
+	.report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem; }
+	.report-grid a {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.2rem 0.55rem;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: inherit;
+		background: var(--bg);
+		text-decoration: none;
+	}
+	.report-grid a:hover { border-color: var(--accent); }
+	.report-grid b { grid-row: 1 / span 2; color: var(--accent); font-size: 0.72rem; }
+	.report-grid strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; }
+	.report-grid em { color: var(--muted); font-size: 0.68rem; font-style: normal; }
 	.note-list {
 		height: 100%;
 		min-height: 0;
@@ -505,5 +656,9 @@
 		.toolbar { top: 3rem; }
 		aside { top: auto; max-height: 55vh; }
 		input { min-width: 12rem; flex: 1; }
+		.history-header { align-items: stretch; flex-direction: column; }
+		.history-actions { flex-basis: auto; }
+		.history-actions a { text-align: left; }
+		.snapshot-heading { flex-direction: column; }
 	}
 </style>

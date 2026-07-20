@@ -56,12 +56,13 @@
 		return `<a href="${sourceHref(match[1], match[2])}"><code>${label}</code></a>`;
 	};
 	let rendered = $derived(markdown.render(data.content));
+	let isHistory = $derived(data.path.startsWith('notes/history/'));
 </script>
 
 <svelte:head><title>{data.title} · Covalence map</title></svelte:head>
 
 <main>
-	<a href="/?view=notes">← notes</a>
+	<a href={isHistory ? '/?view=history' : '/?view=notes'}>← {isHistory ? 'history' : 'notes'}</a>
 	<p class="path">{data.id ? `${data.id} · ` : ''}{data.path}</p>
 	<article>
 		{@html rendered}

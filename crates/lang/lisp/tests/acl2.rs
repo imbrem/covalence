@@ -20,7 +20,7 @@ use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_kernel_lisp::{CoreExpr, Datum};
 use covalence_lisp::acl2::{
     Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution,
-    replay_acl2_append_existence,
+    replay_acl2_append_existence, replay_acl2_append_graph_adequacy,
 };
 use covalence_lisp::carrier::Acl2Carrier;
 use covalence_lisp::frontend::CoreAtom;
@@ -102,6 +102,14 @@ fn relational_append_exists_for_every_acl2_object() {
     let s = session();
     let existence = replay_acl2_append_existence(s.induction_env()).unwrap();
     assert!(existence.theorem.hyps().is_empty());
+}
+
+#[test]
+fn reified_append_evaluation_exists_and_is_unique() {
+    let s = session();
+    let adequacy = replay_acl2_append_graph_adequacy(s.induction_env()).unwrap();
+    assert!(adequacy.existence.theorem.hyps().is_empty());
+    assert!(adequacy.uniqueness.theorem.hyps().is_empty());
 }
 
 #[test]

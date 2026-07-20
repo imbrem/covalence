@@ -118,9 +118,14 @@ use covalence_init::init::acl2::simplify::{
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::eq::{beta_expand, beta_reduce};
 use covalence_init::init::ext::{TermExt, ThmExt};
+use covalence_init::init::inductive::data::Inductive;
+use covalence_init::init::inductive::determinacy::graph_det;
+use covalence_init::init::inductive::existence::graph_total;
+use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
     AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
-    EvaluationExistence, MayEvalReplay, MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
+    EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
+    MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -531,6 +536,109 @@ pub fn replay_acl2_append_existence(
         ));
     }
     Ok(EvaluationExistence { theorem })
+}
+
+/// The reified, functional APPEND evaluation graph at a fixed right operand.
+///
+/// Unlike [`LispRel::reduces_prop`], this graph separates the recursive input
+/// from its result. Its three checked clauses are the ACL2 carrier cases:
+///
+/// ```text
+/// atom b  ↦ y
+/// nil     ↦ y
+/// cons h t ↦ cons h (eval t)
+/// ```
+///
+/// Keeping this role separation is essential: the current first-order
+/// `Reduces` relation represents configurations and values in the same HOL
+/// carrier, so reflexivity prevents an unrestricted endpoint-uniqueness
+/// theorem.
+fn acl2_append_graph_steps(environment: &Acl2Env, y: &Term) -> Result<[Term; 3], HolError> {
+    let tm = &*environment.tm;
+    let carrier = tm.th.ty.clone();
+    let atom_step = Term::abs(acl2_payload(), subst::close(y, "__append_graph_payload"));
+    let nil_step = y.clone();
+    let head = Term::free("__append_graph_head", carrier.clone());
+    let tail = Term::free("__append_graph_tail", carrier.clone());
+    let head_image = Term::free("__append_graph_head_image", carrier.clone());
+    let tail_image = Term::free("__append_graph_tail_image", carrier.clone());
+    let cons_result = tm
+        .th
+        .cons
+        .clone()
+        .apply(head.clone())
+        .map_err(bridge_kernel_err)?
+        .apply(tail_image.clone())
+        .map_err(bridge_kernel_err)?;
+    let cons_step = [
+        ("__append_graph_tail_image", tail_image),
+        ("__append_graph_head_image", head_image),
+        ("__append_graph_tail", tail),
+        ("__append_graph_head", head),
+    ]
+    .into_iter()
+    .fold(cons_result, |body, (name, _)| {
+        Term::abs(carrier.clone(), subst::close(&body, name))
+    });
+    Ok([atom_step, nil_step, cons_step])
+}
+
+/// `AppendEval x y value`, a reified big-step graph with an explicit result.
+pub fn acl2_append_eval_prop(
+    environment: &Acl2Env,
+    x: Term,
+    y: Term,
+    value: Term,
+) -> Result<Term, HolError> {
+    let steps = acl2_append_graph_steps(environment, &y)?;
+    let theory = environment.tm.th.cs.inductive();
+    graph::graph(theory.sig(), &steps, &environment.tm.th.ty, x, value).map_err(bridge_kernel_err)
+}
+
+/// Prove existence and uniqueness for the reified ACL2 APPEND evaluation
+/// graph.
+///
+/// The two closed theorems have the semantic content
+///
+/// ```text
+/// ∀y x. ∃value. AppendEval x y value
+/// ∀y x a b. AppendEval x y a → AppendEval x y b → a = b
+/// ```
+///
+/// They come directly from the generic inductive recursion-graph totality and
+/// determinacy proofs. No host evaluator, parser, or syntactic value test has
+/// theorem authority.
+pub fn replay_acl2_append_graph_adequacy(
+    environment: &Acl2Env,
+) -> Result<ExistenceUniqueness<Thm>, HolError> {
+    // Fail closed unless this is the same world generation that contains the
+    // conservatively admitted APPEND definition used by the execution bridge.
+    environment
+        .user("APPEND")
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let carrier = environment.tm.th.ty.clone();
+    let y = Term::free("__append_graph_y", carrier.clone());
+    let steps = acl2_append_graph_steps(environment, &y)?;
+    let theory = environment.tm.th.cs.inductive();
+    let existence = graph_total(&theory, &steps, &carrier)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_graph_y", carrier.clone())
+        .map_err(bridge_kernel_err)?;
+    let uniqueness = graph_det(&theory, &steps, &carrier)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_graph_y", carrier)
+        .map_err(bridge_kernel_err)?;
+    if !existence.hyps().is_empty() || !uniqueness.hyps().is_empty() {
+        return Err(HolError::Kernel(
+            "ACL2 APPEND graph adequacy unexpectedly retained hypotheses".into(),
+        ));
+    }
+    Ok(ExistenceUniqueness {
+        existence: EvaluationExistence { theorem: existence },
+        uniqueness: EvaluationUniqueness {
+            theorem: uniqueness,
+        },
+    })
 }
 
 impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {

@@ -283,12 +283,15 @@ pointwise results only when their initial configurations match. Host execution
 and syntactic equality cannot introduce a theorem: malformed evidence is
 rejected, while successful equality is kernel reflexivity.
 
-`APPEND` now also has a closed universal existence theorem:
+`APPEND` now also has a closed universal reachability theorem:
 `∀x y. Reduces (rel-append x y) (ACL2-APPEND-model x y)`. Its checked proof
 combines ACL2-carrier induction, induction over relational reductions, and the
 conservatively admitted APPEND equation; it performs no host execution.
 
-The remaining severe `lisp.acl2.admission-layer` obligation is to generalize
-that construction to admitted definitions, prove uniqueness of any terminal
-relational result, and totalize only from those theorems. The pointwise bridge
-remains the executable corruption gate for the universal proof.
+This is not yet universal `MayEval` existence: the current HOL relation uses
+the ACL2 object carrier for configurations and values, while terminality is a
+host-syntactic check. The remaining severe `lisp.acl2.admission-layer`
+obligation is to connect the checked definition graph to a reified common Lisp
+configuration/value relation, generalize it to admitted definitions, and
+totalize only from honest existence and uniqueness theorems. The pointwise
+bridge remains the executable corruption gate.

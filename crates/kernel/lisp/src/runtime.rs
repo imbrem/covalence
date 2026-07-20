@@ -540,6 +540,16 @@ pub trait LispRuntime {
     ) -> Self::Error;
 }
 
+/// Snapshot a runtime before execution so an allocation-sensitive trace can be
+/// replayed from the same observable resource state.
+///
+/// Direct immutable runtimes may return `clone()`. Opaque-resource runtimes
+/// must isolate subsequent table mutations while preserving the identity of
+/// handles that already exist in the initial configuration.
+pub trait LispRuntimeSnapshot: LispRuntime + Sized {
+    fn replay_snapshot(&self) -> Self;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

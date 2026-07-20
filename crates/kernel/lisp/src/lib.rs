@@ -39,9 +39,10 @@ pub use covalence_kernel_data as data;
 pub use covalence_sexpr_api as sexpr;
 
 pub use admission::{
-    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, EvaluationExistence,
-    EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
-    SourcedDefinition, TerminationCertificate, Totalization,
+    AdmissionPipelineError, AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition,
+    EvaluationExistence, EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness,
+    RecursiveCall, SourcedDefinition, TerminationCertificate, TotalAdmission, Totalization,
+    admit_total,
 };
 pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{
@@ -49,8 +50,9 @@ pub use arena::{
     ArenaRuntime, ArenaRuntimeError, ArenaValue, ArenaValues,
 };
 pub use effect::{
-    EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectRunError, EffectState,
-    EffectSuspension, EffectSyntax, HandledEffect, HandledRun, handle_to_completion,
+    EffectHandler, EffectReplay, EffectReplayError, EffectRequest, EffectResume, EffectRunError,
+    EffectState, EffectSuspension, EffectSyntax, HandledEffect, HandledRun, HandledRunCheckError,
+    ReplayedHandledRun, check_handled_run, handle_to_completion, replay_handled_effects,
 };
 pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
@@ -68,9 +70,9 @@ pub use relation::{
 pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispRuntime, LispValue, PrimitiveOutcome, PrimitiveSemantics, RecursiveAllocation,
-    RuntimeBinding, RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
-    RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
+    LispRuntime, LispRuntimeSnapshot, LispValue, PrimitiveOutcome, PrimitiveSemantics,
+    RecursiveAllocation, RuntimeBinding, RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer,
+    RuntimeValueParameter, RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
     StackClosure, StackClosureRecord, StackConfiguration, StackContinuation, StackInstructionLayer,

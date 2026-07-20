@@ -23,7 +23,7 @@ use covalence_lisp::acl2::{
     replay_acl2_append_existence,
 };
 use covalence_lisp::carrier::Acl2Carrier;
-use covalence_lisp::frontend::{CoreAtom, Frontend, HostSession, SurfaceDialect};
+use covalence_lisp::frontend::CoreAtom;
 use covalence_lisp::reader::read_one;
 use covalence_sexp::AbstractSExpr;
 
@@ -132,12 +132,9 @@ fn admitted_definition_reuses_the_shared_partial_core() {
     assert!(definition.core.rest.is_none());
     assert!(matches!(&definition.core.body, CoreExpr::If { .. }));
 
-    let mut partial = HostSession::new(SurfaceDialect::Acl2Core, 256);
-    partial.define_core(definition.core.clone()).unwrap();
-    let expression = Frontend::new(SurfaceDialect::Acl2Core)
-        .lower(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
+    let evaluation = s
+        .operational_evidence(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
         .unwrap();
-    let evaluation = partial.evaluate_core_evidence(&expression).unwrap();
     assert_eq!(
         evaluation.value.as_datum(),
         Some(Datum::list([
@@ -159,11 +156,10 @@ fn admitted_definition_reuses_the_shared_partial_core() {
     let app = s
         .definition("app-core")
         .expect("recursive ACL2 definition retains its normalized shared core");
-    partial.define_core(app.core.clone()).unwrap();
-    let expression = Frontend::new(SurfaceDialect::Acl2Core)
-        .lower(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
+    assert!(matches!(&app.core.body, CoreExpr::If { .. }));
+    let evaluation = s
+        .operational_evidence(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
         .unwrap();
-    let evaluation = partial.evaluate_core_evidence(&expression).unwrap();
     assert_eq!(
         evaluation.value.as_datum(),
         Some(Datum::list([
@@ -176,6 +172,13 @@ fn admitted_definition_reuses_the_shared_partial_core() {
     assert!(
         evaluation.trace.steps() > 0,
         "the normalized recursive core must retain checked execution evidence"
+    );
+
+    s.reset();
+    assert!(
+        s.operational_evidence(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
+            .is_err(),
+        "reset must clear the shared operational definition generation too"
     );
 }
 

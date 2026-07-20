@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 275,
+      "words": 292,
       "updated": 0
     },
     {
@@ -9340,7 +9340,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 280,
+      "words": 416,
       "updated": 0
     },
     {
@@ -9358,7 +9358,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 456,
+      "words": 489,
       "updated": 0
     },
     {
@@ -9367,7 +9367,7 @@
       "title": "effect.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/effect.rs",
-      "words": 178,
+      "words": 453,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 2272,
+      "words": 2284,
       "updated": 0
     },
     {
@@ -9394,7 +9394,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 92,
+      "words": 94,
       "updated": 0
     },
     {
@@ -9412,7 +9412,7 @@
       "title": "resource.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/resource.rs",
-      "words": 239,
+      "words": 278,
       "updated": 0
     },
     {
@@ -9421,7 +9421,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 694,
+      "words": 704,
       "updated": 0
     },
     {
@@ -10798,7 +10798,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1834,
+      "words": 1869,
       "updated": 0
     },
     {
@@ -10843,7 +10843,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1636,
+      "words": 1677,
       "updated": 0
     },
     {
@@ -10897,7 +10897,7 @@
       "title": "scheme_effect.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/scheme_effect.rs",
-      "words": 236,
+      "words": 450,
       "updated": 0
     },
     {
@@ -10933,7 +10933,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 560,
+      "words": 564,
       "updated": 0
     },
     {

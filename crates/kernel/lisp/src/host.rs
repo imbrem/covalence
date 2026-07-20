@@ -12,8 +12,9 @@ use std::sync::{Arc, OnceLock};
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispRuntime, LispValue, PrimitiveOutcome, PrimitiveSemantics, RecursiveAllocation,
-    RuntimeBinding, RuntimeDatumError, RuntimeValueLayer, RuntimeValueView, inject_datum,
+    LispRuntime, LispRuntimeSnapshot, LispValue, PrimitiveOutcome, PrimitiveSemantics,
+    RecursiveAllocation, RuntimeBinding, RuntimeDatumError, RuntimeValueLayer, RuntimeValueView,
+    inject_datum,
 };
 use crate::syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispExpression, LispSyntax, Parameter,
@@ -514,6 +515,17 @@ where
 
     fn environment_error(&self, error: Infallible) -> Self::Error {
         match error {}
+    }
+}
+
+impl<S, A, P> LispRuntimeSnapshot for HostRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone + PartialEq,
+    P: Clone + PartialEq,
+{
+    fn replay_snapshot(&self) -> Self {
+        self.clone()
     }
 }
 

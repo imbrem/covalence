@@ -85,6 +85,11 @@ their raw IEEE payload, including signed zero and NaN payloads. Concrete
 execution remains the narrower checked `nop`, `i32.const; drop`, and
 `i32.const; i32.const; i32.add; drop` family.
 
+The `const; drop` execution driver is scalar-generic: it replays the exact
+value-sort premise and normative drop step for I32, I64, F32, and F64,
+retaining raw IEEE payloads (including signed zero and NaNs). It is not a
+host-level evaluator shortcut.
+
 `v128` is a neutral value type and is live through the exact polymorphic
 `drop` and explicit `select` rules. Vector instruction constructors are not
 yet exposed: the current premise-closed WebAssembly slice intentionally omits

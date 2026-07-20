@@ -661,7 +661,7 @@ impl NativeWasmSemantics {
         let (clauses, metas, coverage) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
-            if clauses.len() < 13_974 || clauses.len() != report.total_clauses {
+            if clauses.len() < 15_834 || clauses.len() != report.total_clauses {
                 return Err(facade_error(format!(
                     "combined-set coverage regressed: {} clauses",
                     clauses.len()
@@ -970,29 +970,6 @@ impl WasmExecution for NativeWasmSemantics {
             if from.state != MachineState::Empty {
                 return Err(facade_error("unsupported machine state"));
             }
-            if matches!(
-                from.program.instructions(),
-                [Instruction::Const(NumericValue::I32(5)), Instruction::Drop,]
-            ) {
-                let state = encode_state(from.state)?;
-                let witness = normative_witnesses(env, full, &state)?
-                    .into_iter()
-                    .find(|witness| witness.id == "mvp.const-drop")
-                    .ok_or_else(|| facade_error("missing checked mvp.const-drop witness"))?;
-                ensure_native_endpoints(&from, &witness.from, &witness.to)?;
-                return CheckedExecutionFact::new(
-                    RelationIdentity::MultiStep,
-                    ExecutionStatement::MultiStep {
-                        from,
-                        to: Configuration {
-                            state: MachineState::Empty,
-                            program: Program::empty(),
-                        },
-                        steps: witness.n_steps,
-                    },
-                    witness.execution,
-                );
-            }
             let trace = TraceEnv::for_slice(env)?;
             let (small, to, steps) = match from.program.instructions() {
                 [Instruction::Nop] => {
@@ -1001,6 +978,30 @@ impl WasmExecution for NativeWasmSemantics {
                     let before = encode_program(&from.program)?;
                     let after = encode_program(&Program::empty())?;
                     let step = trace.lift_pure(&state, &before, &after, nop)?;
+                    (
+                        trace.chain(&[step])?,
+                        Configuration {
+                            state: from.state,
+                            program: Program::empty(),
+                        },
+                        1,
+                    )
+                }
+                [Instruction::Const(value), Instruction::Drop] => {
+                    let state = encode_state(from.state)?;
+                    let value = encode_instruction(&Instruction::Const(*value))?;
+                    let drop = trace
+                        .rule_index("Step_pure", "drop")
+                        .ok_or_else(|| facade_error("execution slice has no Step_pure/drop"))?;
+                    let sorted = trace.prove_sort_val(&value)?;
+                    let pure = trace.derive(
+                        drop,
+                        std::slice::from_ref(&value),
+                        vec![covalence_init::metalogic::Premise::Derivation(sorted)],
+                    )?;
+                    let before = encode_program(&from.program)?;
+                    let after = encode_program(&Program::empty())?;
+                    let step = trace.lift_pure(&state, &before, &after, pure)?;
                     (
                         trace.chain(&[step])?,
                         Configuration {
@@ -1696,14 +1697,14 @@ mod tests {
     #[test]
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
-        assert_eq!(semantics.total_clause_count(), 13_974);
+        assert_eq!(semantics.total_clause_count(), 15_834);
         assert_eq!(
             semantics.coverage(),
             SemanticsCoverage {
-                combined_clauses: 13_974,
-                exact_builtin_clauses: 10_498,
-                exact_builtin_operations: 85,
-                remaining_builtin_operations: 17,
+                combined_clauses: 15_834,
+                exact_builtin_clauses: 12_358,
+                exact_builtin_operations: 86,
+                remaining_builtin_operations: 16,
                 full_opaque_premises: 7,
                 checked_slice_opaque_premises: 0,
             }
@@ -1756,6 +1757,29 @@ mod tests {
             ExecutionStatement::MultiStep { steps: 1, .. }
         ));
         assert!(const_drop_execution.theorem().hyps().is_empty());
+        for value in [
+            NumericValue::I64(u64::MAX),
+            NumericValue::F32(0x8000_0000),
+            NumericValue::F64(0x7ff8_0000_0000_0042),
+        ] {
+            let from = Configuration {
+                state: MachineState::Empty,
+                program: Program::new([Instruction::Const(value), Instruction::Drop]),
+            };
+            let execution = semantics.execute(&from).unwrap();
+            assert_eq!(
+                execution.statement(),
+                &ExecutionStatement::MultiStep {
+                    from,
+                    to: Configuration {
+                        state: MachineState::Empty,
+                        program: Program::empty(),
+                    },
+                    steps: 1,
+                }
+            );
+            assert!(execution.theorem().hyps().is_empty());
+        }
 
         let from = Configuration {
             state: MachineState::Empty,

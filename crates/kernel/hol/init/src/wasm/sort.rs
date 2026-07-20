@@ -148,7 +148,7 @@ pub trait RefinementLowerer {
 /// `|X*| < 2^32` premise becomes a predicate over the resolved `list X`
 /// carrier. Multi-case, field, existentially bound, and non-`If` refinements
 /// are refused.
-// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the 3 instr refinements (VSHUFFLE length, VNARROW width, VEXTRACT_LANE signedness) once recursive Church instruction carriers have checked constructors/observation; every rigid indexed operator family is exact.
+// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the 3 instr refinements (VSHUFFLE length, VNARROW width, VEXTRACT_LANE signedness) after dependent tuple families such as `CONST numtype num_(numtype)` have an exact sigma carrier and the self-recursive instr carrier has checked U constructors/observation; every rigid indexed operator family is exact.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SingletonValueRefinementLowerer;
 
@@ -4796,13 +4796,24 @@ mod tests {
             }
         ));
 
-        let error = RefinementAwareTypeResolver::new(&ctx, &families)
+        let resolved = RefinementAwareTypeResolver::new(&ctx, &families)
             .resolve_type(&SpecTecTyp::Var {
                 x: "instr".into(),
                 as1: vec![],
             })
-            .unwrap_err();
-        assert!(format!("{error:?}").contains("parametric field/case not modelled yet"));
+            .unwrap();
+        assert!(matches!(
+            resolved.sort.invariant(),
+            SortInvariant::Unresolved
+        ));
+        assert!(
+            resolved
+                .sort
+                .carrier()
+                .free_tvars()
+                .iter()
+                .any(|name| name.as_str() == "cov$self")
+        );
     }
 
     #[test]

@@ -342,23 +342,23 @@ mod tests {
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 13974,
+                report.total_clauses >= 15834,
                 "combined clauses = {}",
                 report.total_clauses
             );
             // The exact-host-builtin leg is live (Waves F2/Y/Z/AA/AB/AC/AE):
-            // defining clauses for 85 operations, incl. first clauses for 74
+            // defining clauses for 86 operations, incl. first clauses for 75
             // of the 91 zero-clause tags (integer operations, structural
             // rational rounding, typed byte front doors, structural IEEE
             // representation/sign operations, and inverse sequence graphs).
             assert!(
-                report.n_builtin_clauses >= 10498,
+                report.n_builtin_clauses >= 12358,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 85, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 86, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 74,
+                report.builtins.zero_clause_ops, 75,
                 "zero-clause builtin tags filled"
             );
             assert!(

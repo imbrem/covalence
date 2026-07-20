@@ -54,9 +54,11 @@
 //! every other refined closure unresolved. See the generated open-work index.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::LazyLock;
 
 use covalence_core::{Error, Result, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::EvalTypeDef as TypeDef;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_spectec::ast::{
     SpecTecArg, SpecTecDef, SpecTecDefTyp, SpecTecExp, SpecTecInst, SpecTecIter, SpecTecNumTyp,
@@ -67,7 +69,8 @@ use super::type_family::{TypeFamilies, TypeFamilySource};
 use crate::init::eq::beta_nf;
 use crate::init::ext::TermExt;
 use crate::init::inductive::{
-    ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var,
+    ChurchBackend, CoprodBackend, CoprodVariantTheory, VCtor, Variant, VariantBackend,
+    VariantTheory, VariantTheoryBackend, self_ty_var,
 };
 use crate::init::{list, option, prod};
 
@@ -131,6 +134,10 @@ struct Scope {
     self_name: Option<String>,
     /// Type-parameter name → resolved HOL type.
     tenv: BTreeMap<String, Type>,
+    /// Declared source type of expression binders in the current case.
+    /// Used only for exact indexed-family dispatch; it does not alter HOL
+    /// payload carriers.
+    venv: BTreeMap<String, String>,
     /// Result carriers and normalized structural aliases of a simultaneous
     /// Church encoding. Unlike the single recursive `cov$self`, one distinct
     /// variable per generative SCC member preserves every sibling edge; aliases
@@ -142,12 +149,68 @@ struct Scope {
     mutual_members: BTreeSet<String>,
 }
 
+/// Exact carrier API for a finite dependent tuple `Σ x:I. P(x)`.
+///
+/// Each inhabitable source index is one coproduct branch and retains its exact
+/// payload carrier. Missing branches denote genuinely uninhabited fibers.
+#[derive(Debug, Clone)]
+pub struct FiniteDependentSigma {
+    index_type: String,
+    theory: CoprodVariantTheory,
+}
+
+impl FiniteDependentSigma {
+    pub fn index_type(&self) -> &str {
+        &self.index_type
+    }
+
+    pub fn carrier(&self) -> &Type {
+        self.theory.carrier()
+    }
+
+    pub fn branch_count(&self) -> usize {
+        self.theory.constructor_count()
+    }
+
+    pub fn branch_name(&self, branch: usize) -> Result<&str> {
+        self.theory.constructor_name(branch)
+    }
+
+    pub fn payload_type(&self, branch: usize) -> Result<&Type> {
+        self.theory.payload_type(branch)
+    }
+
+    pub fn constructor(&self, branch: usize) -> Result<&covalence_core::Term> {
+        self.theory.constructor(branch)
+    }
+
+    pub fn injective(
+        &self,
+        branch: usize,
+        left: &covalence_core::Term,
+        right: &covalence_core::Term,
+    ) -> Result<Thm> {
+        self.theory.injective(branch, left, right)
+    }
+
+    pub fn distinct(
+        &self,
+        left_branch: usize,
+        right_branch: usize,
+        left: &covalence_core::Term,
+        right: &covalence_core::Term,
+    ) -> Result<Thm> {
+        self.theory.distinct(left_branch, right_branch, left, right)
+    }
+}
+
 impl Scope {
     /// Same parameter bindings, resolving variant `name`'s payloads (self-mapping).
     fn under_variant(&self, name: &str) -> Scope {
         Scope {
             self_name: Some(name.to_owned()),
             tenv: self.tenv.clone(),
+            venv: self.venv.clone(),
             mutual: self.mutual.clone(),
             mutual_members: self.mutual_members.clone(),
         }
@@ -157,6 +220,7 @@ impl Scope {
         Scope {
             self_name: None,
             tenv: self.tenv.clone(),
+            venv: self.venv.clone(),
             mutual: self.mutual.clone(),
             mutual_members: self.mutual_members.clone(),
         }
@@ -217,11 +281,183 @@ fn resolve_tuple<'a>(
     match ets {
         [] => Ok(Type::unit()),
         [SpecTecTypBind::Bind { typ, .. }] => resolve_typ_d(typ, ctx, visited, scope),
-        [SpecTecTypBind::Bind { typ, .. }, rest @ ..] => {
+        [SpecTecTypBind::Bind { id, typ }, rest @ ..] => {
+            if id != "_"
+                && let SpecTecTyp::Var { x: index_name, as1 } = typ
+                && as1.is_empty()
+                && let Some(sigma) =
+                    resolve_finite_dependent_tuple(id, index_name, rest, ctx, visited, scope)?
+            {
+                return Ok(sigma.carrier().clone());
+            }
             let head = resolve_typ_d(typ, ctx, visited, scope)?;
-            let tail = resolve_tuple(rest, ctx, visited, scope)?;
+            let mut tail_scope = scope.clone();
+            if id != "_"
+                && let SpecTecTyp::Var { x: declared, as1 } = typ
+                && as1.is_empty()
+            {
+                tail_scope.venv.insert(id.clone(), declared.clone());
+            }
+            let tail = resolve_tuple(rest, ctx, visited, &tail_scope)?;
             Ok(prod::prod(head, tail))
         }
+    }
+}
+
+/// Render `(x : I, tail(x))`, for a finite nullary variant index `I`, as the
+/// exact indexed coproduct `Σ x:I. tail(x)`.
+///
+/// The source index is retained by the coproduct branch, not duplicated in the
+/// branch payload. This is therefore an isomorphic carrier for nullary finite
+/// indices, rather than the unrelated `I × join(tail)` approximation.
+fn resolve_finite_dependent_tuple<'a>(
+    binder: &str,
+    index_name: &str,
+    rest: &'a [SpecTecTypBind],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+) -> Result<Option<FiniteDependentSigma>> {
+    let Some(SpecTecDef::Typ { ps, insts, .. }) = ctx.lookup(index_name) else {
+        return Ok(None);
+    };
+    if !ps.is_empty() {
+        return Ok(None);
+    }
+    let cases = insts
+        .iter()
+        .filter_map(|SpecTecInst::Inst { dt, .. }| match dt {
+            SpecTecDefTyp::Variant { tcs } => Some(tcs.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+    if cases.is_empty() {
+        return Ok(None);
+    }
+
+    let mut constructors = Vec::with_capacity(cases.len());
+    let mut any_dependent = false;
+    for case in cases {
+        let SpecTecTypCase::Field { op, t, qs, .. } = case;
+        if !qs.is_empty() || !matches!(t, SpecTecTyp::Tup { ets } if ets.is_empty()) {
+            return Ok(None);
+        }
+        let key = super::encode::mixop_key(op);
+        let replacement = SpecTecExp::Case {
+            op: op.clone(),
+            e1: Box::new(SpecTecExp::Tup { es: vec![] }),
+        };
+        let mut changed = false;
+        let payload = match resolve_tuple_at_index(
+            rest,
+            binder,
+            &replacement,
+            ctx,
+            visited,
+            scope,
+            &mut changed,
+        ) {
+            Ok(payload) => payload,
+            Err(Error::ConnectiveRule(message))
+                if message.ends_with("no instance matches the arguments") =>
+            {
+                // This index has no inhabitant of the dependent payload, so
+                // it contributes no constructor to the sigma.
+                any_dependent |= changed;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        any_dependent |= changed;
+        constructors.push(VCtor::new(key, payload));
+    }
+    if !any_dependent {
+        return Ok(None);
+    }
+    let theory = CoprodBackend.theory(&Variant::new(constructors))?;
+    Ok(Some(FiniteDependentSigma {
+        index_type: index_name.to_owned(),
+        theory,
+    }))
+}
+
+fn resolve_tuple_at_index<'a>(
+    fields: &'a [SpecTecTypBind],
+    binder: &str,
+    replacement: &SpecTecExp,
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+    changed: &mut bool,
+) -> Result<Type> {
+    match fields {
+        [] => Ok(Type::unit()),
+        [SpecTecTypBind::Bind { typ, .. }] => {
+            resolve_typ_at_index(typ, binder, replacement, ctx, visited, scope, changed)
+        }
+        [SpecTecTypBind::Bind { typ, .. }, rest @ ..] => {
+            let head =
+                resolve_typ_at_index(typ, binder, replacement, ctx, visited, scope, changed)?;
+            let tail =
+                resolve_tuple_at_index(rest, binder, replacement, ctx, visited, scope, changed)?;
+            Ok(prod::prod(head, tail))
+        }
+    }
+}
+
+fn resolve_typ_at_index<'a>(
+    typ: &'a SpecTecTyp,
+    binder: &str,
+    replacement: &SpecTecExp,
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+    changed: &mut bool,
+) -> Result<Type> {
+    match typ {
+        SpecTecTyp::Var { x, as1 } => {
+            let mut specialized_here = false;
+            let specialized = as1
+                .iter()
+                .map(|arg| match arg {
+                    SpecTecArg::Exp {
+                        e: SpecTecExp::Var { id },
+                    } if id == binder => {
+                        *changed = true;
+                        specialized_here = true;
+                        SpecTecArg::Exp {
+                            e: replacement.clone(),
+                        }
+                    }
+                    _ => arg.clone(),
+                })
+                .collect::<Vec<_>>();
+            if !specialized_here {
+                return resolve_var(x, as1, ctx, visited, scope);
+            }
+            let Some(SpecTecDef::Typ { insts, .. }) = ctx.lookup(x) else {
+                return Err(syntax_err(format!("`{x}` is not an indexed type family")));
+            };
+            dispatch_instances(x, insts, &specialized, ctx, visited, scope)
+        }
+        SpecTecTyp::Iter { t1, it } => {
+            let mut ty =
+                resolve_typ_at_index(t1, binder, replacement, ctx, visited, scope, changed)?;
+            for step in it {
+                ty = match step {
+                    SpecTecIter::Opt => option::option(ty),
+                    SpecTecIter::List | SpecTecIter::List1 | SpecTecIter::ListN { .. } => {
+                        list::list(ty)
+                    }
+                };
+            }
+            Ok(ty)
+        }
+        SpecTecTyp::Tup { ets } => {
+            resolve_tuple_at_index(ets, binder, replacement, ctx, visited, scope, changed)
+        }
+        _ => resolve_typ_d(typ, ctx, visited, scope),
     }
 }
 
@@ -304,6 +540,7 @@ fn resolve_parametric<'a>(
     let base = Scope {
         self_name: None,
         tenv,
+        venv: scope.venv.clone(),
         mutual: scope.mutual.clone(),
         mutual_members: scope.mutual_members.clone(),
     };
@@ -353,7 +590,7 @@ impl PatMatch {
 fn dispatch_instances<'a>(
     name: &'a str,
     insts: &'a [SpecTecInst],
-    as1: &'a [SpecTecArg],
+    as1: &[SpecTecArg],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
     base: &Scope,
@@ -362,7 +599,7 @@ fn dispatch_instances<'a>(
     let mut open = Vec::new(); // Yes ∪ Maybe, in instance order
     for inst in insts {
         let SpecTecInst::Inst { ps: ips, as_, .. } = inst;
-        match match_args(as_, as1, ips, ctx) {
+        match match_args(as_, as1, ips, ctx, &base.venv) {
             PatMatch::Yes => {
                 yes.push(inst);
                 open.push(inst);
@@ -449,6 +686,7 @@ fn match_args(
     args: &[SpecTecArg],
     ips: &[SpecTecParam],
     ctx: &TypeCtx,
+    venv: &BTreeMap<String, String>,
 ) -> PatMatch {
     if pats.len() != args.len() {
         return PatMatch::No;
@@ -464,7 +702,7 @@ fn match_args(
         .zip(args)
         .map(|(p, a)| match (p, a) {
             (SpecTecArg::Exp { e: pe }, SpecTecArg::Exp { e: ae }) => {
-                match_exp(pe, ae, &pvars, ctx)
+                match_exp(pe, ae, &pvars, ctx, venv)
             }
             // Type-level patterns don't occur in the bundled spec; stay open.
             (SpecTecArg::Typ { .. }, SpecTecArg::Typ { .. }) => PatMatch::Maybe,
@@ -479,13 +717,14 @@ fn match_exp(
     arg: &SpecTecExp,
     pvars: &BTreeSet<&str>,
     ctx: &TypeCtx,
+    venv: &BTreeMap<String, String>,
 ) -> PatMatch {
     use SpecTecExp as E;
     match pat {
         // An upcast pattern `x <: T` (e.g. `num_(Inn)`'s `Inn <: numtype`):
         // dispatch on whether the argument's values lie in `T`.
         E::Sub { t1, .. } => match typ_name(t1) {
-            Some(t) => arg_in_type(arg, t, ctx),
+            Some(t) => arg_in_type(arg, t, ctx, venv),
             None => PatMatch::Maybe,
         },
         // A bare pattern variable is a wildcard binder.
@@ -496,12 +735,12 @@ fn match_exp(
         E::Case { op, e1 } => match arg {
             E::Case { op: aop, e1: ae } => {
                 if super::encode::mixop_key(aop) == super::encode::mixop_key(op) {
-                    match_exp(e1, ae, pvars, ctx)
+                    match_exp(e1, ae, pvars, ctx, venv)
                 } else {
                     PatMatch::No
                 }
             }
-            E::Var { id } => match var_type_name(id, ctx) {
+            E::Var { id } => match binder_or_conventional_type(id, ctx, venv) {
                 Some(t) => match has_case(&t, &super::encode::mixop_key(op), ctx) {
                     Some(true) | None => PatMatch::Maybe,
                     Some(false) => PatMatch::No,
@@ -524,7 +763,7 @@ fn match_exp(
                 }
                 pes.iter()
                     .zip(es)
-                    .map(|(p, a)| match_exp(p, a, pvars, ctx))
+                    .map(|(p, a)| match_exp(p, a, pvars, ctx, venv))
                     .fold(PatMatch::Yes, PatMatch::and)
             }
             _ => PatMatch::Maybe,
@@ -534,14 +773,19 @@ fn match_exp(
 }
 
 /// Whether the values `arg` can take lie in the named type `t`.
-fn arg_in_type(arg: &SpecTecExp, t: &str, ctx: &TypeCtx) -> PatMatch {
+fn arg_in_type(
+    arg: &SpecTecExp,
+    t: &str,
+    ctx: &TypeCtx,
+    venv: &BTreeMap<String, String>,
+) -> PatMatch {
     use SpecTecExp as E;
     match arg {
         E::Sub { t1, .. } => match typ_name(t1) {
             Some(u) => relate(u, t, ctx),
             None => PatMatch::Maybe,
         },
-        E::Var { id } => match var_type_name(id, ctx) {
+        E::Var { id } => match binder_or_conventional_type(id, ctx, venv) {
             Some(u) => relate(&u, t, ctx),
             None => PatMatch::Maybe,
         },
@@ -639,6 +883,14 @@ fn var_type_name(id: &str, ctx: &TypeCtx) -> Option<String> {
     None
 }
 
+fn binder_or_conventional_type(
+    id: &str,
+    ctx: &TypeCtx,
+    venv: &BTreeMap<String, String>,
+) -> Option<String> {
+    venv.get(id).cloned().or_else(|| var_type_name(id, ctx))
+}
+
 /// Resolve a nullary named type reference (chasing its definition).
 fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str>) -> Result<Type> {
     if let Some(component) = ctx.mutual_by_name.get(name) {
@@ -734,7 +986,102 @@ pub struct MutualChurchSignature {
     constructors: Vec<MutualChurchConstructor>,
 }
 
+/// Shared term basis for the carved simultaneous least predicate.
+///
+/// Keeping the predicate variables and closure clauses together is important:
+/// a sealing witness must quantify the exact same 41 clauses, in the exact
+/// same source order, as the predicate it inhabits.
+struct CarvedWfBasis {
+    universal: Type,
+    predicate_ty: Type,
+    predicate_names: Vec<String>,
+    predicates: Vec<covalence_core::Term>,
+    closures: Vec<covalence_core::Term>,
+}
+
+/// Stable source-owner to source-constructor choices used to inhabit every
+/// genuinely generative member of the pinned WASM type SCC.
+pub const CARVED_WASM_OWNER_WITNESSES: [(&str, usize); 8] = [
+    ("comptype", 0),     // STRUCT []
+    ("fieldtype", 3),    // immutable I32 storage
+    ("heaptype", 4),     // ANY
+    ("rectype", 20),     // REC []
+    ("storagetype", 21), // I32
+    ("subtype", 30),     // SUB [] (STRUCT [])
+    ("typeuse", 31),     // type index 0
+    ("valtype", 34),     // I32
+];
+
+/// One checked inhabitance theorem suitable for the carved typedef seam.
+#[derive(Debug, Clone)]
+pub struct CarvedOwnerWitness {
+    pub owner: &'static str,
+    pub constructor: usize,
+    pub value: covalence_core::Term,
+    pub theorem: Thm,
+}
+
+/// Eight sealed generative carriers plus the unsealed `resulttype` alias.
+pub struct SealedWasmMutualCarriers {
+    definitions: BTreeMap<String, TypeDef>,
+    carriers: BTreeMap<String, Type>,
+}
+
+impl SealedWasmMutualCarriers {
+    pub fn definitions(&self) -> &BTreeMap<String, TypeDef> {
+        &self.definitions
+    }
+
+    pub fn carrier(&self, member: &str) -> Option<&Type> {
+        self.carriers.get(member)
+    }
+
+    pub fn carriers(&self) -> &BTreeMap<String, Type> {
+        &self.carriers
+    }
+}
+
 impl MutualChurchSignature {
+    fn carved_constructor_wf_guard(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+        predicates: &[covalence_core::Term],
+        alphabet: &[MutualPathStep],
+    ) -> Result<covalence_core::Term> {
+        let slots = alphabet
+            .iter()
+            .filter(|step| step.constructor == constructor)
+            .collect::<Vec<_>>();
+        match slots.as_slice() {
+            [] => Ok(covalence_hol_eval::mk_bool(true)),
+            [slot] => {
+                let child_wf = predicates[slot.target_member].clone();
+                match constructor {
+                    0 => self.carved_ctor0_wf_clause(child_wf, payload),
+                    1 => self.carved_ctor1_wf_clause(child_wf, payload),
+                    3 => self.carved_ctor3_wf_clause(child_wf, payload),
+                    18 | 26 | 32 | 39 => {
+                        self.carved_direct_product_wf_clause(constructor, child_wf, payload)
+                    }
+                    20 => self.carved_ctor20_wf_clause(child_wf, payload),
+                    _ => Err(syntax_err("single-slot constructor lacks exact Wf clause")),
+                }
+            }
+            [left, right] if constructor == 2 => self.carved_ctor2_wf_clause(
+                predicates[left.target_member].clone(),
+                predicates[right.target_member].clone(),
+                payload,
+            ),
+            [left, right] if constructor == 30 => self.carved_ctor30_wf_clause(
+                predicates[left.target_member].clone(),
+                predicates[right.target_member].clone(),
+                payload,
+            ),
+            _ => Err(syntax_err("constructor recursive-slot census drifted")),
+        }
+    }
+
     /// Finite path alphabet for a carved realization of this signature.
     ///
     /// A slot is one occurrence of a mutual result carrier in a constructor
@@ -1637,14 +1984,9 @@ impl MutualChurchSignature {
 
     /// Simultaneous impredicative least-closure predicate over the closed
     /// universal domain for one member of the mutual SCC.
-    pub fn carved_simultaneous_wf_predicate(&self, member: &str) -> Result<covalence_core::Term> {
+    fn carved_wf_basis(&self) -> Result<CarvedWfBasis> {
         use crate::init::ext::TermExt;
 
-        let member_index = self
-            .members
-            .iter()
-            .position(|candidate| candidate == member)
-            .ok_or_else(|| syntax_err("member is outside mutual signature"))?;
         let universal = self.carved_universal_domain_carrier()?;
         let predicate_ty = Type::fun(universal.clone(), Type::bool());
         let predicate_names = self
@@ -1662,43 +2004,12 @@ impl MutualChurchSignature {
             let payload_ty = self.carved_universal_payload(constructor)?;
             let payload_name = format!("cov$mutual$carved$payload${constructor}");
             let payload = covalence_core::Term::free(&payload_name, payload_ty.clone());
-            let slots = alphabet
-                .iter()
-                .filter(|step| step.constructor == constructor)
-                .collect::<Vec<_>>();
-            let guard = match slots.as_slice() {
-                [] => covalence_hol_eval::mk_bool(true),
-                [slot] => {
-                    let child_wf = predicates[slot.target_member].clone();
-                    match constructor {
-                        0 => self.carved_ctor0_wf_clause(child_wf, payload.clone())?,
-                        1 => self.carved_ctor1_wf_clause(child_wf, payload.clone())?,
-                        3 => self.carved_ctor3_wf_clause(child_wf, payload.clone())?,
-                        18 | 26 | 32 | 39 => self.carved_direct_product_wf_clause(
-                            constructor,
-                            child_wf,
-                            payload.clone(),
-                        )?,
-                        20 => self.carved_ctor20_wf_clause(child_wf, payload.clone())?,
-                        _ => {
-                            return Err(syntax_err(
-                                "single-slot constructor lacks exact Wf clause",
-                            ));
-                        }
-                    }
-                }
-                [left, right] if constructor == 2 => self.carved_ctor2_wf_clause(
-                    predicates[left.target_member].clone(),
-                    predicates[right.target_member].clone(),
-                    payload.clone(),
-                )?,
-                [left, right] if constructor == 30 => self.carved_ctor30_wf_clause(
-                    predicates[left.target_member].clone(),
-                    predicates[right.target_member].clone(),
-                    payload.clone(),
-                )?,
-                _ => return Err(syntax_err("constructor recursive-slot census drifted")),
-            };
+            let guard = self.carved_constructor_wf_guard(
+                constructor,
+                payload.clone(),
+                &predicates,
+                &alphabet,
+            )?;
             let owner = self
                 .members
                 .iter()
@@ -1707,25 +2018,572 @@ impl MutualChurchSignature {
             let introduced = predicates[owner]
                 .clone()
                 .apply(self.carved_u_constructor(constructor, payload)?)?;
-            closures.push(guard.imp(introduced)?.forall(&payload_name, payload_ty)?);
+            closures.push(
+                guard
+                    .clone()
+                    .imp(introduced)?
+                    .forall(&payload_name, payload_ty)?,
+            );
         }
+        if closures.len() != self.constructors.len()
+            || predicates.len() != self.members.len()
+            || predicate_names.len() != self.members.len()
+        {
+            return Err(syntax_err("carved Wf basis census drifted"));
+        }
+        Ok(CarvedWfBasis {
+            universal,
+            predicate_ty,
+            predicate_names,
+            predicates,
+            closures,
+        })
+    }
+
+    /// Simultaneous impredicative least-closure predicate over the closed
+    /// universal domain for one member of the mutual SCC.
+    pub fn carved_simultaneous_wf_predicate(&self, member: &str) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let member_index = self
+            .members
+            .iter()
+            .position(|candidate| candidate == member)
+            .ok_or_else(|| syntax_err("member is outside mutual signature"))?;
+        let basis = self.carved_wf_basis()?;
         let value_name = format!("cov$mutual$carved$value${member}");
-        let value = covalence_core::Term::free(&value_name, universal.clone());
-        let mut body = predicates[member_index].clone().apply(value)?;
-        for closure in closures.iter().rev() {
+        let value = covalence_core::Term::free(&value_name, basis.universal.clone());
+        let mut body = basis.predicates[member_index].clone().apply(value)?;
+        for closure in basis.closures.iter().rev() {
             body = closure.clone().imp(body)?;
         }
-        for (name, _) in predicate_names.iter().zip(predicates.iter()).rev() {
-            body = body.forall(name, predicate_ty.clone())?;
+        for name in basis.predicate_names.iter().rev() {
+            body = body.forall(name, basis.predicate_ty.clone())?;
         }
         let predicate = covalence_core::Term::abs(
-            universal.clone(),
+            basis.universal.clone(),
             covalence_core::subst::close(&body, &value_name),
         );
-        if predicate.type_of()? != Type::fun(universal, Type::bool()) {
+        if predicate.type_of()? != Type::fun(basis.universal, Type::bool()) {
             return Err(syntax_err("carved simultaneous Wf predicate is ill-typed"));
         }
         Ok(predicate)
+    }
+
+    /// Prove that a non-recursive U-constructor inhabits its owner's carved
+    /// simultaneous least predicate.
+    ///
+    /// This is the first sealing witness: it merely specializes the matching
+    /// one of the exact 41 closure assumptions, discharges its `T` guard, then
+    /// abstracts all 41 clauses and all nine predicates.  No theorem is minted;
+    /// every step uses ordinary HOL introduction/elimination and β conversion.
+    fn carved_wf_witness_from_guard(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+        guard: Thm,
+    ) -> Result<Thm> {
+        use crate::init::ext::TermExt;
+
+        let ctor = self
+            .constructors
+            .get(constructor)
+            .ok_or_else(|| syntax_err("constructor is outside mutual signature"))?;
+        let payload_ty = self.carved_universal_payload(constructor)?;
+        if payload.type_of()? != payload_ty {
+            return Err(syntax_err("wrong payload for carved Wf witness"));
+        }
+        let owner = self
+            .members
+            .iter()
+            .position(|member| member == ctor.owner())
+            .ok_or_else(|| syntax_err("constructor owner is outside mutual signature"))?;
+        let basis = self.carved_wf_basis()?;
+        let expected_guard = self.carved_constructor_wf_guard(
+            constructor,
+            payload.clone(),
+            &basis.predicates,
+            &self.path_alphabet(),
+        )?;
+        if guard
+            .hyps()
+            .iter()
+            .any(|hypothesis| !basis.closures.contains(hypothesis))
+            || guard.concl() != &expected_guard
+        {
+            return Err(syntax_err(
+                "carved Wf witness guard is not the exact closure guard",
+            ));
+        }
+        let closure_assumptions = basis
+            .closures
+            .iter()
+            .map(|closure| Thm::assume(closure.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let introduced = closure_assumptions[constructor]
+            .clone()
+            .all_elim(payload.clone())?
+            .imp_elim(guard)?;
+        let expected_introduced = basis.predicates[owner]
+            .clone()
+            .apply(self.carved_u_constructor(constructor, payload.clone())?)?;
+        if introduced.concl() != &expected_introduced {
+            return Err(syntax_err(
+                "selected carved closure introduced the wrong owner",
+            ));
+        }
+        let mut body = introduced;
+        for closure in basis.closures.iter().rev() {
+            body = body.imp_intro(closure)?;
+        }
+        for name in basis.predicate_names.iter().rev() {
+            body = body.all_intro(name, basis.predicate_ty.clone())?;
+        }
+        let predicate = self.carved_simultaneous_wf_predicate(ctor.owner())?;
+        let witness = self.carved_u_constructor(constructor, payload)?;
+        let applied = predicate.apply(witness)?;
+        let theorem = Thm::beta_conv(applied)?.sym()?.eq_mp(body)?;
+        if !theorem.hyps().is_empty() {
+            return Err(syntax_err("carved Wf witness retained hypotheses"));
+        }
+        Ok(theorem)
+    }
+
+    fn carved_open_owner_witness(
+        &self,
+        owner: &str,
+        value: covalence_core::Term,
+        witness: Thm,
+        basis: &CarvedWfBasis,
+    ) -> Result<Thm> {
+        use crate::init::ext::TermExt;
+
+        let owner_index = self
+            .members
+            .iter()
+            .position(|member| member == owner)
+            .ok_or_else(|| syntax_err("opened witness owner is outside mutual signature"))?;
+        let applied = self
+            .carved_simultaneous_wf_predicate(owner)?
+            .apply(value.clone())?;
+        if !witness.hyps().is_empty() || witness.concl() != &applied {
+            return Err(syntax_err(
+                "opened carved witness has the wrong closed shape",
+            ));
+        }
+        let mut opened = Thm::beta_conv(applied)?.eq_mp(witness)?;
+        for predicate in &basis.predicates {
+            opened = opened.all_elim(predicate.clone())?;
+        }
+        for closure in &basis.closures {
+            opened = opened.imp_elim(Thm::assume(closure.clone())?)?;
+        }
+        let expected = basis.predicates[owner_index].clone().apply(value)?;
+        if opened.concl() != &expected
+            || opened
+                .hyps()
+                .iter()
+                .any(|hypothesis| !basis.closures.contains(hypothesis))
+        {
+            return Err(syntax_err(
+                "opened carved witness did not specialize to its owner predicate",
+            ));
+        }
+        Ok(opened)
+    }
+
+    /// Prove that a non-recursive U-constructor inhabits its owner's carved
+    /// simultaneous least predicate.
+    pub fn carved_nonrecursive_wf_witness(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+    ) -> Result<Thm> {
+        if self
+            .path_alphabet()
+            .iter()
+            .any(|step| step.constructor == constructor)
+        {
+            return Err(syntax_err(
+                "recursive constructor cannot use the nullary Wf witness",
+            ));
+        }
+        self.carved_wf_witness_from_guard(constructor, payload, crate::init::logic::truth())
+    }
+
+    fn carved_beta_guard(
+        &self,
+        guard: covalence_core::Term,
+        rewrites: &[Thm],
+        normal_proof: Thm,
+    ) -> Result<Thm> {
+        use crate::init::ext::ThmExt;
+
+        let mut reduction = beta_nf(guard);
+        for rewrite in rewrites {
+            reduction = reduction.rhs_conv(|term| term.rw_all(rewrite))?;
+        }
+        let rhs = reduction
+            .concl()
+            .as_eq()
+            .ok_or_else(|| syntax_err("carved guard reduction is not equality"))?
+            .1
+            .clone();
+        reduction = reduction.trans(beta_nf(rhs))?;
+        let Some((_, normal)) = reduction.concl().as_eq() else {
+            return Err(syntax_err("carved guard β-reduction is not equality"));
+        };
+        if normal != normal_proof.concl() {
+            return Err(syntax_err(
+                "carved guard did not reduce to the supplied child witness",
+            ));
+        }
+        reduction.sym()?.eq_mp(normal_proof)
+    }
+
+    fn carved_vacuous_list_guard(
+        &self,
+        index_name: &str,
+        length: covalence_core::Term,
+        routed_wf: covalence_core::Term,
+        length_zero: Thm,
+    ) -> Result<Thm> {
+        use crate::init::ext::{TermExt, ThmExt};
+
+        let zero = covalence_hol_eval::mk_nat(0u64);
+        if !length_zero.hyps().is_empty() || length_zero.concl().as_eq() != Some((&length, &zero)) {
+            return Err(syntax_err(
+                "vacuous carved list guard lacks an exact length-zero theorem",
+            ));
+        }
+        let index = covalence_core::Term::free(index_name, Type::nat());
+        let in_bounds = crate::init::nat::nat_lt()
+            .apply(index.clone())?
+            .apply(length)?;
+        let in_bounds_eq_zero =
+            length_zero.cong_arg(crate::init::nat::nat_lt().apply(index.clone())?)?;
+        let below_zero = in_bounds_eq_zero.eq_mp(Thm::assume(in_bounds.clone())?)?;
+        let impossible = crate::init::nat::not_lt_zero()
+            .all_elim(index)?
+            .not_elim(below_zero)?;
+        impossible
+            .false_elim(routed_wf)?
+            .imp_intro(&in_bounds)?
+            .all_intro(index_name, Type::nat())
+    }
+
+    fn carved_empty_constructor_guard(
+        &self,
+        constructor: usize,
+        child_wf: covalence_core::Term,
+        index_name: &str,
+    ) -> Result<(covalence_core::Term, Thm)> {
+        use crate::init::ext::TermExt;
+
+        if !matches!(constructor, 0 | 20) {
+            return Err(syntax_err(
+                "empty carved witness is outside the list-constructor cluster",
+            ));
+        }
+        let universal = self.carved_universal_domain_carrier()?;
+        let payload = crate::init::list::nil(universal.clone());
+        let index = covalence_core::Term::free(index_name, Type::nat());
+        let route =
+            self.carved_route_child(constructor, payload.clone(), 0, Some(index.clone()))?;
+        let routed_wf = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(child_wf)?
+            .apply(route)?;
+        let length =
+            covalence_hol_eval::defs::list_length(universal.clone()).apply(payload.clone())?;
+        let guard = self.carved_vacuous_list_guard(
+            index_name,
+            length,
+            routed_wf,
+            crate::init::list_recursion::length_nil(&universal)?,
+        )?;
+        Ok((payload, guard))
+    }
+
+    /// Hypothesis-free inhabitance witness for the first generative owner.
+    ///
+    /// Constructor 0 is `STRUCT list(fieldtype)` and an empty field list has
+    /// no recursive children.  The proof derives its universally quantified
+    /// closure guard from `length [] = 0` and `¬(n < 0)`, then feeds that exact
+    /// guard through the common 41-clause/nine-predicate basis.
+    pub fn carved_first_generative_wf_witness(&self) -> Result<Thm> {
+        let constructor = 0;
+        let basis = self.carved_wf_basis()?;
+        let slots = self
+            .path_alphabet()
+            .iter()
+            .filter(|step| step.constructor == constructor)
+            .copied()
+            .collect::<Vec<_>>();
+        let [slot] = slots.as_slice() else {
+            return Err(syntax_err(
+                "first generative constructor recursive-slot census drifted",
+            ));
+        };
+        let (payload, guard) = self.carved_empty_constructor_guard(
+            constructor,
+            basis.predicates[slot.target_member].clone(),
+            "cov$mutual$wf$index",
+        )?;
+        self.carved_wf_witness_from_guard(constructor, payload, guard)
+    }
+
+    /// Exact hypothesis-free inhabitants for all eight generative SCC owners.
+    ///
+    /// The returned order is [`CARVED_WASM_OWNER_WITNESSES`]. `resulttype` is
+    /// intentionally absent because it is the structural alias `list valtype`.
+    pub fn carved_wasm_owner_witnesses(&self) -> Result<Vec<CarvedOwnerWitness>> {
+        use crate::init::ext::{TermExt, ThmExt};
+
+        if self.members.len() != 9 || self.constructors.len() != 41 {
+            return Err(syntax_err("pinned WASM mutual carrier census drifted"));
+        }
+        for &(owner, constructor) in &CARVED_WASM_OWNER_WITNESSES {
+            if self.constructors.get(constructor).map(|ctor| ctor.owner()) != Some(owner) {
+                return Err(syntax_err("pinned WASM owner/constructor table drifted"));
+            }
+        }
+
+        let universal = self.carved_universal_domain_carrier()?;
+        let basis = self.carved_wf_basis()?;
+        let mut by_owner = BTreeMap::<&'static str, (usize, covalence_core::Term, Thm)>::new();
+
+        for &(owner, constructor) in &[
+            ("heaptype", 4usize),
+            ("storagetype", 21),
+            ("typeuse", 31),
+            ("valtype", 34),
+        ] {
+            let payload = match constructor {
+                4 | 21 | 34 => covalence_hol_eval::defs::unit_nil(),
+                31 => covalence_hol_eval::mk_nat(0u64),
+                _ => unreachable!(),
+            };
+            let theorem = self.carved_nonrecursive_wf_witness(constructor, payload.clone())?;
+            let value = self.carved_u_constructor(constructor, payload)?;
+            by_owner.insert(owner, (constructor, value, theorem));
+        }
+
+        let comptype_theorem = self.carved_first_generative_wf_witness()?;
+        let comptype_payload = crate::init::list::nil(universal.clone());
+        let comptype_value = self.carved_u_constructor(0, comptype_payload)?;
+        by_owner.insert("comptype", (0, comptype_value.clone(), comptype_theorem));
+
+        let rectype_slots = self
+            .path_alphabet()
+            .into_iter()
+            .filter(|step| step.constructor == 20)
+            .collect::<Vec<_>>();
+        let [rectype_slot] = rectype_slots.as_slice() else {
+            return Err(syntax_err("rectype recursive slot census drifted"));
+        };
+        let (rectype_payload, rectype_guard) = self.carved_empty_constructor_guard(
+            20,
+            basis.predicates[rectype_slot.target_member].clone(),
+            "cov$mutual$wf$index$20",
+        )?;
+        let rectype_theorem =
+            self.carved_wf_witness_from_guard(20, rectype_payload.clone(), rectype_guard)?;
+        let rectype_value = self.carved_u_constructor(20, rectype_payload)?;
+        by_owner.insert("rectype", (20, rectype_value, rectype_theorem));
+
+        let (_, storagetype_value, storagetype_theorem) = by_owner["storagetype"].clone();
+        let none_unit = covalence_hol_eval::defs::none(Type::unit());
+        let field_payload = covalence_hol_eval::defs::pair(
+            crate::init::option::option(Type::unit()),
+            universal.clone(),
+        )
+        .apply(none_unit.clone())?
+        .apply(storagetype_value.clone())?;
+        let field_guard_term = self.carved_constructor_wf_guard(
+            3,
+            field_payload.clone(),
+            &basis.predicates,
+            &self.path_alphabet(),
+        )?;
+        let field_snd = crate::init::prod::snd_pair(
+            &crate::init::option::option(Type::unit()),
+            &universal,
+            &none_unit,
+            &storagetype_value,
+        )?;
+        let field_case = crate::init::option::case_some(
+            &universal,
+            &Type::bool(),
+            &covalence_hol_eval::mk_bool(false),
+            &basis.predicates[5],
+            &storagetype_value,
+        )?;
+        let open_storagetype = self.carved_open_owner_witness(
+            "storagetype",
+            storagetype_value.clone(),
+            storagetype_theorem,
+            &basis,
+        )?;
+        let field_guard = self
+            .carved_beta_guard(field_guard_term, &[field_snd, field_case], open_storagetype)
+            .map_err(|error| syntax_err(format!("fieldtype witness guard: {error}")))?;
+        let field_theorem =
+            self.carved_wf_witness_from_guard(3, field_payload.clone(), field_guard)?;
+        let field_value = self.carved_u_constructor(3, field_payload)?;
+        by_owner.insert("fieldtype", (3, field_value, field_theorem));
+
+        let list_universal = crate::init::list::list(universal.clone());
+        let inner_ty = covalence_hol_eval::defs::prod(list_universal.clone(), universal.clone());
+        let empty_typeuses = crate::init::list::nil(universal.clone());
+        let subtype_tail =
+            covalence_hol_eval::defs::pair(list_universal.clone(), universal.clone())
+                .apply(empty_typeuses.clone())?
+                .apply(comptype_value.clone())?;
+        let subtype_payload = covalence_hol_eval::defs::pair(
+            crate::init::option::option(Type::unit()),
+            inner_ty.clone(),
+        )
+        .apply(covalence_hol_eval::defs::none(Type::unit()))?
+        .apply(subtype_tail.clone())?;
+
+        let index_name = "cov$mutual$wf$index$30";
+        let index = covalence_core::Term::free(index_name, Type::nat());
+        let list_route =
+            self.carved_route_child(30, subtype_payload.clone(), 0, Some(index.clone()))?;
+        let routed_list_wf = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(basis.predicates[7].clone())?
+            .apply(list_route)?;
+        let tail = covalence_hol_eval::defs::snd(
+            crate::init::option::option(Type::unit()),
+            inner_ty.clone(),
+        )
+        .apply(subtype_payload.clone())?;
+        let children =
+            covalence_hol_eval::defs::fst(list_universal.clone(), universal.clone()).apply(tail)?;
+        let length = covalence_hol_eval::defs::list_length(universal.clone()).apply(children)?;
+        let outer_snd = crate::init::prod::snd_pair(
+            &crate::init::option::option(Type::unit()),
+            &inner_ty,
+            &covalence_hol_eval::defs::none(Type::unit()),
+            &subtype_tail,
+        )?;
+        let inner_fst = crate::init::prod::fst_pair(
+            &list_universal,
+            &universal,
+            &empty_typeuses,
+            &comptype_value,
+        )?;
+        let mut length_beta = beta_nf(length.clone());
+        length_beta = length_beta.rhs_conv(|term| term.rw_all(&outer_snd))?;
+        length_beta = length_beta.rhs_conv(|term| term.rw_all(&inner_fst))?;
+        let length_rhs = length_beta
+            .concl()
+            .as_eq()
+            .ok_or_else(|| syntax_err("subtype length reduction is not equality"))?
+            .1
+            .clone();
+        length_beta = length_beta.trans(beta_nf(length_rhs))?;
+        let Some((_, length_normal)) = length_beta.concl().as_eq() else {
+            return Err(syntax_err("subtype empty-list length did not β-reduce"));
+        };
+        let length_nil = crate::init::list_recursion::length_nil(&universal)?;
+        if length_nil.concl().as_eq().map(|(left, _)| left) != Some(length_normal) {
+            return Err(syntax_err(
+                "subtype list payload did not reduce to the empty list",
+            ));
+        }
+        let bounded = self.carved_vacuous_list_guard(
+            index_name,
+            length,
+            routed_list_wf,
+            length_beta.trans(length_nil)?,
+        )?;
+        let direct_route = self.carved_route_child(30, subtype_payload.clone(), 1, None)?;
+        let direct_term = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(basis.predicates[0].clone())?
+            .apply(direct_route)?;
+        let (_, _, comptype_theorem) = by_owner["comptype"].clone();
+        let inner_snd = crate::init::prod::snd_pair(
+            &list_universal,
+            &universal,
+            &empty_typeuses,
+            &comptype_value,
+        )?;
+        let direct_case = crate::init::option::case_some(
+            &universal,
+            &Type::bool(),
+            &covalence_hol_eval::mk_bool(false),
+            &basis.predicates[0],
+            &comptype_value,
+        )?;
+        let open_comptype = self.carved_open_owner_witness(
+            "comptype",
+            comptype_value.clone(),
+            comptype_theorem,
+            &basis,
+        )?;
+        let direct = self
+            .carved_beta_guard(
+                direct_term,
+                &[outer_snd.clone(), inner_snd, direct_case],
+                open_comptype,
+            )
+            .map_err(|error| syntax_err(format!("subtype direct witness guard: {error}")))?;
+        let subtype_guard = bounded.and_intro(direct)?;
+        let subtype_theorem =
+            self.carved_wf_witness_from_guard(30, subtype_payload.clone(), subtype_guard)?;
+        let subtype_value = self.carved_u_constructor(30, subtype_payload)?;
+        by_owner.insert("subtype", (30, subtype_value, subtype_theorem));
+
+        CARVED_WASM_OWNER_WITNESSES
+            .iter()
+            .map(|&(owner, constructor)| {
+                let (actual, value, theorem) = by_owner
+                    .remove(owner)
+                    .ok_or_else(|| syntax_err("missing pinned carved owner witness"))?;
+                if actual != constructor || !theorem.hyps().is_empty() {
+                    return Err(syntax_err("carved owner witness census drifted"));
+                }
+                Ok(CarvedOwnerWitness {
+                    owner,
+                    constructor,
+                    value,
+                    theorem,
+                })
+            })
+            .collect()
+    }
+
+    fn seal_wasm_owner_witnesses(&self) -> Result<SealedWasmMutualCarriers> {
+        let witnesses = self.carved_wasm_owner_witnesses()?;
+        let mut definitions = BTreeMap::new();
+        let mut carriers = BTreeMap::new();
+        for witness in witnesses {
+            let stem = format!("cov$wasm$carved${}", witness.owner);
+            let definition = crate::init::inductive::carved::seal_witnessed_predicate(
+                &stem,
+                &format!("{stem}$abs"),
+                &format!("{stem}$rep"),
+                witness.theorem,
+            )?;
+            carriers.insert(witness.owner.to_owned(), definition.tau.clone());
+            definitions.insert(witness.owner.to_owned(), definition);
+        }
+        let valtype = carriers
+            .get("valtype")
+            .cloned()
+            .ok_or_else(|| syntax_err("sealed valtype carrier is missing"))?;
+        carriers.insert("resulttype".to_owned(), crate::init::list::list(valtype));
+        if definitions.len() != 8 || carriers.len() != 9 {
+            return Err(syntax_err("sealed WASM mutual carrier census drifted"));
+        }
+        Ok(SealedWasmMutualCarriers {
+            definitions,
+            carriers,
+        })
     }
 
     fn payload_wf_observation(
@@ -2195,6 +3053,26 @@ impl MutualChurchSignature {
     }
 }
 
+/// Process-global exact carriers for the pinned WASM mutual type component.
+///
+/// All eight conservative extensions pass through the already-reviewed
+/// [`crate::init::inductive::carved::seal_witnessed_predicate`] seam. The
+/// structural `resulttype = list valtype` alias is installed only in the
+/// returned carrier map and never receives a separate typedef.
+pub fn sealed_wasm_mutual_carriers() -> Result<&'static SealedWasmMutualCarriers> {
+    static SEALED: LazyLock<Result<SealedWasmMutualCarriers>> = LazyLock::new(|| {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        mutual_church_signature("valtype", &ctx)?.seal_wasm_owner_witnesses()
+    });
+    match &*SEALED {
+        Ok(carriers) => Ok(carriers),
+        Err(error) => Err(syntax_err(format!(
+            "failed to seal pinned WASM mutual carriers: {error}"
+        ))),
+    }
+}
+
 /// Build the term-level simultaneous Church signature containing `member`.
 pub fn mutual_church_signature(member: &str, ctx: &TypeCtx<'_>) -> Result<MutualChurchSignature> {
     let component = ctx
@@ -2283,6 +3161,7 @@ fn build_mutual_church_signature<'a>(
             let scope = Scope {
                 self_name: None,
                 tenv: BTreeMap::new(),
+                venv: BTreeMap::new(),
                 mutual: mutual.clone(),
                 mutual_members: mutual_members.clone(),
             };
@@ -2320,6 +3199,7 @@ fn build_mutual_church_signature<'a>(
     let scope = Scope {
         self_name: None,
         tenv: BTreeMap::new(),
+        venv: BTreeMap::new(),
         mutual,
         mutual_members,
     };
@@ -2517,10 +3397,20 @@ fn build_variant<'a>(
     if tcs.is_empty() {
         return Err(syntax_err("empty variant has no type"));
     }
-    let payload_scope = base.under_variant(name);
     let mut ctors = Vec::with_capacity(tcs.len());
     for SpecTecTypCase::Field { op, t, qs, .. } in tcs {
         reject_parametric_field(qs)?;
+        let mut payload_scope = base.under_variant(name);
+        for param in qs {
+            if let SpecTecParam::Exp {
+                x,
+                t: SpecTecTyp::Var { x: declared, as1 },
+            } = param
+                && as1.is_empty()
+            {
+                payload_scope.venv.insert(x.clone(), declared.clone());
+            }
+        }
         let payload = resolve_typ_d(t, ctx, visited, &payload_scope)?;
         ctors.push(VCtor::new(super::encode::mixop_key(op), payload));
     }
@@ -2783,10 +3673,17 @@ fn sym_exp(e: &SpecTecExp) -> String {
 }
 
 fn reject_parametric_field(qs: &[SpecTecParam]) -> Result<()> {
-    if qs.is_empty() {
+    // Expression binders index source cases but do not bind HOL payload
+    // types. They are therefore carrier-transparent, like top-level value
+    // parameters. Type binders would require an explicit instantiation
+    // environment and remain fail-closed.
+    if qs
+        .iter()
+        .all(|param| matches!(param, SpecTecParam::Exp { .. }))
+    {
         Ok(())
     } else {
-        Err(syntax_err("parametric field/case not modelled yet"))
+        Err(syntax_err("type-parametric field/case not modelled yet"))
     }
 }
 
@@ -2795,6 +3692,135 @@ mod tests {
     use super::*;
     use covalence_core::Term;
     use covalence_spectec::ast::{MixOp, SpecTecInst, SpecTecParam};
+
+    #[test]
+    fn value_case_binders_are_carrier_transparent_but_type_binders_refuse() {
+        assert!(
+            reject_parametric_field(&[SpecTecParam::Exp {
+                x: "n".into(),
+                t: SpecTecTyp::Num(SpecTecNumTyp::Nat),
+            }])
+            .is_ok()
+        );
+        assert!(reject_parametric_field(&[SpecTecParam::Typ { x: "X".into() }]).is_err());
+    }
+
+    #[test]
+    fn refined_vector_instruction_payloads_render_without_erasing_fields() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        let SpecTecDef::Typ { insts, .. } = ctx.lookup("instr").unwrap() else {
+            panic!("instr must be a type");
+        };
+        let wanted = ["VSHUFFLE", "VNARROW", "VEXTRACT_LANE"];
+        for key in wanted {
+            let case = insts
+                .iter()
+                .filter_map(|SpecTecInst::Inst { dt, .. }| match dt {
+                    SpecTecDefTyp::Variant { tcs } => Some(tcs),
+                    _ => None,
+                })
+                .flatten()
+                .find(|case| match case {
+                    SpecTecTypCase::Field { op, .. } => super::super::encode::mixop_key(op) == key,
+                })
+                .unwrap_or_else(|| panic!("missing {key} instruction case"));
+            let variant = build_variant(
+                "instr",
+                std::slice::from_ref(case),
+                &ctx,
+                &mut Vec::new(),
+                &Scope::default(),
+            )
+            .unwrap();
+            assert_eq!(variant.ctors.len(), 1);
+            assert_eq!(variant.ctors[0].name, key);
+            assert_ne!(variant.ctors[0].payload, Type::unit());
+        }
+    }
+
+    #[test]
+    fn const_payload_is_an_exact_inn_fnn_indexed_sigma() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        let SpecTecDef::Typ { insts, .. } = ctx.lookup("instr").unwrap() else {
+            panic!("instr must be a type");
+        };
+        let case = insts
+            .iter()
+            .filter_map(|SpecTecInst::Inst { dt, .. }| match dt {
+                SpecTecDefTyp::Variant { tcs } => Some(tcs),
+                _ => None,
+            })
+            .flatten()
+            .find(|case| match case {
+                SpecTecTypCase::Field { op, .. } => super::super::encode::mixop_key(op) == "CONST",
+            })
+            .unwrap();
+        let SpecTecTypCase::Field {
+            t: SpecTecTyp::Tup { ets },
+            ..
+        } = case
+        else {
+            panic!("CONST payload must be a tuple");
+        };
+        let [
+            SpecTecTypBind::Bind {
+                id,
+                typ: SpecTecTyp::Var { x: index, .. },
+            },
+            rest @ ..,
+        ] = ets.as_slice()
+        else {
+            panic!("CONST payload must begin with its numtype index");
+        };
+        let sigma = resolve_finite_dependent_tuple(
+            id,
+            index,
+            rest,
+            &ctx,
+            &mut Vec::new(),
+            &Scope::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(sigma.index_type(), "numtype");
+        assert_eq!(sigma.branch_count(), 4);
+        assert_eq!(sigma.branch_name(0).unwrap(), "I32");
+        assert_eq!(sigma.branch_name(1).unwrap(), "I64");
+        assert_eq!(sigma.branch_name(2).unwrap(), "F32");
+        assert_eq!(sigma.branch_name(3).unwrap(), "F64");
+        assert_eq!(sigma.payload_type(0).unwrap(), &Type::nat());
+        assert_eq!(sigma.payload_type(1).unwrap(), &Type::nat());
+        assert_ne!(sigma.payload_type(2).unwrap(), &Type::nat());
+        assert_ne!(sigma.payload_type(3).unwrap(), &Type::nat());
+
+        let inhabit = |ty: &Type, name: &str| {
+            Term::select_op(ty.clone())
+                .apply(Term::abs(ty.clone(), covalence_hol_eval::mk_bool(true)))
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"))
+        };
+        let i32_value = inhabit(sigma.payload_type(0).unwrap(), "i32");
+        let f32_value = inhabit(sigma.payload_type(2).unwrap(), "f32");
+        assert_eq!(
+            sigma.constructor(0).unwrap().type_of().unwrap(),
+            Type::fun(Type::nat(), sigma.carrier().clone())
+        );
+        assert!(
+            sigma
+                .injective(0, &i32_value, &i32_value)
+                .unwrap()
+                .hyps()
+                .is_empty()
+        );
+        assert!(
+            sigma
+                .distinct(0, 2, &i32_value, &f32_value)
+                .unwrap()
+                .hyps()
+                .is_empty()
+        );
+    }
 
     fn alias(name: &str, typ: SpecTecTyp) -> SpecTecDef {
         SpecTecDef::Typ {
@@ -3472,6 +4498,79 @@ mod tests {
             };
             assert_eq!(result, Type::bool());
         }
+        let basis = signature.carved_wf_basis().unwrap();
+        assert_eq!(basis.closures.len(), 41);
+        assert_eq!(basis.predicates.len(), 9);
+        assert_eq!(basis.predicate_names.len(), 9);
+        assert_eq!(signature.constructors()[0].owner(), "comptype");
+        assert!(
+            signature
+                .constructors()
+                .iter()
+                .all(|constructor| constructor.owner() != "resulttype"),
+            "resulttype must remain a structural alias, not gain a constructor"
+        );
+        let first_owner_witness = signature.carved_first_generative_wf_witness().unwrap();
+        assert!(first_owner_witness.hyps().is_empty());
+        let first_payload = crate::init::list::nil(universal.clone());
+        assert_eq!(
+            first_owner_witness.concl(),
+            &signature
+                .carved_simultaneous_wf_predicate("comptype")
+                .unwrap()
+                .apply(signature.carved_u_constructor(0, first_payload).unwrap())
+                .unwrap()
+        );
+        let owner_witnesses = signature.carved_wasm_owner_witnesses().unwrap();
+        assert_eq!(
+            owner_witnesses
+                .iter()
+                .map(|witness| (witness.owner, witness.constructor))
+                .collect::<Vec<_>>(),
+            CARVED_WASM_OWNER_WITNESSES
+        );
+        for witness in &owner_witnesses {
+            assert!(witness.theorem.hyps().is_empty());
+            assert_eq!(
+                witness.theorem.concl(),
+                &signature
+                    .carved_simultaneous_wf_predicate(witness.owner)
+                    .unwrap()
+                    .apply(witness.value.clone())
+                    .unwrap()
+            );
+        }
+        let first_nonrecursive = (0..signature.constructors().len())
+            .find(|constructor| {
+                !signature
+                    .path_alphabet()
+                    .iter()
+                    .any(|step| step.constructor == *constructor)
+            })
+            .unwrap();
+        let payload_ty = signature
+            .carved_universal_payload(first_nonrecursive)
+            .unwrap();
+        let closed_payload = Term::select_op(payload_ty.clone())
+            .apply(Term::abs(payload_ty, covalence_hol_eval::mk_bool(true)))
+            .unwrap();
+        let witness = signature
+            .carved_nonrecursive_wf_witness(first_nonrecursive, closed_payload.clone())
+            .unwrap();
+        assert!(witness.hyps().is_empty());
+        let owner = signature.constructors()[first_nonrecursive].owner();
+        assert_eq!(
+            witness.concl(),
+            &signature
+                .carved_simultaneous_wf_predicate(owner)
+                .unwrap()
+                .apply(
+                    signature
+                        .carved_u_constructor(first_nonrecursive, closed_payload)
+                        .unwrap()
+                )
+                .unwrap()
+        );
         assert!(
             signature
                 .carved_simultaneous_wf_predicate("outside")
@@ -3583,8 +4682,8 @@ mod tests {
                     .collect()
             );
         }
-        assert_eq!(crate::wasm::spec::rendered_types(&defs), (144, 207));
-        assert_eq!(crate::wasm::spec::renderable_types(&defs), (170, 207));
+        assert_eq!(crate::wasm::spec::rendered_types(&defs), (176, 207));
+        assert_eq!(crate::wasm::spec::renderable_types(&defs), (204, 207));
     }
 
     fn variant_case(name: &str, t: SpecTecTyp) -> SpecTecTypCase {

@@ -132,7 +132,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Operations given defining clauses by this leg.
-pub const OPS: [&str; 85] = [
+pub const OPS: [&str; 86] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -199,6 +199,7 @@ pub const OPS: [&str; 85] = [
     "fpmax_",
     "fmin_",
     "fmax_",
+    "fmul_",
     "fceil_",
     "ffloor_",
     "ftrunc_",
@@ -223,9 +224,10 @@ pub const OPS: [&str; 85] = [
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
 /// here: the six shift/rotate/count-zero operations, eight exact bit-structure
 /// operations, four integer serialization/inverse operations, the exact
-/// integer SIMD lane isomorphism, and three integer conversions. The other
-/// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 74;
+/// integer SIMD lane isomorphism, three integer conversions, and exact scalar
+/// float multiplication. The other eleven [`OPS`] supplement blocked spec
+/// lowerings.
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 75;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -563,6 +565,22 @@ fn finite_factor_witness(factor: &FiniteFactor) -> Result<Term> {
         .try_fold(con("list"), |xs, field| app(xs, wrap_nat(field)?))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn finite_product_witness(product: &NormalizedProductCase) -> Result<Term> {
+    let fields = [
+        mk_nat(product.ratio.sign),
+        product.ratio.numerator.clone(),
+        product.ratio.denominator.clone(),
+        mk_nat(u64::from(product.ratio.exp2.negative)),
+        product.ratio.exp2.magnitude.clone(),
+        mk_nat(u64::from(product.bin_exp.negative)),
+        product.bin_exp.magnitude.clone(),
+    ];
+    fields
+        .into_iter()
+        .try_fold(con("list"), |xs, field| app(xs, wrap_nat(field)?))
+}
+
 /// Exact, compact factor/bin witnesses for finite floats. The subnormal
 /// highest-bit index is a conclusion field, so later replay can bind it from a
 /// checked helper fact instead of multiplying 23/52 host-enumerated cases
@@ -578,11 +596,13 @@ fn finite_factor_relation_clauses() -> Result<Vec<Clause>> {
                     float_case_named(w, sign, "normal", Some(exp_sign), "src_")?;
                 for case in finite_factor_cases(w, sign, "normal", Some(exp_sign), "src_")? {
                     let mut sides = case.sides;
+                    sides.push(mv("factor_sig").equals(case.factor.significand.clone())?);
                     sides.push(mv("factor_e").equals(case.factor.exp2.magnitude.clone())?);
                     let mut factor = case.factor;
+                    factor.significand = mv("factor_sig");
                     factor.exp2.magnitude = mv("factor_e");
                     out.push(clause(
-                        &["src_m", "src_e", "factor_e"],
+                        &["src_m", "src_e", "factor_sig", "factor_e"],
                         sides,
                         fn_graph(
                             "fmul_.factor",
@@ -2563,6 +2583,177 @@ fn float_mul_exceptional_clauses() -> Result<Vec<Clause>> {
     Ok(out)
 }
 
+/// Compact finite `fmul_` routing through checked factor witnesses.
+///
+/// The host generator branches only over the finite sign bits carried by the
+/// witness encoding. Significands, exponents and highest-set-bit indices stay
+/// symbolic and are supplied by the two `fmul_.factor` judgement premises.
+/// This avoids multiplying the 23/52 possible subnormal bins through every
+/// product and rounding branch.
+#[cfg_attr(not(test), allow(dead_code))]
+fn float_mul_finite_clauses() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        for sign in [0, 1] {
+            for exp_negative in [false, true] {
+                for bin_negative in [false, true] {
+                    let product = NormalizedProductCase {
+                        sides: vec![],
+                        ratio: ExactRatioTerms {
+                            sign,
+                            numerator: mv("numerator"),
+                            denominator: mv("denominator"),
+                            exp2: SignedNatTerm {
+                                negative: exp_negative,
+                                magnitude: mv("exp"),
+                            },
+                        },
+                        bin_exp: SignedNatTerm {
+                            negative: bin_negative,
+                            magnitude: mv("bin"),
+                        },
+                    };
+                    let product_fact = fn_graph(
+                        "fmul_.product",
+                        &[w_lit(w)?, mv("a"), mv("b")],
+                        &finite_product_witness(&product)?,
+                    )?;
+                    let names = ["a", "b", "numerator", "denominator", "exp", "bin"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    for quantum in
+                        select_float_target_quantum(&[], product.ratio, product.bin_exp, w)?
+                    {
+                        for mut result in
+                            emit_fmul_quantum_result(&names, &quantum, w, mv("a"), mv("b"))?
+                        {
+                            result
+                                .prems
+                                .insert(0, LowerPrem::Judgement(product_fact.clone()));
+                            out.push(result);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn float_mul_product_clauses() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    let sign_shapes = [(true, true), (true, false), (false, false)];
+    for w in [32, 64] {
+        for left_sign in [0, 1] {
+            for right_sign in [0, 1] {
+                for (left_exp_negative, left_bin_negative) in sign_shapes {
+                    for (right_exp_negative, right_bin_negative) in sign_shapes {
+                        let left = FiniteFactor {
+                            sign: left_sign,
+                            significand: mv("a_sig"),
+                            denominator: mk_nat(1u64),
+                            exp2: SignedNatTerm {
+                                negative: left_exp_negative,
+                                magnitude: mv("a_exp"),
+                            },
+                            bin_exp: SignedNatTerm {
+                                negative: left_bin_negative,
+                                magnitude: mv("a_bin"),
+                            },
+                            top_bit: mv("a_top"),
+                        };
+                        let right = FiniteFactor {
+                            sign: right_sign,
+                            significand: mv("b_sig"),
+                            denominator: mk_nat(1u64),
+                            exp2: SignedNatTerm {
+                                negative: right_exp_negative,
+                                magnitude: mv("b_exp"),
+                            },
+                            bin_exp: SignedNatTerm {
+                                negative: right_bin_negative,
+                                magnitude: mv("b_bin"),
+                            },
+                            top_bit: mv("b_top"),
+                        };
+                        let left_fact = fn_graph(
+                            "fmul_.factor",
+                            &[w_lit(w)?, mv("a")],
+                            &finite_factor_witness(&left)?,
+                        )?;
+                        let right_fact = fn_graph(
+                            "fmul_.factor",
+                            &[w_lit(w)?, mv("b")],
+                            &finite_factor_witness(&right)?,
+                        )?;
+                        for product in finite_product_cases(&[], left, right)? {
+                            let mut sides = product.sides.clone();
+                            sides.push(mv("product_n").equals(product.ratio.numerator.clone())?);
+                            sides.push(mv("product_d").equals(product.ratio.denominator.clone())?);
+                            sides.push(
+                                mv("product_e").equals(product.ratio.exp2.magnitude.clone())?,
+                            );
+                            sides
+                                .push(mv("product_bin").equals(product.bin_exp.magnitude.clone())?);
+                            let pinned = NormalizedProductCase {
+                                sides: vec![],
+                                ratio: ExactRatioTerms {
+                                    sign: product.ratio.sign,
+                                    numerator: mv("product_n"),
+                                    denominator: mv("product_d"),
+                                    exp2: SignedNatTerm {
+                                        negative: product.ratio.exp2.negative,
+                                        magnitude: mv("product_e"),
+                                    },
+                                },
+                                bin_exp: SignedNatTerm {
+                                    negative: product.bin_exp.negative,
+                                    magnitude: mv("product_bin"),
+                                },
+                            };
+                            let mut prems = vec![
+                                LowerPrem::Judgement(left_fact.clone()),
+                                LowerPrem::Judgement(right_fact.clone()),
+                            ];
+                            prems.extend(sides.into_iter().map(LowerPrem::Side));
+                            out.push(Clause {
+                                metavars: [
+                                    "a",
+                                    "b",
+                                    "a_sig",
+                                    "a_exp",
+                                    "a_bin",
+                                    "a_top",
+                                    "b_sig",
+                                    "b_exp",
+                                    "b_bin",
+                                    "b_top",
+                                    "product_n",
+                                    "product_d",
+                                    "product_e",
+                                    "product_bin",
+                                ]
+                                .into_iter()
+                                .map(str::to_owned)
+                                .collect(),
+                                prems,
+                                concl: fn_graph(
+                                    "fmul_.product",
+                                    &[w_lit(w)?, mv("a"), mv("b")],
+                                    &finite_product_witness(&pinned)?,
+                                )?,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Exact IEEE comparisons and `copysign` over the complete structural
 /// carrier. The monotone integer key reverses negative raw payloads and
 /// shifts positive payloads above them; signed zeros are handled separately,
@@ -4383,9 +4574,10 @@ pub struct BuiltinReport {
     pub zero_clause_ops: usize,
 }
 
-/// **The integer-builtin clause list** (deterministic order: op families in
-/// [`OPS`] order, widths ascending). All premises are computable `Side`
-/// antecedents; no judgement premises, no opaques, zero axioms.
+/// **The numeric-builtin clause list** (deterministic order: established
+/// families first, newly completed families appended, widths ascending).
+/// Premises are computable `Side` antecedents or checked internal helper
+/// judgements; there are no opaque premises and zero axioms.
 pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     let mut out = Vec::new();
     for carrier in [false, true] {
@@ -4479,6 +4671,10 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     out.extend(integer_to_float_conversions()?);
     out.extend(float_promotion()?);
     out.extend(float_demotion()?);
+    out.extend(finite_factor_relation_clauses()?);
+    out.extend(float_mul_product_clauses()?);
+    out.extend(float_mul_finite_clauses()?);
+    out.extend(float_mul_exceptional_clauses()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -4552,6 +4748,61 @@ mod tests {
             return true;
         }
         false
+    }
+
+    fn derive_target_with(
+        rs: &metalogic::RuleSet<'_>,
+        clauses: &[Clause],
+        target: &Term,
+        seeds: &[(&str, Term)],
+        derivations: &[Thm],
+    ) -> Option<Thm> {
+        let n_clauses = rs.n_clauses().ok()?;
+        'clauses: for (idx, clause) in clauses.iter().enumerate() {
+            let mut binds = BTreeMap::new();
+            if !matches(&clause.concl, target, &mut binds) {
+                continue;
+            }
+            for (name, value) in seeds {
+                if let Some(prior) = binds.insert((*name).to_owned(), value.clone())
+                    && prior != *value
+                {
+                    continue 'clauses;
+                }
+            }
+            let args = clause
+                .metavars
+                .iter()
+                .map(|name| binds.get(name).cloned())
+                .collect::<Option<Vec<_>>>()?;
+            let mut supplied = derivations.iter();
+            let mut premises = Vec::new();
+            for prem in &clause.prems {
+                match prem {
+                    LowerPrem::Judgement(_) => {
+                        premises.push(Premise::Derivation(supplied.next()?.clone()));
+                    }
+                    LowerPrem::Side(side) => {
+                        let mut ground = side.clone();
+                        for (name, value) in &binds {
+                            ground =
+                                subst_free(&ground, &Var::new(metavar_name(name), phi()), value);
+                        }
+                        let Ok(proof) = prove_side(&ground) else {
+                            continue 'clauses;
+                        };
+                        premises.push(Premise::Side(proof));
+                    }
+                }
+            }
+            if supplied.next().is_some() {
+                continue;
+            }
+            if let Ok(proof) = metalogic::derive_mixed(rs, idx, n_clauses, &args, premises) {
+                return Some(proof);
+            }
+        }
+        None
     }
 
     fn nat(n: u64) -> Term {
@@ -4868,6 +5119,217 @@ mod tests {
         )
         .unwrap();
         assert!(derivable_at(&clauses, &target));
+    }
+
+    #[test]
+    fn compact_fmul_finite_clause_expansion_is_bounded() {
+        let start = std::time::Instant::now();
+        let factors = finite_factor_relation_clauses().unwrap();
+        let products = float_mul_product_clauses().unwrap();
+        let clauses = float_mul_finite_clauses().unwrap();
+        let exceptional = float_mul_exceptional_clauses().unwrap();
+        eprintln!(
+            "compact fmul: {} factor + {} product + {} finite + {} exceptional clauses in {:?}",
+            factors.len(),
+            products.len(),
+            clauses.len(),
+            exceptional.len(),
+            start.elapsed()
+        );
+        assert!(factors.len() + products.len() + clauses.len() + exceptional.len() < 10_000);
+        assert!(start.elapsed().as_secs_f32() < 2.0);
+        assert!(
+            clauses
+                .iter()
+                .all(|clause| { matches!(clause.prems.first(), Some(LowerPrem::Judgement(_))) })
+        );
+        assert!(products.iter().all(|clause| {
+            matches!(clause.prems.first(), Some(LowerPrem::Judgement(_)))
+                && matches!(clause.prems.get(1), Some(LowerPrem::Judgement(_)))
+        }));
+    }
+
+    #[test]
+    fn compact_fmul_replays_finite_factor_product_and_rounding_chain() {
+        crate::wasm::lower::total::with_total_stack(|| {
+            let mut clauses = finite_factor_relation_clauses().unwrap();
+            clauses.extend(float_mul_product_clauses().unwrap());
+            clauses.extend(float_mul_finite_clauses().unwrap());
+            clauses.extend(float_mul_exceptional_clauses().unwrap());
+            let rs = super::super::rule_set_of(clauses.clone());
+
+            let a = structural_normal(0, nat(1 << 22), 0, nat(0)).unwrap(); // 1.5
+            let b = structural_normal(0, nat(0), 0, nat(1)).unwrap(); // 2
+            let a_factor = FiniteFactor {
+                sign: 0,
+                significand: nat(3 << 22),
+                denominator: nat(1),
+                exp2: SignedNatTerm {
+                    negative: true,
+                    magnitude: nat(23),
+                },
+                bin_exp: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(0),
+                },
+                top_bit: nat(23),
+            };
+            let b_factor = FiniteFactor {
+                sign: 0,
+                significand: nat(1 << 23),
+                denominator: nat(1),
+                exp2: SignedNatTerm {
+                    negative: true,
+                    magnitude: nat(22),
+                },
+                bin_exp: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(1),
+                },
+                top_bit: nat(23),
+            };
+            let a_fact = fn_graph(
+                "fmul_.factor",
+                &[w_lit(32).unwrap(), a.clone()],
+                &finite_factor_witness(&a_factor).unwrap(),
+            )
+            .unwrap();
+            let b_fact = fn_graph(
+                "fmul_.factor",
+                &[w_lit(32).unwrap(), b.clone()],
+                &finite_factor_witness(&b_factor).unwrap(),
+            )
+            .unwrap();
+            let a_proof = derive_target_with(&rs, &clauses, &a_fact, &[], &[]).unwrap();
+            let b_proof = derive_target_with(&rs, &clauses, &b_fact, &[], &[]).unwrap();
+
+            let product = NormalizedProductCase {
+                sides: vec![],
+                ratio: ExactRatioTerms {
+                    sign: 0,
+                    numerator: nat((3u64 << 22) * (1u64 << 23)),
+                    denominator: nat(1),
+                    exp2: SignedNatTerm {
+                        negative: true,
+                        magnitude: nat(45),
+                    },
+                },
+                bin_exp: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(1),
+                },
+            };
+            let product_fact = fn_graph(
+                "fmul_.product",
+                &[w_lit(32).unwrap(), a.clone(), b.clone()],
+                &finite_product_witness(&product).unwrap(),
+            )
+            .unwrap();
+            let product_seeds = [
+                ("a_sig", a_factor.significand.clone()),
+                ("a_exp", a_factor.exp2.magnitude.clone()),
+                ("a_bin", a_factor.bin_exp.magnitude.clone()),
+                ("a_top", a_factor.top_bit.clone()),
+                ("b_sig", b_factor.significand.clone()),
+                ("b_exp", b_factor.exp2.magnitude.clone()),
+                ("b_bin", b_factor.bin_exp.magnitude.clone()),
+                ("b_top", b_factor.top_bit.clone()),
+            ];
+            let product_proof = derive_target_with(
+                &rs,
+                &clauses,
+                &product_fact,
+                &product_seeds,
+                &[a_proof, b_proof],
+            )
+            .unwrap();
+
+            let result = structural_normal(0, nat(1 << 22), 0, nat(1)).unwrap(); // 3
+            let result_fact =
+                float_selection_concl("fmul_", 32, a.clone(), b.clone(), result).unwrap();
+            let product_seeds = [
+                ("numerator", product.ratio.numerator.clone()),
+                ("denominator", product.ratio.denominator.clone()),
+                ("exp", product.ratio.exp2.magnitude.clone()),
+                ("bin", product.bin_exp.magnitude.clone()),
+            ];
+            assert!(
+                derive_target_with(
+                    &rs,
+                    &clauses,
+                    &result_fact,
+                    &product_seeds,
+                    &[product_proof.clone()],
+                )
+                .is_some()
+            );
+            let wrong = float_selection_concl(
+                "fmul_",
+                32,
+                a,
+                b,
+                structural_normal(0, nat(0), 0, nat(1)).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                derive_target_with(&rs, &clauses, &wrong, &product_seeds, &[product_proof])
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn fmul_exceptional_routing_is_signed_and_fail_closed() {
+        let clauses = float_mul_exceptional_clauses().unwrap();
+        let pos_zero = signed_zero(0).unwrap();
+        let neg_zero = signed_zero(1).unwrap();
+        let neg_one = signed_one(1).unwrap();
+        assert!(derivable_at(
+            &clauses,
+            &float_selection_concl("fmul_", 32, pos_zero.clone(), neg_one.clone(), neg_zero,)
+                .unwrap()
+        ));
+        let neg_inf = structural_float(1, app(con("case.INF"), con("tup")).unwrap()).unwrap();
+        let pos_inf = structural_float(0, app(con("case.INF"), con("tup")).unwrap()).unwrap();
+        assert!(derivable_at(
+            &clauses,
+            &float_selection_concl("fmul_", 32, neg_inf.clone(), neg_one, pos_inf.clone(),)
+                .unwrap()
+        ));
+        let canonical_nan = structural_nan(0, nat(1 << 22)).unwrap();
+        assert!(derivable_at(
+            &clauses,
+            &float_selection_concl(
+                "fmul_",
+                32,
+                pos_inf.clone(),
+                pos_zero.clone(),
+                canonical_nan,
+            )
+            .unwrap()
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &float_selection_concl(
+                "fmul_",
+                32,
+                pos_inf,
+                pos_zero,
+                structural_nan(0, nat((1 << 22) + 1)).unwrap(),
+            )
+            .unwrap()
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &float_selection_concl(
+                "fmul_",
+                32,
+                neg_inf,
+                signed_zero(0).unwrap(),
+                structural_normal(0, nat(0), 0, nat(0)).unwrap(),
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -5506,8 +5968,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -5781,9 +6243,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         for (w, a) in [
             (8, 0xa5),
@@ -5862,9 +6324,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -6170,9 +6632,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -6230,8 +6692,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -6378,9 +6840,9 @@ mod tests {
     #[test]
     fn structural_float_representation_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let cases = [
             (32, fval(0, fmag_subnormal(0)), 0),
@@ -6533,9 +6995,9 @@ mod tests {
     #[test]
     fn structural_float_comparisons_and_copysign_are_exact() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let pz = fval(0, fmag_subnormal(0));
         let nz = fval(1, fmag_subnormal(0));
@@ -6752,9 +7214,9 @@ mod tests {
     #[test]
     fn profile_choice_parameters_are_exact_relations() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         for value in [con("bool.false"), con("bool.true")] {
             assert!(derivable_at(
@@ -6831,9 +7293,9 @@ mod tests {
     #[test]
     fn structural_float_integral_rounding_is_exact() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let pz = fval(0, fmag_subnormal(0));
         let nz = fval(1, fmag_subnormal(0));
@@ -6935,9 +7397,9 @@ mod tests {
     #[test]
     fn structural_promotion_preserves_values_and_complete_nan_sets() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let cases = [
             (fval(0, fmag_subnormal(0)), fval(0, fmag_subnormal(0))),
@@ -7068,9 +7530,9 @@ mod tests {
     #[test]
     fn structural_demotion_rounds_every_region_and_preserves_nan_sets() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let cases = [
             (fval(1, fmag_subnormal(1)), fval(1, fmag_subnormal(0))),
@@ -7168,9 +7630,9 @@ mod tests {
     #[test]
     fn structural_integer_to_float_conversions_round_ties_to_even() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let cases = [
             (32, 32, "U", 0, fval(0, fmag_subnormal(0))),
@@ -7231,9 +7693,9 @@ mod tests {
     #[test]
     fn structural_float_to_integer_conversions_are_exact() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 10498);
-        assert_eq!(report.ops, 85);
-        assert_eq!(report.zero_clause_ops, 74);
+        assert_eq!(report.clauses, 12358);
+        assert_eq!(report.ops, 86);
+        assert_eq!(report.zero_clause_ops, 75);
 
         let nan = fval(
             0,

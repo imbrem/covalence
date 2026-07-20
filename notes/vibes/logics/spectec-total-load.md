@@ -28,7 +28,8 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **13974 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **15834 combined clauses** (2026-07-20, including exact scalar `fmul_`;
+  post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +37,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 10498 exact builtin
-  clauses over 85 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 12358 exact builtin
+  clauses over 86 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -759,8 +760,8 @@ two's-complement signed endpoint. The signed negative boundary admits
 kernel-computable equations; no host float, opaque premise, or ordinary-only
 partial closure is involved.
 
-The builtin leg is now **10498 clauses over 85 operations**, filling **74 of
-91** declarations and leaving **17**.
+The builtin leg is now **12358 clauses over 86 operations**, filling **75 of
+91** declarations and leaving **16**.
 
 ### Exact integer-to-float conversion
 
@@ -823,11 +824,32 @@ Focused replay covers directed sign behavior, signed zero, both tie parities,
 carry, already-integral preservation, wrong-result refusal, infinities, and
 canonical/arithmetic NaN families without host floating point.
 
+### Exact scalar float multiplication
+
+`fmul_` now covers the complete F32/F64 structural carrier without host
+floating point. Twenty compact `fmul_.factor` clauses expose exact finite
+significands, signed power-of-two scales, normalized bins, and the unique
+highest-set-bit witness for nonzero subnormals. A 432-clause
+`fmul_.product` relation consumes two checked factor facts and exposes the
+wide exact product once. The 824 final finite clauses select the normal,
+subnormal, or overflow quantum and perform a single quotient/remainder
+round-to-nearest, ties-to-even step. Another 584 disjoint clauses cover NaNs,
+infinity-times-zero, signed infinities, and signed zero products.
+
+This staging generates 1,860 clauses in roughly 75 ms in the focused debug
+test. The rejected direct enumeration produced 1,195,024 F32 clauses alone in
+24.9 seconds, demonstrating why the conclusion-pinned factor and product
+relations are semantic interfaces rather than a mere optimization. Unified
+NativeHol replay derives `1.5 * 2 = 3` through factor, product, quantum, and
+rounding facts and refuses a wrong result. No helper theorem crosses a
+RuleSet boundary, no trusted rule is added, and `fmul_` raises the builtin
+frontier by exactly one.
+
 ### Design: the remaining exact arithmetic layer
 
-The 17-tag frontier is not one homogeneous float backlog. Its exact census is:
+The 16-tag frontier is not one homogeneous float backlog. Its exact census is:
 
-- strict IEEE arithmetic: `fsqrt_`, `fadd_`, `fsub_`, `fmul_`, `fdiv_`;
+- strict IEEE arithmetic: `fsqrt_`, `fadd_`, `fsub_`, `fdiv_`;
 - relaxed float operations: `frelaxed_min_`, `frelaxed_max_`,
   `frelaxed_madd_`, `frelaxed_nmadd_`;
 - relaxed conversion/integer operations: `relaxed_trunc__`,
@@ -896,10 +918,10 @@ and multiplies exactly one side of the original ratio by the resulting power
 of two. A positive zero quantum is explicitly canonicalized during negation.
 
 Focused ground-oracle tests cover every exponent-sign combination, carry
-cancellation, normal numerator scaling, subnormal denominator scaling, and
-Side discharge. These helpers are not yet connected to `fmul_`; consequently
-`fmul_` remains outside `OPS` and no coverage or theorem claim changes at this
-checkpoint.
+cancellation, normal numerator scaling, subnormal denominator scaling, Side
+discharge, bounded clause generation, exceptional routing, and unified
+factor/product/result replay. These helpers are now connected to `fmul_`
+through checked judgement premises in the same RuleSet.
 
 ### Exact unbounded inverse sequence concatenation
 

@@ -1000,7 +1000,7 @@ where
                     let arguments = Self::completed_arguments(evaluated);
                     let value = self
                         .primitives
-                        .apply(self.values(), &primitive, &arguments)
+                        .apply(self.values(), &primitive, arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = MachineControl::Value(value);
                 } else {
@@ -1032,7 +1032,7 @@ where
             RuntimeValueLayer::Primitive(primitive) => {
                 let value = self
                     .primitives
-                    .apply(self.values(), &primitive, &arguments)
+                    .apply(self.values(), &primitive, arguments)
                     .map_err(CoreMachineError::Primitive)?;
                 configuration.control = MachineControl::Value(value);
                 return Ok(Some(configuration));
@@ -1316,7 +1316,7 @@ where
                         if arguments.is_empty() {
                             let value = self
                                 .primitives
-                                .apply(self.values(), &operator, &[])
+                                .apply(self.values(), &operator, Vec::new())
                                 .map_err(CoreMachineError::Primitive)?;
                             next.control = MachineControl::Value(value);
                         } else {
@@ -1610,9 +1610,9 @@ mod tests {
             &self,
             values: &HostValues<&'static str, &'static str, Primitive>,
             primitive: &Primitive,
-            arguments: &[HostValue<&'static str, &'static str, Primitive>],
+            arguments: Vec<HostValue<&'static str, &'static str, Primitive>>,
         ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
-            match (primitive, arguments) {
+            match (primitive, arguments.as_slice()) {
                 (Primitive::Cons, [head, tail]) => values
                     .cons(head.clone(), tail.clone())
                     .map_err(|never| match never {}),

@@ -644,8 +644,9 @@ where
         &self,
         runtime: &V,
         primitive: &Primitive,
-        arguments: &[V::Value],
+        arguments: Vec<V::Value>,
     ) -> Result<V::Value, Self::Error> {
+        let arguments = arguments.as_slice();
         match primitive {
             Primitive::Cons => {
                 let [head, tail] = self.values::<_, 2>(arguments)?;
@@ -1234,6 +1235,11 @@ mod tests {
                    (length (quote (a b c))))"
             ),
             CoreAtom::Integer(Int::from(3))
+        );
+        assert_eq!(
+            run_arena("(let ((invoke apply)) (invoke + (quote (20 22))))"),
+            CoreAtom::Integer(Int::from(42)),
+            "first-class primitive and apply-list dispatch share the owned argument API"
         );
     }
 

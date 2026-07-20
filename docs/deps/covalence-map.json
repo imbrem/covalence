@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 264,
+      "words": 267,
       "updated": 0
     },
     {
@@ -9403,7 +9403,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 677,
+      "words": 679,
       "updated": 0
     },
     {
@@ -10825,7 +10825,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1475,
+      "words": 1481,
       "updated": 0
     },
     {

@@ -97,6 +97,9 @@ disable-model-invocation: true
     common terminal-value observation and therefore produce checked `MayEval`
     traces on both the direct and opaque-resource runtimes; effectful runs
     retain the separate suspension/resume transcript.
+  - Applicative and concatenative primitive dictionaries both transfer owned
+    finite value lists rather than borrowing Rust slices. This is intentional:
+    it keeps primitive dispatch resource-safe and directly expressible as WIT.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

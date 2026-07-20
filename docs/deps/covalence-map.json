@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 36560,
+      "words": 36613,
       "updated": 0
     },
     {
@@ -15856,7 +15856,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 36560,
+      "words": 36613,
       "updated": 0
     },
     {
@@ -16396,7 +16396,7 @@
       "title": "relational-design.md",
       "status": "tracked",
       "path": "notes/plans/relational-design.md",
-      "words": 46,
+      "words": 287,
       "updated": 0
     },
     {
@@ -16936,7 +16936,7 @@
       "title": "substrate-rewrite.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 269,
+      "words": 366,
       "updated": 0
     },
     {
@@ -17530,7 +17530,7 @@
       "title": "current-program.md",
       "status": "tracked",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 76,
+      "words": 78,
       "updated": 0
     },
     {
@@ -17674,7 +17674,7 @@
       "title": "neel-meeting-synthesis.md",
       "status": "tracked",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 209,
+      "words": 222,
       "updated": 0
     },
     {
@@ -18628,8 +18628,8 @@
       "title": "Rust Surface Idea",
       "status": "draft",
       "path": "notes/plans/relational-design.md",
-      "words": 245,
-      "updated": 1784580813
+      "words": 2081,
+      "updated": 1784583945
     },
     {
       "id": "note:notes/plans/sketch-separation.md",
@@ -18925,8 +18925,8 @@
       "title": "Substrate rewrite: SQLite-backed nucleus",
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 1564,
-      "updated": 1784580813
+      "words": 2259,
+      "updated": 1784584064
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -19492,8 +19492,8 @@
       "title": "Current program",
       "status": "draft",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 297,
-      "updated": 1784580813
+      "words": 303,
+      "updated": 1784584064
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -19636,8 +19636,8 @@
       "title": "Neel meeting: current vision and concrete proposals",
       "status": "draft",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 1269,
-      "updated": 1784580813
+      "words": 1377,
+      "updated": 1784584064
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
@@ -31770,6 +31770,12 @@
     {
       "source": "note:notes/vibes/plans/current-program.md",
       "predicate": "links-to",
+      "target": "note:notes/plans/relational-design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/current-program.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/kernel/substrate-rewrite.md",
       "detail": null
     },
@@ -36014,8 +36020,8 @@
     },
     {
       "noteId": "note:notes/plans/relational-design.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "9ede9734f0e57855576ddbc6f8a7406ca0914349",
+      "committedAt": 1784583945
     },
     {
       "noteId": "note:notes/plans/sketch-separation.md",
@@ -36179,8 +36185,8 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/substrate-rewrite.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
+      "committedAt": 1784584064
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -36494,8 +36500,8 @@
     },
     {
       "noteId": "note:notes/vibes/plans/current-program.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
+      "committedAt": 1784584064
     },
     {
       "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -36574,8 +36580,8 @@
     },
     {
       "noteId": "note:notes/vibes/vision/neel-meeting-synthesis.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
+      "committedAt": 1784584064
     },
     {
       "noteId": "note:notes/vibes/vision/project-map.md",

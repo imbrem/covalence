@@ -18,9 +18,11 @@
 
 use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_kernel_lisp::{CoreExpr, Datum};
-use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
+use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution};
+use covalence_lisp::carrier::Acl2Carrier;
 use covalence_lisp::frontend::{CoreAtom, Frontend, HostSession, SurfaceDialect};
 use covalence_lisp::reader::read_one;
+use covalence_sexp::AbstractSExpr;
 
 fn session() -> Acl2Session {
     Acl2Session::new().expect("session")
@@ -73,6 +75,24 @@ fn eval_closed(s: &Acl2Session, src: &str, want: &str) {
 // ---- Little-Schemer app: defun + recursion --------------------------------
 
 const APP: &str = "(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))";
+
+#[test]
+fn relational_append_agrees_with_conservatively_admitted_acl2_append() {
+    let s = session();
+    let carrier = Acl2Carrier::new().unwrap();
+    let left = carrier.quote(&read_one("(a b)").unwrap()).unwrap();
+    let right = carrier.quote(&read_one("(c d)").unwrap()).unwrap();
+    let expected = carrier.quote(&read_one("(a b c d)").unwrap()).unwrap();
+
+    let evidence = replay_acl2_append_execution(s.induction_env(), left, right, 16).unwrap();
+    assert_eq!(evidence.execution.value, expected);
+    assert!(evidence.execution.reduction.hyps().is_empty());
+    assert!(evidence.model_agreement.hyps().is_empty());
+    assert_eq!(
+        evidence.model_agreement.concl().as_eq().unwrap().1,
+        &evidence.execution.value
+    );
+}
 
 #[test]
 fn defun_app_and_apply() {

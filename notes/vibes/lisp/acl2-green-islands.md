@@ -266,3 +266,26 @@ community book has deterministic normalized-event parity, every logical
 definition is conservative, every exported theorem has a closed checked
 NativeHol theorem, downstream reuse succeeds, and the TCB contains no ACL2
 parser, search procedure, normalizer, external prover, or raw execution path.
+
+## Relational execution agreement
+
+The first execution-adequacy seam now runs the generic relational Lisp
+semantics over ACL2's actual `int ⊕ bytes` object carrier. A concrete
+`APPEND` call produces two independent, closed kernel theorems:
+
+- `Reduces (rel-append left right) value`, replayed from a checked finite
+  trace; and
+- `ACL2-APPEND-model left right = value`, folded from the conservatively
+  admitted ACL2 definition.
+
+The replay API also checks terminal-value claims and compares two checked
+pointwise results only when their initial configurations match. Host execution
+and syntactic equality cannot introduce a theorem: malformed evidence is
+rejected, while successful equality is kernel reflexivity.
+
+This is not yet the universal admission theorem. The remaining severe
+`lisp.acl2.admission-layer` obligation is to prove, over all carrier inputs,
+existence of a terminal relational result and uniqueness of any such result,
+then use those theorems to totalize general admitted ACL2 definitions. The
+pointwise `APPEND` bridge is the executable target and corruption gate for
+that induction proof.

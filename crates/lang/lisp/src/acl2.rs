@@ -102,7 +102,7 @@ use covalence_init::init::acl2::count::{
     acl2_count_natp_fact, acl2_count_sum_strict_fact, acl2_count_sum_weak_fact, with_acl2_count,
 };
 use covalence_init::init::acl2::defun::{
-    Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
+    Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun, defun_ground,
 };
 use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
@@ -115,7 +115,8 @@ use covalence_init::init::acl2::simplify::{
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, SourcedDefinition,
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation, MayEvalReplay,
+    SourcedDefinition, TraceReplay, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -125,6 +126,7 @@ use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
+use crate::relation::{LispMayEvalEvidence, LispRel};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 
 /// Step budget for a value reduction — recursion is admitted by a *syntactic*
@@ -334,6 +336,62 @@ impl<'a> Acl2HolReplay<'a> {
 pub struct Acl2HolReplayEvidence {
     pub environment: Acl2Env,
     pub definition: Acl2HolDefinition,
+}
+
+/// Checked pointwise agreement between relational Lisp execution and ACL2's
+/// conservatively admitted `APPEND` model.
+///
+/// `execution.reduction` proves that the common operational relation reaches
+/// `execution.value`. `model_agreement` independently proves that ACL2's
+/// total model at the same inputs equals that value. Both are closed kernel
+/// theorems; the host driver below carries no theorem authority.
+///
+/// This is deliberately pointwise. Universal existence and uniqueness over
+/// all ACL2 objects remains the admission-layer obligation.
+#[derive(Clone)]
+pub struct Acl2AppendExecutionEvidence {
+    pub execution: LispMayEvalEvidence,
+    pub model_agreement: Thm,
+}
+
+/// Replay one concrete ACL2 `APPEND` call through both semantic layers.
+pub fn replay_acl2_append_execution(
+    environment: &Acl2Env,
+    left: Term,
+    right: Term,
+    fuel: usize,
+) -> Result<Acl2AppendExecutionEvidence, HolError> {
+    let relation = LispRel::over_acl2_carrier()?;
+    if !relation.is_value(&left) || !relation.is_value(&right) {
+        return Err(HolError::Stuck(
+            "ACL2 APPEND execution inputs must be carrier values".into(),
+        ));
+    }
+    let input = relation.append_of(left.clone(), right.clone())?;
+    let evaluation = evaluate(&relation, input, fuel)
+        .map_err(|error| HolError::Stuck(format!("ACL2 APPEND execution failed: {error:?}")))?;
+    let Evaluation::Value(evaluation) = evaluation else {
+        return Err(HolError::Stuck(
+            "ACL2 APPEND relational execution ended stuck".into(),
+        ));
+    };
+    let trace = relation.replay(&relation, &evaluation.trace)?;
+    let execution = relation.replay_may_eval(&relation, &evaluation, &trace)?;
+    let model_agreement = defun_ground(environment, "APPEND", &[left, right])
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let (_, model_value) = model_agreement
+        .concl()
+        .as_eq()
+        .ok_or_else(|| HolError::Kernel("ACL2 APPEND model replay was not an equation".into()))?;
+    if model_value != &execution.value || !model_agreement.hyps().is_empty() {
+        return Err(HolError::Kernel(
+            "ACL2 APPEND model and relational execution disagree".into(),
+        ));
+    }
+    Ok(Acl2AppendExecutionEvidence {
+        execution,
+        model_agreement,
+    })
 }
 
 impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {

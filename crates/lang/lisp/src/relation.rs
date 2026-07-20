@@ -48,7 +48,8 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
-    CheckedTrace, CoreExpr, Datum, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
+    CheckedTrace, CoreExpr, Datum, DeterministicStep, EvaluationDeterminacy, MayEval,
+    MayEvalReplay, StepRelation, TerminalValue, TraceReplay, TraceSoundness,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -56,7 +57,7 @@ use std::sync::Arc;
 
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
-use crate::carrier::{CarvedCarrier, exact_datum_carved};
+use crate::carrier::{Acl2Carrier, CarvedCarrier, exact_datum_carved};
 use crate::frontend::{CoreAtom, FrontendExpr, Primitive, SurfaceDialect};
 use crate::hol::HolError;
 use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
@@ -115,7 +116,7 @@ pub struct LispRel {
     cs: &'static CarvedSExpr,
     /// The shared abstract-sexpr adapter over `cs` (structural build/observe
     /// helpers — `as_scons`/`as_atom`/`is_snil`/`data` delegate here).
-    carrier: CarvedCarrier,
+    carrier: RelationCarrier,
     /// The sexpr `t` atom (`atom "t"`) — the truthy value predicates return.
     t: Term,
     /// The empty-list constructor — Lisp's canonical false / `nil` value.
@@ -140,6 +141,60 @@ pub struct LispRel {
     /// Boxed so the two variants share one field; drives both the extra `Step`
     /// clauses and the driver's integer-redex reduction.
     int_be: Option<Box<dyn IntBackend>>,
+}
+
+#[derive(Clone)]
+enum RelationCarrier {
+    Carved(CarvedCarrier),
+    Acl2(Acl2Carrier),
+}
+
+impl RelationCarrier {
+    fn atom(&self, payload: PayloadLit<'_>) -> Result<Term, HolError> {
+        match self {
+            Self::Carved(carrier) => carrier.atom(payload),
+            Self::Acl2(carrier) => carrier.atom(payload),
+        }
+    }
+
+    fn quote(&self, datum: &SExpr) -> Result<Term, HolError> {
+        match self {
+            Self::Carved(carrier) => carrier.quote(datum),
+            Self::Acl2(carrier) => carrier.quote(datum),
+        }
+    }
+
+    fn as_cons(&self, value: &Term) -> Option<(Term, Term)> {
+        match self {
+            Self::Carved(carrier) => carrier.as_cons(value),
+            Self::Acl2(carrier) => carrier.as_cons(value),
+        }
+    }
+
+    fn as_atom(&self, value: &Term) -> Option<PayloadOwned> {
+        match self {
+            Self::Carved(carrier) => carrier.as_atom(value),
+            Self::Acl2(carrier) => carrier.as_atom(value),
+        }
+    }
+
+    fn as_atom_term(&self, value: &Term) -> Option<Term> {
+        match self {
+            Self::Carved(carrier) => carrier.as_atom_term(value),
+            Self::Acl2(carrier) => carrier.as_aatom_term(value),
+        }
+    }
+
+    fn is_nil(&self, value: &Term) -> bool {
+        match self {
+            Self::Carved(carrier) => carrier.is_nil(value),
+            Self::Acl2(carrier) => carrier.is_nil(value),
+        }
+    }
+
+    fn is_acl2(&self) -> bool {
+        matches!(self, Self::Acl2(_))
+    }
 }
 
 /// A stable, sexpr-valued operator head named `name` with `arity` sexpr inputs.
@@ -184,17 +239,17 @@ impl LispRel {
         };
         let t = atom_c("t")?;
         let nil = cs.snil.clone();
-        let (carrier, int_be): (CarvedCarrier, Option<Box<dyn IntBackend>>) = match dialect {
-            Dialect::Sector => (CarvedCarrier::over(cs), None),
+        let (carrier, int_be): (RelationCarrier, Option<Box<dyn IntBackend>>) = match dialect {
+            Dialect::Sector => (RelationCarrier::Carved(CarvedCarrier::over(cs)), None),
             Dialect::SectorInt(IntFlavour::Int) => (
-                CarvedCarrier::over(cs),
+                RelationCarrier::Carved(CarvedCarrier::over(cs)),
                 Some(
                     Box::new(IntVariant::new(tau.clone(), t.clone(), nil.clone()))
                         as Box<dyn IntBackend>,
                 ),
             ),
             Dialect::SectorInt(IntFlavour::Nat) => (
-                CarvedCarrier::over(cs),
+                RelationCarrier::Carved(CarvedCarrier::over(cs)),
                 Some(
                     Box::new(NatVariant::new(tau.clone(), t.clone(), nil.clone()))
                         as Box<dyn IntBackend>,
@@ -208,7 +263,10 @@ impl LispRel {
                     nil.clone(),
                 );
                 (
-                    CarvedCarrier::int_or_symbol(cs, Arc::new(backend.clone()))?,
+                    RelationCarrier::Carved(CarvedCarrier::int_or_symbol(
+                        cs,
+                        Arc::new(backend.clone()),
+                    )?),
                     Some(Box::new(backend) as Box<dyn IntBackend>),
                 )
             }
@@ -230,6 +288,33 @@ impl LispRel {
         })
     }
 
+    /// Build the common relational Lisp semantics over ACL2's actual object
+    /// carrier rather than an isomorphic, separately carved datum type.
+    ///
+    /// This is the representation seam needed to compare checked finite
+    /// relational executions directly with conservative ACL2 definitions.
+    /// It does not by itself prove universal execution adequacy.
+    pub fn over_acl2_carrier() -> Result<Self, HolError> {
+        let carrier = Acl2Carrier::new()?;
+        let cs = carrier.theory().cs;
+        let tau = &cs.tau;
+        Ok(Self {
+            cs,
+            t: carrier.t(),
+            nil: carrier.nil(),
+            carrier: RelationCarrier::Acl2(carrier),
+            atom_p: op_head("lisp.rel.acl2.atom?", 1, tau),
+            consp: op_head("lisp.rel.acl2.consp", 1, tau),
+            null_p: op_head("lisp.rel.acl2.null?", 1, tau),
+            integer_p: op_head("lisp.rel.acl2.integer?", 1, tau),
+            eq_p: op_head("lisp.rel.acl2.eq?", 2, tau),
+            cond: op_head("lisp.rel.acl2.cond", 1, tau),
+            append: op_head("lisp.rel.acl2.append", 2, tau),
+            dialect: Dialect::ExactIntSymbol,
+            int_be: None,
+        })
+    }
+
     /// The active dialect.
     pub fn dialect(&self) -> Dialect {
         self.dialect
@@ -243,6 +328,9 @@ impl LispRel {
     /// Build the sexpr value `(int n)` via the active backend. Errors in
     /// `sector` (no integer backend) and — in the `nat` flavour — for `n < 0`.
     pub fn int_lit(&self, n: &Int) -> Result<Term, HolError> {
+        if self.carrier.is_acl2() {
+            return self.carrier.atom(PayloadLit::Int(n));
+        }
         self.int_be
             .as_ref()
             .ok_or_else(|| HolError::Theory("integer literals need the sector+int dialect".into()))?
@@ -1675,7 +1763,7 @@ impl LispRel {
         {
             return true;
         }
-        if self.is_snil(t) || self.as_atom(t).is_some() {
+        if self.is_snil(t) || self.carrier.as_atom(t).is_some() {
             return true;
         }
         if let Some((h, tl)) = self.as_scons(t) {
@@ -1781,6 +1869,19 @@ impl LispRel {
     }
 }
 
+/// Checked pointwise evidence that one relational Lisp input reaches one
+/// terminal value.
+///
+/// The reduction theorem is authoritative kernel evidence. `initial` and
+/// `value` are retained so determinacy replay can fail closed on evidence from
+/// different executions without inspecting theorem pretty-printing.
+#[derive(Clone)]
+pub struct LispMayEvalEvidence {
+    pub initial: Term,
+    pub value: Term,
+    pub reduction: Thm,
+}
+
 impl StepRelation for LispRel {
     type Configuration = Term;
     type Error = HolError;
@@ -1796,6 +1897,14 @@ impl StepRelation for LispRel {
 impl DeterministicStep for LispRel {
     fn next(&self, configuration: &Term) -> Result<Option<Term>, HolError> {
         Ok(self.prove_step(configuration)?.map(|(next, _)| next))
+    }
+}
+
+impl TerminalValue for LispRel {
+    type Value = Term;
+
+    fn terminal_value(&self, configuration: &Term) -> Option<Term> {
+        self.is_value(configuration).then(|| configuration.clone())
     }
 }
 
@@ -1819,6 +1928,58 @@ impl TraceReplay<LispRel> for LispRel {
             evidence = self.reduces_step(&pair[0], &pair[1], &value, step, evidence)?;
         }
         Ok(evidence)
+    }
+}
+
+impl MayEvalReplay<LispRel> for LispRel {
+    type EvaluationEvidence = LispMayEvalEvidence;
+
+    fn replay_may_eval(
+        &self,
+        _relation: &LispRel,
+        evaluation: &MayEval<Term, Term>,
+        trace_evidence: &Thm,
+    ) -> Result<Self::EvaluationEvidence, HolError> {
+        let initial = evaluation.trace.start().clone();
+        let value = evaluation.value.clone();
+        if evaluation.trace.end() != &value || !self.is_value(&value) {
+            return Err(HolError::Stuck(
+                "MayEval evidence does not end at the claimed Lisp value".into(),
+            ));
+        }
+        let expected = self.reduces_prop(&initial, &value)?;
+        if !trace_evidence.hyps().is_empty() || trace_evidence.concl() != &expected {
+            return Err(HolError::Stuck(
+                "MayEval trace theorem does not prove the claimed closed reduction".into(),
+            ));
+        }
+        Ok(LispMayEvalEvidence {
+            initial,
+            value,
+            reduction: trace_evidence.clone(),
+        })
+    }
+}
+
+impl EvaluationDeterminacy<LispRel> for LispRel {
+    type Theorem = Thm;
+
+    fn results_equal(
+        &self,
+        left: &LispMayEvalEvidence,
+        right: &LispMayEvalEvidence,
+    ) -> Result<Thm, HolError> {
+        if left.initial != right.initial {
+            return Err(HolError::Stuck(
+                "cannot compare evaluation results from different initial configurations".into(),
+            ));
+        }
+        if left.value != right.value {
+            return Err(HolError::Stuck(
+                "checked deterministic executions produced distinct values".into(),
+            ));
+        }
+        Thm::refl(left.value.clone()).map_err(kernel_err)
     }
 }
 
@@ -1865,7 +2026,9 @@ fn to_core(e: HolError) -> covalence_core::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::{TraceReplay, execute};
+    use covalence_kernel_lisp::{
+        Evaluation, EvaluationDeterminacy, MayEvalReplay, TraceReplay, evaluate, execute,
+    };
 
     fn rel() -> LispRel {
         LispRel::new().unwrap()
@@ -1899,6 +2062,46 @@ mod tests {
         let theorem = r.replay(&r, &trace).expect("checked HOL replay");
         assert!(theorem.hyps().is_empty());
         assert_eq!(theorem.concl(), &r.reduces_prop(&input, &head).unwrap());
+    }
+
+    #[test]
+    fn acl2_carrier_replays_may_eval_and_rejects_forged_results() {
+        let r = LispRel::over_acl2_carrier().unwrap();
+        let a = r.sym("A");
+        let b = r.sym("B");
+        let c = r.sym("C");
+        let left = r
+            .scons(a.clone(), r.scons(b.clone(), r.nil()).unwrap())
+            .unwrap();
+        let right = r.scons(c.clone(), r.nil()).unwrap();
+        let input = r.append_of(left, right).unwrap();
+        let result = evaluate(&r, input, 16).unwrap();
+        let Evaluation::Value(evaluation) = result else {
+            panic!("ACL2 APPEND reaches a value: {result:?}")
+        };
+        let trace = r.replay(&r, &evaluation.trace).unwrap();
+        let evidence = r.replay_may_eval(&r, &evaluation, &trace).unwrap();
+        assert!(evidence.reduction.hyps().is_empty());
+        assert_eq!(
+            evidence.reduction.concl(),
+            &r.reduces_prop(&evidence.initial, &evidence.value).unwrap()
+        );
+        let equal = r.results_equal(&evidence, &evidence).unwrap();
+        assert!(equal.hyps().is_empty());
+        assert_eq!(
+            equal.concl().as_eq().unwrap(),
+            (&evidence.value, &evidence.value)
+        );
+
+        let forged = MayEval {
+            trace: evaluation.trace,
+            value: r.nil(),
+        };
+        assert!(r.replay_may_eval(&r, &forged, &trace).is_err());
+
+        let mut other_input = evidence.clone();
+        other_input.initial = r.nil();
+        assert!(r.results_equal(&evidence, &other_input).is_err());
     }
 
     /// A multi-step nested reduction:

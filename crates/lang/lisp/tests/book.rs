@@ -22,8 +22,8 @@ use covalence_hash::sha256;
 use covalence_lisp::acl2::{Acl2Proof, Acl2Session};
 use covalence_lisp::book::{
     BookConfig, BookReport, CompletenessCount, CompletenessLevel, EventOutcome, EventRecord,
-    ImportClass, SourceClosureStatus, Tally, TheoremNeutralCapability, TheoremNeutralInterface,
-    run_book, run_book_with_config,
+    ImportClass, IncludeStatus, SourceClosureStatus, SourceRole, SourceStatus, Tally,
+    TheoremNeutralCapability, TheoremNeutralInterface, run_book, run_book_with_config,
 };
 use covalence_lisp::progress::{
     NormalizedEventIdentity, NormalizedEventScope, PinnedNormalizedDenominator, ProgressMode,
@@ -534,21 +534,22 @@ fn mixed_book_exact_tally() {
     let report = run_book(&mut s, &root(), "books/mixed").expect("book runs");
 
     // 13 own events + 11 nested (app-basics via include-book) = 24:
-    //  transported: three-with-hints + nested {four, car-app}          = 3
+    //  transported: three-with-hints, consp-implies
+    //               + nested {four, car-app}                           = 4
     //  admitted:    pair-up-a + nested {app, rev, len2, app-ab-c,
     //               rev-rev-ab, len2-abc}                              = 7
     //  skipped:     in-package ×2 (own + nested), include ×4 (satisfied,
     //               re-include, missing, :dir), local defun            = 7
-    //  rejected:    consp-implies, bogus, defmacro, encapsulate,
-    //               mutual-recursion + nested {app-assoc, len2-app}    = 7
+    //  rejected:    bogus, defmacro, encapsulate, mutual-recursion
+    //               + nested {app-assoc, len2-app}                     = 6
     assert_eq!(
         report.tally(),
         Tally {
-            transported: 3,
+            transported: 4,
             local_transported: 0,
             admitted: 7,
             skipped: 7,
-            rejected: 7,
+            rejected: 6,
         },
         "tally mismatch:\n{report}"
     );
@@ -578,6 +579,44 @@ fn mixed_book_exact_tally() {
     );
     assert!(reasons[2].contains("not found"), "missing: {}", reasons[2]);
     assert!(reasons[3].contains(":dir"), "system dir: {}", reasons[3]);
+    assert_eq!(
+        report
+            .includes
+            .iter()
+            .map(|include| include.status)
+            .collect::<Vec<_>>(),
+        vec![
+            IncludeStatus::Replayed,
+            IncludeStatus::Idempotent,
+            IncludeStatus::Missing,
+            IncludeStatus::Unconfigured,
+        ]
+    );
+    assert_eq!(report.includes[0].encounter_ordinal, 0);
+    assert_eq!(report.includes[0].requested_by.root, None);
+    assert_eq!(report.includes[0].requested_by.path, "books/mixed.lisp");
+    assert_eq!(
+        report.includes[0]
+            .resolved
+            .as_ref()
+            .map(|identity| identity.path.as_str()),
+        Some("books/app-basics.lisp")
+    );
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| (source.role, source.status))
+            .collect::<Vec<_>>(),
+        vec![
+            (SourceRole::Target, SourceStatus::Replayed),
+            (SourceRole::Include, SourceStatus::Replayed),
+        ]
+    );
+    for (ordinal, source) in report.sources.iter().enumerate() {
+        assert_eq!(source.attempt_ordinal, ordinal);
+        assert!(source.sha256.is_some(), "exact-byte digest is retained");
+    }
 
     // Nested events carry the included book's path.
     let four = report.event("four").expect("nested four");
@@ -603,8 +642,16 @@ fn mixed_book_exact_tally() {
         vec![":hints ignored".to_string(), ":rule-classes ignored".into()]
     );
 
+    // The generic implication transport now closes this ordinary theorem.
+    assert_eq!(
+        *outcome(&report, "consp-implies"),
+        EventOutcome::Transported
+    );
+    assert!(
+        s.theorem("consp-implies")
+            .is_some_and(|theorem| theorem.hyps().is_empty())
+    );
     // Honest rejections, with reasons.
-    assert!(rejected_reason(&report, "consp-implies").contains("induction"));
     assert!(rejected_reason(&report, "bogus").contains("FALSE"));
     for class in ["defmacro", "encapsulate", "mutual-recursion"] {
         let rec = report
@@ -620,7 +667,7 @@ fn mixed_book_exact_tally() {
         }
     }
     // Nothing was stored for the rejected defthms.
-    for name in ["consp-implies", "bogus", "hidden"] {
+    for name in ["bogus", "hidden"] {
         assert!(s.theorem(name).is_none(), "`{name}` must not be stored");
     }
 }
@@ -794,6 +841,8 @@ fn structured_completeness_keeps_rejected_logic_in_the_denominator() {
     let report = BookReport {
         path: "target.lisp".into(),
         dependency_interfaces: vec![],
+        sources: vec![],
+        includes: vec![],
         events: vec![
             EventRecord {
                 book: "target.lisp".into(),
@@ -838,6 +887,8 @@ fn structured_completeness_never_greens_deferred_generated_logic() {
     let report = BookReport {
         path: "target.lisp".into(),
         dependency_interfaces: vec![],
+        sources: vec![],
+        includes: vec![],
         events: vec![EventRecord {
             book: "target.lisp".into(),
             kind: "fty::bitstruct-obligations".into(),
@@ -877,6 +928,12 @@ fn theorem_neutral_include_interface_is_hash_bound_and_logical_only() {
         SourceClosureStatus::Interfaced { verified: 1 }
     );
     assert_eq!(report.dependency_interfaces.len(), 1);
+    assert_eq!(report.includes.len(), 1);
+    assert_eq!(report.includes[0].status, IncludeStatus::Interface);
+    assert_eq!(report.sources.len(), 2);
+    assert_eq!(report.sources[1].role, SourceRole::Interface);
+    assert_eq!(report.sources[1].status, SourceStatus::Interface);
+    assert_eq!(report.sources[1].sha256, Some(digest));
     assert!(matches!(
         report.event("interface-dep").map(|event| &event.outcome),
         Some(EventOutcome::DependencyInterface { .. })
@@ -886,6 +943,7 @@ fn theorem_neutral_include_interface_is_hash_bound_and_logical_only() {
 
 #[test]
 fn theorem_neutral_include_interface_hash_mismatch_fails_closed() {
+    let dependency = root().join("books/interface-dep.lisp");
     let interface = TheoremNeutralInterface::new(
         [0; 32],
         TheoremNeutralCapability::TransparentDefsection,
@@ -901,6 +959,12 @@ fn theorem_neutral_include_interface_hash_mismatch_fails_closed() {
     assert!(!progress.is_green_island());
     assert_eq!(progress.closure.unresolved_dependencies, 1);
     assert!(report.dependency_interfaces.is_empty());
+    assert_eq!(report.includes[0].status, IncludeStatus::HashMismatch);
+    assert_eq!(report.sources[1].status, SourceStatus::HashMismatch);
+    assert_eq!(
+        report.sources[1].sha256,
+        Some(sha256(&std::fs::read(dependency).unwrap()))
+    );
     assert!(matches!(
         report.event("interface-dep").map(|event| &event.outcome),
         Some(EventOutcome::UnresolvedDependency { reason })
@@ -934,6 +998,18 @@ fn certification_sidecar_establishes_the_initial_book_world() {
     let mut s = session();
     let report = run_book_with_config(&mut s, &config, "books/cert-prelude")
         .expect("certification prelude and source book load in order");
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| source.role)
+            .collect::<Vec<_>>(),
+        vec![SourceRole::Prelude, SourceRole::Target]
+    );
+    assert!(
+        report.includes.is_empty(),
+        "the sidecar is not a fake include"
+    );
 
     let prelude = report
         .event("*prelude-base*")
@@ -950,6 +1026,31 @@ fn certification_sidecar_establishes_the_initial_book_world() {
         report.manifest().unresolved.is_empty(),
         "the source defconst must see the sidecar world: {report}"
     );
+}
+
+#[test]
+fn local_generated_events_remain_local_in_the_manifest_stream() {
+    let mut s = session();
+    let report =
+        run_book(&mut s, &root(), "books/local-generated").expect("local generated book runs");
+
+    for name in ["local-generated-a", "local-generated-b"] {
+        let event = report.event(name).expect("generated theorem row");
+        assert!(
+            event.kind.starts_with("local "),
+            "generated local row lost scope: {event:?}"
+        );
+        assert_eq!(event.outcome, EventOutcome::LocalTransported);
+    }
+    let public = report.event("public-after-local").unwrap();
+    assert_eq!(public.outcome, EventOutcome::Transported);
+    assert!(!public.kind.starts_with("local "));
+
+    let mut progress = covalence_lisp::progress::CorpusProgress::new("fixture");
+    progress.record_report(&report);
+    let manifest = progress.to_manifest_tsv();
+    assert!(manifest.contains("\tlocal\tlocal defthm\tlocal-generated-a\tlocal-transported\t"));
+    assert!(manifest.contains("\tpublic\tdefthm\tpublic-after-local\ttransported\t"));
 }
 
 #[test]
@@ -1560,6 +1661,48 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         report.event("linked-system-leaf").unwrap().book,
         ":system/arithmetic/leaf.acl2"
     );
+    assert_eq!(report.sources.len(), 5);
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| (
+                source.identity.root.as_deref(),
+                source.identity.path.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (None, "books/linking.lisp"),
+            (None, "books/linked/relative.lsp"),
+            (Some("system"), "arithmetic/top.lisp"),
+            (Some("system"), "arithmetic/leaf.acl2"),
+            (None, "books/linked/explicit.acl2"),
+        ]
+    );
+    for source in &report.sources {
+        let source_root = source
+            .identity
+            .root
+            .as_deref()
+            .map(|_| root().join("system-books"))
+            .unwrap_or_else(root);
+        assert_eq!(
+            source.sha256,
+            Some(sha256(
+                &std::fs::read(source_root.join(&source.identity.path)).unwrap()
+            ))
+        );
+    }
+    let mut include_ordinals: Vec<_> = report
+        .includes
+        .iter()
+        .map(|include| include.encounter_ordinal)
+        .collect();
+    include_ordinals.sort_unstable();
+    assert_eq!(include_ordinals, (0..5).collect::<Vec<_>>());
+    assert!(report.includes.iter().any(|include| {
+        include.status == IncludeStatus::Unconfigured && include.root.as_deref() == Some("missing")
+    }));
 
     let missing = report
         .events
@@ -1568,7 +1711,7 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
             event.kind == "include-book"
                 && matches!(
                     &event.outcome,
-                    EventOutcome::Skipped { reason } if reason.contains(":missing")
+                    EventOutcome::UnresolvedDependency { reason } if reason.contains(":missing")
                 )
         })
         .expect("unconfigured :dir is recorded");
@@ -1592,6 +1735,35 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         unresolved_includes,
         vec!["arithmetic/top"],
         "missing includes are unresolved, while linked/already-linked includes are not"
+    );
+}
+
+#[test]
+fn include_cycle_has_unique_preorder_edges_and_idempotent_back_edge() {
+    let mut s = session();
+    let config = BookConfig::new(root()).inventory_only();
+    let report = run_book_with_config(&mut s, &config, "books/include-cycle-a")
+        .expect("include cycle terminates");
+
+    assert_eq!(report.sources.len(), 2);
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| source.identity.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["books/include-cycle-a.lisp", "books/include-cycle-b.lisp"]
+    );
+    let mut by_encounter: Vec<_> = report.includes.iter().collect();
+    by_encounter.sort_by_key(|include| include.encounter_ordinal);
+    assert_eq!(by_encounter.len(), 2);
+    assert_eq!(by_encounter[0].encounter_ordinal, 0);
+    assert_eq!(by_encounter[0].status, IncludeStatus::Replayed);
+    assert_eq!(by_encounter[1].encounter_ordinal, 1);
+    assert_eq!(by_encounter[1].status, IncludeStatus::Idempotent);
+    assert_eq!(
+        by_encounter[1].resolved.as_ref(),
+        Some(&report.sources[0].identity)
     );
 }
 

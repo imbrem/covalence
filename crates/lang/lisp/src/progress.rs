@@ -8,8 +8,8 @@
 use std::fmt::Write as _;
 
 use crate::book::{
-    BookReport, CompletenessCount, CompletenessLevel, CompletenessReport, SourceClosureStatus,
-    UnresolvedImport,
+    BookReport, CompletenessCount, CompletenessLevel, CompletenessReport, EventOutcome,
+    IncludeStatus, SourceClosureStatus, SourceIdentity, SourceRole, SourceStatus,
 };
 
 /// Import capability exercised by a corpus progress run.
@@ -329,21 +329,15 @@ impl UpstreamBookCompleteness {
 /// One completed or failed top-level book run.
 #[derive(Clone, Debug)]
 enum BookProgress {
-    Report {
-        path: String,
-        completeness: CompletenessReport,
-        blockers: Vec<UnresolvedImport>,
-    },
-    LoadError {
-        path: String,
-        reason: String,
-    },
+    Report { report: BookReport },
+    LoadError { path: String, reason: String },
 }
 
 impl BookProgress {
     fn path(&self) -> &str {
         match self {
-            Self::Report { path, .. } | Self::LoadError { path, .. } => path,
+            Self::Report { report } => &report.path,
+            Self::LoadError { path, .. } => path,
         }
     }
 }
@@ -381,10 +375,14 @@ impl CorpusProgress {
     /// Record one successfully processed top-level book.
     pub fn record_report(&mut self, report: &BookReport) {
         self.books.push(BookProgress::Report {
-            path: report.path.clone(),
-            completeness: report.completeness(),
-            blockers: report.manifest().unresolved,
+            report: report.clone(),
         });
+    }
+
+    /// Record a report by ownership, avoiding a second copy of a sizeable
+    /// corpus event/source/include ledger.
+    pub fn record_owned_report(&mut self, report: BookReport) {
+        self.books.push(BookProgress::Report { report });
     }
 
     /// Record a failure before a [`BookReport`] could be produced.
@@ -430,20 +428,17 @@ impl CorpusProgress {
 
         for book in books {
             match book {
-                BookProgress::Report {
-                    path,
-                    completeness,
-                    blockers,
-                } => {
-                    totals.add(*completeness);
-                    write_book_row(&mut out, path, *completeness);
-                    for blocker in blockers {
+                BookProgress::Report { report } => {
+                    let completeness = report.completeness();
+                    totals.add(completeness);
+                    write_book_row(&mut out, &report.path, completeness);
+                    for blocker in report.manifest().unresolved {
                         blocker_rows.push((
-                            path.as_str(),
-                            blocker.book.as_str(),
-                            blocker.kind.as_str(),
-                            blocker.label.as_str(),
-                            blocker.reason.as_str(),
+                            report.path.clone(),
+                            blocker.book,
+                            blocker.kind,
+                            blocker.label,
+                            blocker.reason,
                         ));
                     }
                 }
@@ -451,11 +446,11 @@ impl CorpusProgress {
                     totals.load_errors += 1;
                     writeln!(&mut out, "book-error\t{}\t{}", escape(path), escape(reason)).unwrap();
                     blocker_rows.push((
-                        path.as_str(),
-                        path.as_str(),
-                        "load-error",
-                        path.as_str(),
-                        reason.as_str(),
+                        path.clone(),
+                        path.clone(),
+                        "load-error".into(),
+                        path.clone(),
+                        reason.clone(),
                     ));
                 }
             }
@@ -467,15 +462,51 @@ impl CorpusProgress {
             writeln!(
                 &mut out,
                 "blocker\t{}\t{}\t{}\t{}\t{}",
-                escape(target),
-                escape(source),
-                escape(kind),
-                escape(label),
-                escape(reason)
+                escape(&target),
+                escape(&source),
+                escape(&kind),
+                escape(&label),
+                escape(&reason)
             )
             .unwrap();
         }
         totals.write(&mut out);
+        out
+    }
+
+    /// Render the canonical untrusted ACL2 corpus ledger.
+    ///
+    /// Unlike [`Self::to_tsv`], this protocol preserves exact source hashes,
+    /// include attempts, stable event ordinals, and structured blocker codes.
+    /// It describes the host importer's observed world (`host-world-v1`), not
+    /// authoritative ACL2 normalization and never theorem authority.
+    pub fn to_manifest_tsv(&self) -> String {
+        let mut books: Vec<_> = self.books.iter().collect();
+        books.sort_by(|left, right| left.path().cmp(right.path()));
+
+        let mut out = String::from("acl2-corpus-manifest-v1\n");
+        writeln!(&mut out, "revision\t{}", escape(&self.corpus)).unwrap();
+        writeln!(&mut out, "mode\t{}", self.mode.protocol_name()).unwrap();
+        out.push_str("normalizer\thost-world-v1\n");
+        out.push_str(
+            "columns\tsource\ttarget\tattempt\troot\tpath\trole\tstatus\tsha256\tblocker-code\n",
+        );
+        out.push_str(
+            "columns\tinclude\ttarget\tencounter\tfrom-root\tfrom-path\trequest\trequested-root\tto-root\tto-path\tstatus\tblocker-code\n",
+        );
+        out.push_str(
+            "columns\tevent\ttarget\tordinal\troot\tpath\tsource-ordinal\tscope\tkind\tlabel\toutcome\thyps\tblocker-code\n",
+        );
+        out.push_str("columns\tbook-error\ttarget\tblocker-code\n");
+
+        for book in books {
+            match book {
+                BookProgress::LoadError { path, .. } => {
+                    writeln!(&mut out, "book-error\t{}\tload.error", escape(path)).unwrap();
+                }
+                BookProgress::Report { report } => write_manifest_book(&mut out, report),
+            }
+        }
         out
     }
 }
@@ -608,6 +639,163 @@ fn escape(value: &str) -> String {
     escaped
 }
 
+fn write_manifest_book(out: &mut String, report: &BookReport) {
+    let target = escape(&report.path);
+    let mut sources: Vec<_> = report.sources.iter().collect();
+    sources.sort_by_key(|source| source.attempt_ordinal);
+    for source in sources {
+        let (status, blocker) = source_status(source.status);
+        writeln!(
+            out,
+            "source\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            target,
+            source.attempt_ordinal,
+            optional(&source.identity.root),
+            escape(&source.identity.path),
+            source_role(source.role),
+            status,
+            source
+                .sha256
+                .as_ref()
+                .map(hex_digest)
+                .unwrap_or_else(|| "-".into()),
+            blocker
+        )
+        .unwrap();
+    }
+
+    let mut includes: Vec<_> = report.includes.iter().collect();
+    includes.sort_by_key(|include| include.encounter_ordinal);
+    for include in includes {
+        let (status, blocker) = include_status(include.status);
+        let (to_root, to_path) = include
+            .resolved
+            .as_ref()
+            .map(identity_fields)
+            .unwrap_or_else(|| ("-".into(), "-".into()));
+        writeln!(
+            out,
+            "include\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            target,
+            include.encounter_ordinal,
+            optional(&include.requested_by.root),
+            escape(&include.requested_by.path),
+            escape(&include.request),
+            optional(&include.root),
+            to_root,
+            to_path,
+            status,
+            blocker
+        )
+        .unwrap();
+    }
+
+    let mut source_ordinals = std::collections::BTreeMap::<String, usize>::new();
+    for (ordinal, event) in report.events.iter().enumerate() {
+        let source_ordinal = source_ordinals.entry(event.book.clone()).or_default();
+        let identity = event_source_identity(&event.book);
+        let (outcome, hyps, blocker) = event_outcome(&event.outcome);
+        writeln!(
+            out,
+            "event\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            target,
+            ordinal,
+            optional(&identity.root),
+            escape(&identity.path),
+            *source_ordinal,
+            if event.kind.starts_with("local ") {
+                "local"
+            } else {
+                "public"
+            },
+            escape(&event.kind),
+            escape(&event.label),
+            outcome,
+            hyps,
+            blocker
+        )
+        .unwrap();
+        *source_ordinal += 1;
+    }
+}
+
+fn identity_fields(identity: &SourceIdentity) -> (String, String) {
+    (optional(&identity.root), escape(identity.path.as_str()))
+}
+
+fn event_source_identity(book: &str) -> SourceIdentity {
+    if let Some(named) = book.strip_prefix(':') {
+        if let Some((root, path)) = named.split_once('/') {
+            return SourceIdentity::new(Some(root), path);
+        }
+    }
+    SourceIdentity::new(None, book)
+}
+
+fn source_role(role: SourceRole) -> &'static str {
+    match role {
+        SourceRole::Target => "target",
+        SourceRole::Prelude => "certification-prelude",
+        SourceRole::Include => "include",
+        SourceRole::Interface => "theorem-neutral-interface",
+    }
+}
+
+fn source_status(status: SourceStatus) -> (&'static str, &'static str) {
+    match status {
+        SourceStatus::Replayed => ("replayed", "-"),
+        SourceStatus::Interface => ("interfaced", "-"),
+        SourceStatus::ReadFailed => ("blocked", "source.read"),
+        SourceStatus::Utf8Failed => ("blocked", "source.utf8"),
+        SourceStatus::ParseFailed => ("blocked", "source.parse"),
+        SourceStatus::HashMismatch => ("blocked", "interface.hash-mismatch"),
+    }
+}
+
+fn include_status(status: IncludeStatus) -> (&'static str, &'static str) {
+    match status {
+        IncludeStatus::Malformed => ("blocked", "include.syntax"),
+        IncludeStatus::Unconfigured => ("blocked", "include.dir-unconfigured"),
+        IncludeStatus::Missing => ("blocked", "include.missing"),
+        IncludeStatus::Refused => ("blocked", "include.path-refused"),
+        IncludeStatus::Idempotent => ("already-loaded", "-"),
+        IncludeStatus::Replayed => ("replayed", "-"),
+        IncludeStatus::Interface => ("interfaced", "-"),
+        IncludeStatus::HashMismatch => ("blocked", "interface.hash-mismatch"),
+        IncludeStatus::ReadFailed => ("blocked", "include.read"),
+        IncludeStatus::ParseFailed => ("blocked", "include.parse"),
+    }
+}
+
+fn event_outcome(outcome: &EventOutcome) -> (&'static str, String, &'static str) {
+    match outcome {
+        EventOutcome::Transported => ("transported", "-".into(), "-"),
+        EventOutcome::LocalTransported => ("local-transported", "-".into(), "-"),
+        EventOutcome::Admitted { hyps } => ("admitted", hyps.to_string(), "-"),
+        EventOutcome::Skipped { .. } => ("skipped", "-".into(), "-"),
+        EventOutcome::DeferredLogical { .. } => {
+            ("deferred-logical", "-".into(), "event.deferred-logical")
+        }
+        EventOutcome::DependencyInterface { .. } => ("dependency-interface", "-".into(), "-"),
+        EventOutcome::Rejected { .. } => ("rejected", "-".into(), "event.rejected"),
+        EventOutcome::UnresolvedDependency { .. } => {
+            ("unresolved-dependency", "-".into(), "dependency.unresolved")
+        }
+    }
+}
+
+fn optional(value: &Option<String>) -> String {
+    value.as_deref().map(escape).unwrap_or_else(|| "-".into())
+}
+
+fn hex_digest(digest: &[u8; 32]) -> String {
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        write!(&mut out, "{byte:02x}").unwrap();
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -615,7 +803,9 @@ mod tests {
         PinnedNormalizedDenominator, ProgressMode,
     };
     use crate::book::{
-        BookReport, DependencyInterfaceRecord, EventOutcome, EventRecord, TheoremNeutralCapability,
+        BookReport, DependencyInterfaceRecord, EventOutcome, EventRecord, IncludeRecord,
+        IncludeStatus, SourceIdentity, SourceRecord, SourceRole, SourceStatus,
+        TheoremNeutralCapability,
     };
 
     fn event(book: &str, kind: &str, label: &str, outcome: EventOutcome) -> EventRecord {
@@ -649,6 +839,8 @@ mod tests {
                 ),
             ],
             dependency_interfaces: Vec::new(),
+            sources: Vec::new(),
+            includes: Vec::new(),
         };
         let green = BookReport {
             path: "a-green.lisp".into(),
@@ -659,6 +851,8 @@ mod tests {
                 EventOutcome::Transported,
             )],
             dependency_interfaces: Vec::new(),
+            sources: Vec::new(),
+            includes: Vec::new(),
         };
 
         let mut progress = CorpusProgress::new("community-books@abc");
@@ -694,6 +888,8 @@ mod tests {
                 event("target.lisp", "defthm", "public", EventOutcome::Transported),
             ],
             dependency_interfaces: Vec::new(),
+            sources: Vec::new(),
+            includes: Vec::new(),
         };
 
         assert_eq!(report.tally().transported, 1);
@@ -733,6 +929,8 @@ mod tests {
                 capability: TheoremNeutralCapability::TransparentDefsection,
                 rationale: "test".into(),
             }],
+            sources: Vec::new(),
+            includes: Vec::new(),
         };
         let mut progress = CorpusProgress::new("pinned");
         progress.record_report(&report);
@@ -765,6 +963,126 @@ mod tests {
     fn inventory_mode_is_explicit_in_the_protocol() {
         let output = CorpusProgress::new("pinned").inventory_only().to_tsv();
         assert!(output.starts_with("acl2-progress-v1\ncorpus\tpinned\nmode\tinventory\n"));
+    }
+
+    #[test]
+    fn canonical_manifest_retains_hashes_edges_ordinals_and_blocker_codes() {
+        let target = SourceIdentity::new(None, "books/target.lisp");
+        let dependency = SourceIdentity::new(Some(":SYSTEM"), "std/dep.lisp");
+        let report = BookReport {
+            path: "books/target.lisp".into(),
+            events: vec![
+                event(
+                    ":system/std/dep.lisp",
+                    "defthm",
+                    "dep-law",
+                    EventOutcome::Transported,
+                ),
+                event(
+                    "books/target.lisp",
+                    "include-book",
+                    "std/dep",
+                    EventOutcome::Skipped {
+                        reason: "dependency included".into(),
+                    },
+                ),
+                event(
+                    "books/target.lisp",
+                    "defthm",
+                    "target-law",
+                    EventOutcome::Rejected {
+                        reason: "missing\tlemma".into(),
+                    },
+                ),
+            ],
+            dependency_interfaces: Vec::new(),
+            sources: vec![
+                SourceRecord {
+                    attempt_ordinal: 0,
+                    identity: target.clone(),
+                    role: SourceRole::Target,
+                    sha256: Some([0xaa; 32]),
+                    status: SourceStatus::Replayed,
+                    detail: None,
+                },
+                SourceRecord {
+                    attempt_ordinal: 1,
+                    identity: dependency.clone(),
+                    role: SourceRole::Include,
+                    sha256: Some([0xbb; 32]),
+                    status: SourceStatus::Replayed,
+                    detail: None,
+                },
+            ],
+            includes: vec![
+                IncludeRecord {
+                    encounter_ordinal: 0,
+                    requested_by: target.clone(),
+                    request: "std/dep".into(),
+                    root: Some("system".into()),
+                    resolved: Some(dependency),
+                    status: IncludeStatus::Replayed,
+                    detail: None,
+                },
+                IncludeRecord {
+                    encounter_ordinal: 1,
+                    requested_by: target,
+                    request: "missing".into(),
+                    root: None,
+                    resolved: None,
+                    status: IncludeStatus::Missing,
+                    detail: Some("not\tfound".into()),
+                },
+            ],
+        };
+        let mut progress = CorpusProgress::new("community@abc123");
+        progress.record_report(&report);
+        let output = progress.to_manifest_tsv();
+
+        assert!(output.starts_with(
+            "acl2-corpus-manifest-v1\nrevision\tcommunity@abc123\nmode\treplay\nnormalizer\thost-world-v1\n"
+        ));
+        assert!(output.contains(&format!(
+            "source\tbooks/target.lisp\t0\t-\tbooks/target.lisp\ttarget\treplayed\t{}\t-",
+            "aa".repeat(32)
+        )));
+        assert!(output.contains(
+            "include\tbooks/target.lisp\t1\t-\tbooks/target.lisp\tmissing\t-\t-\t-\tblocked\tinclude.missing"
+        ));
+        assert!(output.contains(
+            "event\tbooks/target.lisp\t0\tsystem\tstd/dep.lisp\t0\tpublic\tdefthm\tdep-law\ttransported\t-\t-"
+        ));
+        assert!(output.contains(
+            "event\tbooks/target.lisp\t2\t-\tbooks/target.lisp\t1\tpublic\tdefthm\ttarget-law\trejected\t-\tevent.rejected"
+        ));
+    }
+
+    #[test]
+    fn canonical_manifest_is_independent_of_target_invocation_order() {
+        let report = |path: &str, digest: u8| BookReport {
+            path: path.into(),
+            events: Vec::new(),
+            dependency_interfaces: Vec::new(),
+            sources: vec![SourceRecord {
+                attempt_ordinal: 0,
+                identity: SourceIdentity::new(None, path),
+                role: SourceRole::Target,
+                sha256: Some([digest; 32]),
+                status: SourceStatus::Replayed,
+                detail: None,
+            }],
+            includes: Vec::new(),
+        };
+        let a = report("a.lisp", 0xaa);
+        let z = report("z.lisp", 0xff);
+        let mut forward = CorpusProgress::new("pin");
+        forward.record_report(&a);
+        forward.record_report(&z);
+        let mut reverse = CorpusProgress::new("pin");
+        reverse.record_report(&z);
+        reverse.record_report(&a);
+
+        assert_eq!(forward.to_manifest_tsv(), reverse.to_manifest_tsv());
     }
 
     fn pinned_green_report() -> BookReport {
@@ -801,6 +1119,8 @@ mod tests {
                 ),
             ],
             dependency_interfaces: Vec::new(),
+            sources: Vec::new(),
+            includes: Vec::new(),
         }
     }
 

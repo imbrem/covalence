@@ -215,6 +215,10 @@ cargo run -p covalence-lisp --features hol --example acl2_progress -- \
 # Fast event/world compatibility census, without attempting proofs:
 cargo run -p covalence-lisp --features hol --example acl2_progress -- \
   --inventory /path/to/community-books REVISION BOOK...
+
+# Exact source/include/event ledger:
+cargo run -p covalence-lisp --features hol --example acl2_progress -- \
+  --inventory --manifest /path/to/community-books REVISION BOOK...
 ```
 
 Its deterministic `acl2-progress-v1` TSV distinguishes target from recursive
@@ -222,6 +226,19 @@ closure counts, replay from inventory mode, logical-green from strict
 source-green, theorem-neutral interfaces, load failures, and sorted blockers.
 The output is untrusted progress evidence: theorem numerators originate only
 from `BookReport` events that already crossed checked replay.
+
+Every successful run can also emit the deterministic
+`acl2-corpus-manifest-v1` ledger. It pins the caller-supplied revision, exact
+SHA-256 for every target, certification prelude, recursive include, and
+theorem-neutral interface source attempt, every include resolution with a
+pre-recursion encounter ordinal, and every event with global and source-local
+ordinals. Blockers use stable structural codes; machine-dependent diagnostic
+prose remains in the ordinary progress report and is deliberately excluded
+from canonical bytes. The manifest declares its normalizer as
+`host-world-v1`: it is reproducible importer evidence, not a claim that
+Covalence's expansion matches ACL2. Authoritative normalized parity remains
+gated separately by exact pinned denominators such as the six-event
+ACL2-COUNT manifest.
 
 The authoritative final gate is: every selected ACL2 distribution and
 community book has deterministic normalized-event parity, every logical

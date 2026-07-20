@@ -1,7 +1,7 @@
 //! Untrusted ACL2 corpus progress driver.
 //!
 //! Usage:
-//! `cargo run -p covalence-lisp --features hol --example acl2_progress -- [--inventory] ROOT CORPUS-ID BOOK...`
+//! `cargo run -p covalence-lisp --features hol --example acl2_progress -- [--inventory] [--manifest] ROOT CORPUS-ID BOOK...`
 //!
 //! `CORPUS-ID` should pin upstream content (for example, a git revision).
 //! Both ordinary includes and ACL2 `:dir :system` includes resolve within
@@ -17,7 +17,7 @@ use covalence_lisp::book::{BookConfig, run_book_with_config};
 use covalence_lisp::progress::CorpusProgress;
 
 fn usage(program: &str) -> ! {
-    eprintln!("usage: {program} [--inventory] ROOT CORPUS-ID BOOK [BOOK ...]");
+    eprintln!("usage: {program} [--inventory] [--manifest] ROOT CORPUS-ID BOOK [BOOK ...]");
     std::process::exit(2);
 }
 
@@ -27,8 +27,14 @@ fn main() {
         .first()
         .cloned()
         .unwrap_or_else(|| "acl2_progress".into());
-    let inventory = raw.get(1).is_some_and(|arg| arg == "--inventory");
-    if inventory {
+    let mut inventory = false;
+    let mut manifest = false;
+    while let Some(option) = raw.get(1).filter(|arg| arg.starts_with("--")) {
+        match option.as_str() {
+            "--inventory" => inventory = true,
+            "--manifest" => manifest = true,
+            _ => usage(&program),
+        }
         raw.remove(1);
     }
     let mut args = raw.into_iter().skip(1);
@@ -49,11 +55,15 @@ fn main() {
     for book in books {
         match Acl2Session::new() {
             Ok(mut session) => match run_book_with_config(&mut session, &config, &book) {
-                Ok(report) => progress.record_report(&report),
+                Ok(report) => progress.record_owned_report(report),
                 Err(error) => progress.record_load_error(book, error.to_string()),
             },
             Err(error) => progress.record_load_error(book, error.to_string()),
         }
     }
-    print!("{}", progress.to_tsv());
+    if manifest {
+        print!("{}", progress.to_manifest_tsv());
+    } else {
+        print!("{}", progress.to_tsv());
+    }
 }

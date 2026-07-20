@@ -159,6 +159,124 @@ pub struct BookReport {
     /// Successfully applied content-verified theorem-neutral include
     /// interfaces. These are import evidence, never theorem authority.
     pub dependency_interfaces: Vec<DependencyInterfaceRecord>,
+    /// Exact source attempts in encounter order. This is untrusted importer
+    /// evidence and cannot create definitions or theorems.
+    pub sources: Vec<SourceRecord>,
+    /// Include resolution attempts in encounter order. Classification is
+    /// structured so corpus gates never need to parse diagnostic prose.
+    pub includes: Vec<IncludeRecord>,
+}
+
+/// Stable root-relative identity for one ACL2 source.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SourceIdentity {
+    /// Normalized named root (`system`, never `:SYSTEM`), or `None` for the
+    /// configured primary root.
+    pub root: Option<String>,
+    /// Normalized root-relative source path.
+    pub path: String,
+}
+
+impl SourceIdentity {
+    /// Construct a canonical ledger identity from an optional ACL2 root label
+    /// and root-relative display path.
+    pub fn new(root: Option<&str>, path: impl Into<String>) -> Self {
+        Self {
+            root: root.map(normalize_dir_name),
+            path: normalize_interface_source(path.into()).replace('\\', "/"),
+        }
+    }
+}
+
+/// Why a source was consulted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceRole {
+    /// Requested top-level book.
+    Target,
+    /// Sibling ACL2 certification prelude.
+    Prelude,
+    /// Recursively replayed include.
+    Include,
+    /// Source checked against a theorem-neutral interface.
+    Interface,
+}
+
+/// Structured result of one source attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceStatus {
+    /// Exact bytes were read, parsed, and replayed by the host importer.
+    Replayed,
+    /// Exact bytes were read and accepted by a theorem-neutral interface.
+    Interface,
+    /// The source could not be read.
+    ReadFailed,
+    /// The bytes were not valid UTF-8.
+    Utf8Failed,
+    /// The UTF-8 source did not parse as an ACL2 book.
+    ParseFailed,
+    /// Exact bytes did not match the configured interface digest.
+    HashMismatch,
+}
+
+/// Untrusted evidence for one source attempt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceRecord {
+    /// Zero-based attempt ordinal.
+    pub attempt_ordinal: usize,
+    /// Stable source identity.
+    pub identity: SourceIdentity,
+    /// Import role.
+    pub role: SourceRole,
+    /// SHA-256 of the exact bytes, whenever reading succeeded.
+    pub sha256: Option<[u8; 32]>,
+    /// Structured outcome.
+    pub status: SourceStatus,
+    /// Raw diagnostic detail; never used for classification.
+    pub detail: Option<String>,
+}
+
+/// Structured result of one `include-book` encounter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IncludeStatus {
+    /// The include event itself was malformed.
+    Malformed,
+    /// Its named `:dir` root was not configured.
+    Unconfigured,
+    /// No candidate source existed.
+    Missing,
+    /// Resolution escaped or otherwise violated path confinement.
+    Refused,
+    /// The resolved source had already been accepted.
+    Idempotent,
+    /// The resolved source was recursively replayed.
+    Replayed,
+    /// A theorem-neutral, exact-hash interface was applied.
+    Interface,
+    /// Interface bytes did not match the configured digest.
+    HashMismatch,
+    /// The resolved source could not be read.
+    ReadFailed,
+    /// The resolved source was not UTF-8 or did not parse.
+    ParseFailed,
+}
+
+/// Untrusted resolution evidence for one include event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IncludeRecord {
+    /// Zero-based include encounter ordinal.
+    pub encounter_ordinal: usize,
+    /// Source containing the include event.
+    pub requested_by: SourceIdentity,
+    /// Requested book string, empty when the event was malformed.
+    pub request: String,
+    /// Normalized requested root, or `None` for ordinary relative lookup.
+    pub root: Option<String>,
+    /// Resolved source identity, when resolution succeeded.
+    pub resolved: Option<SourceIdentity>,
+    /// Structured outcome.
+    pub status: IncludeStatus,
+    /// Raw diagnostic detail; never used for classification.
+    pub detail: Option<String>,
 }
 
 /// Evidence that one exact dependency source was replaced by a closed
@@ -339,7 +457,6 @@ impl CompletenessReport {
     }
 }
 
-// TODO(cov:acl2.progress.canonical-corpus-manifest, major): Emit a versioned canonical corpus manifest with revision, book/include/event identities, source hashes, and structured blocker codes.
 // TODO(cov:acl2.progress.cli-completeness-gate, major): Expose the same structured report through a `cov acl2` progress/import completeness gate without duplicating classification logic.
 
 impl fmt::Display for ImportManifest {
@@ -826,23 +943,41 @@ fn hex_digest(digest: &[u8; 32]) -> String {
     out
 }
 
-fn verify_interface_source(file: &Path, expected: &[u8; 32]) -> Result<String, String> {
-    let bytes = std::fs::read(file)
-        .map_err(|error| format!("could not read {}: {error}", file.display()))?;
+enum InterfaceVerificationError {
+    Read(String),
+    Utf8 { digest: [u8; 32], detail: String },
+    Parse { digest: [u8; 32], detail: String },
+    Hash { actual: [u8; 32], detail: String },
+}
+
+fn verify_interface_source(
+    file: &Path,
+    expected: &[u8; 32],
+) -> Result<[u8; 32], InterfaceVerificationError> {
+    let bytes = std::fs::read(file).map_err(|error| {
+        InterfaceVerificationError::Read(format!("could not read {}: {error}", file.display()))
+    })?;
     let actual = sha256(&bytes);
     if &actual != expected {
-        return Err(format!(
-            "SHA-256 mismatch for {}: expected {}, got {}",
-            file.display(),
-            hex_digest(expected),
-            hex_digest(&actual)
-        ));
+        return Err(InterfaceVerificationError::Hash {
+            actual,
+            detail: format!(
+                "SHA-256 mismatch for {}: expected {}, got {}",
+                file.display(),
+                hex_digest(expected),
+                hex_digest(&actual)
+            ),
+        });
     }
-    let source = std::str::from_utf8(&bytes)
-        .map_err(|error| format!("{} is not UTF-8 ACL2 source: {error}", file.display()))?;
-    read_book(source)
-        .map_err(|error| format!("{} is not readable ACL2 source: {error}", file.display()))?;
-    Ok(hex_digest(&actual))
+    let source = std::str::from_utf8(&bytes).map_err(|error| InterfaceVerificationError::Utf8 {
+        digest: actual,
+        detail: format!("{} is not UTF-8 ACL2 source: {error}", file.display()),
+    })?;
+    read_book(source).map_err(|error| InterfaceVerificationError::Parse {
+        digest: actual,
+        detail: format!("{} is not readable ACL2 source: {error}", file.display()),
+    })?;
+    Ok(actual)
 }
 
 fn normalize_dir_name(name: &str) -> String {
@@ -927,6 +1062,9 @@ struct Pipeline<'s> {
     inventory_only: bool,
     theorem_neutral_interfaces: BTreeMap<(Option<String>, String), TheoremNeutralInterface>,
     applied_dependency_interfaces: Vec<DependencyInterfaceRecord>,
+    sources: Vec<SourceRecord>,
+    includes: Vec<IncludeRecord>,
+    next_include_ordinal: usize,
     /// Current ACL2 default definition mode, changed by ordered `(program)`
     /// and `(logic)` events.
     program_mode: bool,
@@ -1046,6 +1184,9 @@ fn run_book_with_config_inner(
         inventory_only: config.inventory_only,
         theorem_neutral_interfaces: config.theorem_neutral_interfaces.clone(),
         applied_dependency_interfaces: Vec::new(),
+        sources: Vec::new(),
+        includes: Vec::new(),
+        next_include_ordinal: 0,
         program_mode: false,
         macro_depth: 0,
         seen: BTreeSet::new(),
@@ -1091,26 +1232,82 @@ fn run_book_with_config_inner(
         }
         pipe.seen.insert(prelude.clone());
         let lookup = pipe.root.clone();
-        pipe.process_file(&prelude, &lookup)?;
+        pipe.process_file(&prelude, &lookup, SourceRole::Prelude)?;
     }
     pipe.seen.insert(file.clone());
     let lookup = pipe.root.clone();
-    pipe.process_file(&file, &lookup)?;
+    pipe.process_file(&file, &lookup, SourceRole::Target)?;
     Ok(BookReport {
         path: display,
         events: pipe.events,
         dependency_interfaces: pipe.applied_dependency_interfaces,
+        sources: pipe.sources,
+        includes: pipe.includes,
     })
 }
 
 impl Pipeline<'_> {
     /// Read + parse one book file and process its events in order.
-    fn process_file(&mut self, file: &Path, lookup: &LookupRoot) -> Result<(), BookError> {
-        let src = std::fs::read_to_string(file)
-            .map_err(|e| BookError::Io(file.to_path_buf(), e.to_string()))?;
-        let forms =
-            read_book(&src).map_err(|e| BookError::Parse(file.to_path_buf(), e.to_string()))?;
+    fn process_file(
+        &mut self,
+        file: &Path,
+        lookup: &LookupRoot,
+        role: SourceRole,
+    ) -> Result<(), BookError> {
         let relative = display_rel(&lookup.path, file);
+        let identity = SourceIdentity::new(lookup.label.as_deref(), relative.clone());
+        let attempt_ordinal = self.sources.len();
+        let bytes = match std::fs::read(file) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.sources.push(SourceRecord {
+                    attempt_ordinal,
+                    identity,
+                    role,
+                    sha256: None,
+                    status: SourceStatus::ReadFailed,
+                    detail: Some(error.to_string()),
+                });
+                return Err(BookError::Io(file.to_path_buf(), error.to_string()));
+            }
+        };
+        let digest = sha256(&bytes);
+        let src = match std::str::from_utf8(&bytes) {
+            Ok(src) => src,
+            Err(error) => {
+                self.sources.push(SourceRecord {
+                    attempt_ordinal,
+                    identity,
+                    role,
+                    sha256: Some(digest),
+                    status: SourceStatus::Utf8Failed,
+                    detail: Some(error.to_string()),
+                });
+                return Err(BookError::Parse(file.to_path_buf(), error.to_string()));
+            }
+        };
+        let forms = match read_book(src) {
+            Ok(forms) => forms,
+            Err(error) => {
+                self.sources.push(SourceRecord {
+                    attempt_ordinal,
+                    identity,
+                    role,
+                    sha256: Some(digest),
+                    status: SourceStatus::ParseFailed,
+                    detail: Some(error.to_string()),
+                });
+                return Err(BookError::Parse(file.to_path_buf(), error.to_string()));
+            }
+        };
+        self.sources.push(SourceRecord {
+            attempt_ordinal,
+            identity,
+            role,
+            sha256: Some(digest),
+            status: SourceStatus::Replayed,
+            detail: None,
+        });
         let book = match &lookup.label {
             Some(label) => format!("{label}/{relative}"),
             None => relative,
@@ -3600,33 +3797,61 @@ impl Pipeline<'_> {
             },
             notes: Vec::new(),
         };
+        let requested_by = SourceIdentity::new(
+            current_root.label.as_deref(),
+            display_rel(&current_root.path, file),
+        );
+        let encounter_ordinal = self.next_include_ordinal;
+        self.next_include_ordinal += 1;
+        let mut include = IncludeRecord {
+            encounter_ordinal,
+            requested_by,
+            request: String::new(),
+            root: current_root.label.as_deref().map(normalize_dir_name),
+            resolved: None,
+            status: IncludeStatus::Malformed,
+            detail: None,
+        };
+        // Reserve the encounter-order slot before recursive replay. Nested
+        // includes may complete first, but cannot reorder this ledger.
+        self.includes.push(include.clone());
         let name = match items.get(1).and_then(|a| a.as_str()) {
             Some(("", bytes)) => String::from_utf8_lossy(bytes).into_owned(),
             _ => {
+                let detail = "include-book: expected a book name string".to_string();
                 rec.outcome = EventOutcome::Rejected {
-                    reason: "include-book: expected a book name string".into(),
+                    reason: detail.clone(),
                 };
+                include.detail = Some(detail);
+                self.includes[encounter_ordinal] = include;
                 return Ok(rec);
             }
         };
+        include.request = name.clone();
         rec.label = name.clone();
         let mut selected_root = current_root.clone();
         let mut explicit_dir = false;
         let mut extras = &items[2..];
         while let Some(option) = extras.first() {
             let Some(keyword) = option.as_symbol() else {
+                let detail = format!(
+                    "include-book: expected keyword option, got {}",
+                    summarize(option)
+                );
                 rec.outcome = EventOutcome::Rejected {
-                    reason: format!(
-                        "include-book: expected keyword option, got {}",
-                        summarize(option)
-                    ),
+                    reason: detail.clone(),
                 };
+                include.detail = Some(detail);
+                self.includes[encounter_ordinal] = include;
                 return Ok(rec);
             };
             if extras.len() < 2 {
+                let detail = format!("include-book: option {keyword} has no value");
                 rec.outcome = EventOutcome::Rejected {
-                    reason: format!("include-book: option {keyword} has no value"),
+                    reason: detail.clone(),
                 };
+                include.detail = Some(detail);
+                self.includes[encounter_ordinal] = include;
                 return Ok(rec);
             }
             if !keyword.eq_ignore_ascii_case(":dir") {
@@ -3635,18 +3860,25 @@ impl Pipeline<'_> {
                 continue;
             }
             let Some(dir) = extras[1].as_symbol() else {
+                let detail = "include-book: :dir value must be a keyword".to_string();
                 rec.outcome = EventOutcome::Rejected {
-                    reason: "include-book: :dir value must be a keyword".into(),
+                    reason: detail.clone(),
                 };
+                include.detail = Some(detail);
+                self.includes[encounter_ordinal] = include;
                 return Ok(rec);
             };
             let key = normalize_dir_name(dir);
+            include.root = Some(key.clone());
             let Some(root) = self.dir_roots.get(&key) else {
+                let detail =
+                    format!("include-book :dir {dir} is not configured — dependency skipped");
                 rec.outcome = EventOutcome::UnresolvedDependency {
-                    reason: format!(
-                        "include-book :dir {dir} is not configured — dependency skipped"
-                    ),
+                    reason: detail.clone(),
                 };
+                include.status = IncludeStatus::Unconfigured;
+                include.detail = Some(detail);
+                self.includes[encounter_ordinal] = include;
                 return Ok(rec);
             };
             selected_root = root.clone();
@@ -3677,41 +3909,111 @@ impl Pipeline<'_> {
             }
         }
         rec.outcome = match resolution {
-            Err(reason) => EventOutcome::Rejected {
-                reason: format!("include-book \"{name}\": {reason}"),
-            },
-            Ok(Resolved::Missing(p)) => EventOutcome::UnresolvedDependency {
-                reason: format!("dependency not found ({}) — skipped", p.display()),
-            },
+            Err(reason) => {
+                let detail = format!("include-book \"{name}\": {reason}");
+                include.status = IncludeStatus::Refused;
+                include.detail = Some(detail.clone());
+                EventOutcome::Rejected { reason: detail }
+            }
+            Ok(Resolved::Missing(p)) => {
+                let detail = format!("dependency not found ({}) — skipped", p.display());
+                include.status = IncludeStatus::Missing;
+                include.detail = Some(detail.clone());
+                EventOutcome::UnresolvedDependency { reason: detail }
+            }
             Ok(Resolved::Found(f)) => {
                 let interface_root = selected_root.label.as_deref().map(normalize_dir_name);
                 let interface_source = display_rel(&selected_root.path, &f);
+                let resolved_identity =
+                    SourceIdentity::new(selected_root.label.as_deref(), interface_source.clone());
+                include.resolved = Some(resolved_identity.clone());
                 let interface_key = (interface_root.clone(), interface_source.clone());
                 if let Some(interface) =
                     self.theorem_neutral_interfaces.get(&interface_key).cloned()
                 {
                     match verify_interface_source(&f, &interface.sha256) {
-                        Err(reason) => EventOutcome::UnresolvedDependency {
-                            reason: format!("dependency interface {reason}"),
-                        },
-                        Ok(_) if !self.seen.insert(f.clone()) => EventOutcome::Skipped {
-                            reason: "already included — idempotent".into(),
-                        },
+                        Err(error) => {
+                            let (sha256, source_status, include_status, detail) = match error {
+                                InterfaceVerificationError::Read(detail) => (
+                                    None,
+                                    SourceStatus::ReadFailed,
+                                    IncludeStatus::ReadFailed,
+                                    detail,
+                                ),
+                                InterfaceVerificationError::Utf8 { digest, detail } => (
+                                    Some(digest),
+                                    SourceStatus::Utf8Failed,
+                                    IncludeStatus::ParseFailed,
+                                    detail,
+                                ),
+                                InterfaceVerificationError::Parse { digest, detail } => (
+                                    Some(digest),
+                                    SourceStatus::ParseFailed,
+                                    IncludeStatus::ParseFailed,
+                                    detail,
+                                ),
+                                InterfaceVerificationError::Hash { actual, detail } => (
+                                    Some(actual),
+                                    SourceStatus::HashMismatch,
+                                    IncludeStatus::HashMismatch,
+                                    detail,
+                                ),
+                            };
+                            self.sources.push(SourceRecord {
+                                attempt_ordinal: self.sources.len(),
+                                identity: resolved_identity,
+                                role: SourceRole::Interface,
+                                sha256,
+                                status: source_status,
+                                detail: Some(detail.clone()),
+                            });
+                            include.status = include_status;
+                            include.detail = Some(detail.clone());
+                            EventOutcome::UnresolvedDependency {
+                                reason: format!("dependency interface {detail}"),
+                            }
+                        }
+                        Ok(digest) if !self.seen.insert(f.clone()) => {
+                            self.sources.push(SourceRecord {
+                                attempt_ordinal: self.sources.len(),
+                                identity: resolved_identity,
+                                role: SourceRole::Interface,
+                                sha256: Some(digest),
+                                status: SourceStatus::Interface,
+                                detail: None,
+                            });
+                            include.status = IncludeStatus::Idempotent;
+                            EventOutcome::Skipped {
+                                reason: "already included — idempotent".into(),
+                            }
+                        }
                         Ok(digest) => {
+                            self.sources.push(SourceRecord {
+                                attempt_ordinal: self.sources.len(),
+                                identity: resolved_identity,
+                                role: SourceRole::Interface,
+                                sha256: Some(digest),
+                                status: SourceStatus::Interface,
+                                detail: None,
+                            });
                             self.applied_dependency_interfaces
                                 .push(DependencyInterfaceRecord {
                                     requested_by: book.into(),
                                     root: interface_root,
                                     source: interface_source,
-                                    sha256: digest.clone(),
+                                    sha256: hex_digest(&digest),
                                     capability: interface.capability,
                                     rationale: interface.rationale.clone(),
                                 });
                             rec.notes.push(interface.rationale.clone());
-                            EventOutcome::DependencyInterface { sha256: digest }
+                            include.status = IncludeStatus::Interface;
+                            EventOutcome::DependencyInterface {
+                                sha256: hex_digest(&digest),
+                            }
                         }
                     }
                 } else if !self.seen.insert(f.clone()) {
+                    include.status = IncludeStatus::Idempotent;
                     EventOutcome::Skipped {
                         reason: "already included — idempotent".into(),
                     }
@@ -3721,14 +4023,22 @@ impl Pipeline<'_> {
                     // theorem-neutral registries are imported, but its
                     // reader/admission mode must not leak into the parent.
                     let saved_program_mode = self.program_mode;
-                    let included = self.process_file(&f, &selected_root);
+                    let included = self.process_file(&f, &selected_root, SourceRole::Include);
                     self.program_mode = saved_program_mode;
                     match included {
-                        Ok(()) => EventOutcome::Skipped {
-                            reason: "dependency included — its events are tallied above".into(),
-                        },
+                        Ok(()) => {
+                            include.status = IncludeStatus::Replayed;
+                            EventOutcome::Skipped {
+                                reason: "dependency included — its events are tallied above".into(),
+                            }
+                        }
                         Err(e) => {
                             self.seen.remove(&f);
+                            include.status = match self.sources.last().map(|source| source.status) {
+                                Some(SourceStatus::ReadFailed) => IncludeStatus::ReadFailed,
+                                _ => IncludeStatus::ParseFailed,
+                            };
+                            include.detail = Some(e.to_string());
                             EventOutcome::Rejected {
                                 reason: format!("include-book \"{name}\": {e}"),
                             }
@@ -3737,6 +4047,7 @@ impl Pipeline<'_> {
                 }
             }
         };
+        self.includes[encounter_ordinal] = include;
         Ok(rec)
     }
 
@@ -3761,34 +4072,12 @@ impl Pipeline<'_> {
                 notes: Vec::new(),
             });
         }
+        let nested_start = self.events.len();
         let mut inner = self.process_event(book, file, lookup, &items[1])?;
-        inner.kind = format!("local {}", inner.kind);
-        inner.outcome = match inner.outcome {
-            EventOutcome::Rejected { reason } => EventOutcome::Rejected {
-                reason: format!("local: {reason}"),
-            },
-            EventOutcome::Skipped { reason } => EventOutcome::Skipped {
-                reason: format!("local: {reason}"),
-            },
-            EventOutcome::DeferredLogical { reason } => EventOutcome::DeferredLogical {
-                reason: format!("local: {reason}"),
-            },
-            EventOutcome::DependencyInterface { sha256 } => {
-                EventOutcome::DependencyInterface { sha256 }
-            }
-            EventOutcome::UnresolvedDependency { reason } => EventOutcome::UnresolvedDependency {
-                reason: format!("local: {reason}"),
-            },
-            EventOutcome::LocalTransported => EventOutcome::LocalTransported,
-            // Retain structured evidence that checked replay succeeded, while
-            // keeping this local theorem outside the exported theorem counts.
-            EventOutcome::Transported => EventOutcome::LocalTransported,
-            // A locally admitted event was genuinely processed, but did not
-            // cross the checked theorem replay boundary and is not exported.
-            EventOutcome::Admitted { .. } => EventOutcome::Skipped {
-                reason: "local: processed (installed for this session), not exported".into(),
-            },
-        };
+        for nested in &mut self.events[nested_start..] {
+            localize_event(nested);
+        }
+        localize_event(&mut inner);
         Ok(inner)
     }
 
@@ -3880,6 +4169,39 @@ impl Pipeline<'_> {
 // ============================================================================
 // Small render helpers
 // ============================================================================
+
+fn localize_event(event: &mut EventRecord) {
+    if !event.kind.starts_with("local ") {
+        event.kind = format!("local {}", event.kind);
+    }
+    event.outcome = match std::mem::replace(
+        &mut event.outcome,
+        EventOutcome::Rejected {
+            reason: "localization placeholder".into(),
+        },
+    ) {
+        EventOutcome::Rejected { reason } => EventOutcome::Rejected {
+            reason: format!("local: {reason}"),
+        },
+        EventOutcome::Skipped { reason } => EventOutcome::Skipped {
+            reason: format!("local: {reason}"),
+        },
+        EventOutcome::DeferredLogical { reason } => EventOutcome::DeferredLogical {
+            reason: format!("local: {reason}"),
+        },
+        EventOutcome::DependencyInterface { sha256 } => {
+            EventOutcome::DependencyInterface { sha256 }
+        }
+        EventOutcome::UnresolvedDependency { reason } => EventOutcome::UnresolvedDependency {
+            reason: format!("local: {reason}"),
+        },
+        EventOutcome::LocalTransported => EventOutcome::LocalTransported,
+        EventOutcome::Transported => EventOutcome::LocalTransported,
+        EventOutcome::Admitted { .. } => EventOutcome::Skipped {
+            reason: "local: processed (installed for this session), not exported".into(),
+        },
+    };
+}
 
 fn normalize_event_head(items: &[SExpr], head: &str) -> SExpr {
     let mut normalized = items.to_vec();

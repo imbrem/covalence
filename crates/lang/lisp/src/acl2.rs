@@ -109,7 +109,9 @@ use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::defs::{Defs, install_core_definition};
-use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect};
+use crate::frontend::{
+    Frontend, FrontendExpr, HostFrontendRuntime, HostSession, RuntimeEvaluation, SurfaceDialect,
+};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
@@ -345,6 +347,10 @@ pub struct Acl2Session {
     admissions: BTreeMap<String, Acl2Admission>,
     definitions: BTreeMap<String, Acl2Definition>,
     hol_definitions: BTreeMap<String, Acl2HolDefinition>,
+    /// The same definitions in the shared partial Lisp relation. Checked
+    /// finite traces from this session carry no totality claim; they are the
+    /// operational side of the future execution-adequacy theorem.
+    operational: HostSession,
     thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
     sem0: LispSemantics,
@@ -365,6 +371,7 @@ impl Acl2Session {
             admissions: BTreeMap::new(),
             definitions: BTreeMap::new(),
             hol_definitions: BTreeMap::new(),
+            operational: HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
             deep: KernelAcl2Session::new(shadow_env().map_err(kernel_err)?),
@@ -390,6 +397,24 @@ impl Acl2Session {
     /// in the deep replay layer's currently supported template.
     pub fn hol_definition(&self, name: &str) -> Option<&Acl2HolDefinition> {
         self.hol_definitions.get(name)
+    }
+
+    /// Evaluate a closed ACL2 expression in the common partial Lisp machine
+    /// and retain checked `MayEval` evidence.
+    ///
+    /// This deliberately proves only one finite execution. ACL2 admission
+    /// still owes universal existence and uniqueness before totalization.
+    pub fn operational_evidence(
+        &self,
+        form: &SExpr,
+    ) -> Result<RuntimeEvaluation<HostFrontendRuntime>, Acl2Error> {
+        let translated = self.translate(form, &[], None)?;
+        let core = Frontend::new(SurfaceDialect::Acl2Core)
+            .lower(&translated)
+            .map_err(|error| Acl2Error::Malformed(error.to_string()))?;
+        self.operational
+            .evaluate_core_evidence(&core)
+            .map_err(|error| Acl2Error::Malformed(format!("shared Lisp execution failed: {error}")))
     }
 
     /// A proved `defthm` by name — the genuine kernel theorem (its hypotheses
@@ -444,6 +469,7 @@ impl Acl2Session {
         self.admissions = BTreeMap::new();
         self.definitions = BTreeMap::new();
         self.hol_definitions = BTreeMap::new();
+        self.operational = HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize);
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
             self.deep = KernelAcl2Session::new(env);
@@ -646,7 +672,16 @@ impl Acl2Session {
             body.clone(),
         );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
+        let mut operational = self.operational.clone();
+        operational
+            .define_core(definition.core.clone())
+            .map_err(|error| {
+                inadmissible(format!(
+                    "shared partial Lisp installation failed after admission: {error}"
+                ))
+            })?;
         self.install(&definition.core)?;
+        self.operational = operational;
         self.try_admit_deep_defun(&definition, &admission);
         self.definitions.insert(name.clone(), definition);
         self.admissions.insert(name.clone(), admission);

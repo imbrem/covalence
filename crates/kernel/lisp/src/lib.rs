@@ -39,9 +39,10 @@ pub use covalence_kernel_data as data;
 pub use covalence_sexpr_api as sexpr;
 
 pub use admission::{
-    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, EvaluationExistence,
-    EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
-    SourcedDefinition, TerminationCertificate, Totalization,
+    AdmissionPipelineError, AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition,
+    EvaluationExistence, EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness,
+    RecursiveCall, SourcedDefinition, TerminationCertificate, TotalAdmission, Totalization,
+    admit_total,
 };
 pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{

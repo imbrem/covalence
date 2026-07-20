@@ -118,6 +118,13 @@ disable-model-invocation: true
     `LispRuntimeSnapshot`: resource-table snapshots preserve existing handle
     identities but isolate later allocation/mutation, so replay compares the
     same deterministic handle sequence rather than unrelated arena IDs.
+  - ACL2 definitions are installed in a private `RuntimeSession` as well as
+    the legacy HOL value semantics, and `Acl2Session::operational_evidence`
+    returns checked concrete `MayEval` traces in the common partial relation.
+    This is not universal adequacy. `admit_total` fixes the required authority
+    order—inspection, termination replay, common-relation existence and
+    uniqueness, then conservative totalization—and the ACL2 backend does not
+    yet implement its adequacy or totalization phases.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

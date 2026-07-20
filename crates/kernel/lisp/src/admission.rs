@@ -183,12 +183,81 @@ pub trait Totalization<D, E, U = E> {
     fn define_total(
         &self,
         definition: &D,
-        evidence: ExistenceUniqueness<E, U>,
+        evidence: &ExistenceUniqueness<E, U>,
     ) -> Result<(Self::Constant, Self::Theorem), Self::Error>;
+}
+
+/// Every retained artifact from the checked admission pipeline.
+#[derive(Clone, Debug)]
+pub struct TotalAdmission<C, T, E, U, K, Th> {
+    pub certificate: C,
+    pub termination: T,
+    pub adequacy: ExistenceUniqueness<E, U>,
+    pub constant: K,
+    pub defining_theorem: Th,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AdmissionPipelineError<I, T, A, D> {
+    Inspect(I),
+    Termination(T),
+    Adequacy(A),
+    Totalization(D),
+}
+
+/// Run the four authority-bearing admission phases in their required order.
+///
+/// In particular, a termination replay or independently conservative model is
+/// never accepted as a substitute for existence and uniqueness in the common
+/// partial execution relation.
+pub fn admit_total<D, P, R, A, Z>(
+    definition: &D,
+    policy: &P,
+    termination_replay: &R,
+    adequacy_replay: &A,
+    totalization: &Z,
+) -> Result<
+    TotalAdmission<
+        P::Certificate,
+        R::Termination,
+        A::Existence,
+        A::Uniqueness,
+        Z::Constant,
+        Z::Theorem,
+    >,
+    AdmissionPipelineError<P::Error, R::Error, A::Error, Z::Error>,
+>
+where
+    P: AdmissionPolicy<D>,
+    R: AdmissionReplay<D, P::Certificate>,
+    A: ExecutionAdequacyReplay<D, R::Termination>,
+    Z: Totalization<D, A::Existence, A::Uniqueness>,
+{
+    let certificate = policy
+        .inspect(definition)
+        .map_err(AdmissionPipelineError::Inspect)?;
+    let termination = termination_replay
+        .replay_termination(definition, &certificate)
+        .map_err(AdmissionPipelineError::Termination)?;
+    let adequacy = adequacy_replay
+        .replay_execution_adequacy(definition, &termination)
+        .map_err(AdmissionPipelineError::Adequacy)?;
+    let (constant, defining_theorem) = totalization
+        .define_total(definition, &adequacy)
+        .map_err(AdmissionPipelineError::Totalization)?;
+    Ok(TotalAdmission {
+        certificate,
+        termination,
+        adequacy,
+        constant,
+        defining_theorem,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -201,6 +270,57 @@ mod tests {
     struct UniquenessProof(&'static str);
 
     struct MockAdequacy;
+
+    struct MockPolicy;
+
+    impl AdmissionPolicy<&'static str> for MockPolicy {
+        type Certificate = &'static str;
+        type Error = &'static str;
+
+        fn inspect(&self, definition: &&'static str) -> Result<Self::Certificate, Self::Error> {
+            (*definition == "append")
+                .then_some("structural certificate")
+                .ok_or("inspection failed")
+        }
+    }
+
+    struct MockTermination;
+
+    impl AdmissionReplay<&'static str, &'static str> for MockTermination {
+        type Termination = TerminationProof;
+        type Error = &'static str;
+
+        fn replay_termination(
+            &self,
+            _definition: &&'static str,
+            certificate: &&'static str,
+        ) -> Result<Self::Termination, Self::Error> {
+            (*certificate == "structural certificate")
+                .then_some(TerminationProof("structural recursion"))
+                .ok_or("termination failed")
+        }
+    }
+
+    struct MockTotalization<'a>(&'a Cell<bool>);
+
+    impl Totalization<&'static str, ExistenceProof, UniquenessProof> for MockTotalization<'_> {
+        type Constant = &'static str;
+        type Theorem = &'static str;
+        type Error = &'static str;
+
+        fn define_total(
+            &self,
+            _definition: &&'static str,
+            evidence: &ExistenceUniqueness<ExistenceProof, UniquenessProof>,
+        ) -> Result<(Self::Constant, Self::Theorem), Self::Error> {
+            assert_eq!(
+                evidence.existence.theorem,
+                ExistenceProof("every input reaches a value")
+            );
+            self.0.set(true);
+            Ok(("append-total", "append agrees with MayEval"))
+        }
+    }
 
     impl ExecutionAdequacyReplay<&'static str, TerminationProof> for MockAdequacy {
         type Existence = ExistenceProof;
@@ -275,5 +395,21 @@ mod tests {
             evidence.uniqueness.theorem,
             UniquenessProof("reachable values are equal")
         );
+    }
+
+    #[test]
+    fn totalization_runs_only_after_common_execution_adequacy() {
+        let called = Cell::new(false);
+        let admitted = admit_total(
+            &"append",
+            &MockPolicy,
+            &MockTermination,
+            &MockAdequacy,
+            &MockTotalization(&called),
+        )
+        .unwrap();
+        assert!(called.get());
+        assert_eq!(admitted.constant, "append-total");
+        assert_eq!(admitted.defining_theorem, "append agrees with MayEval");
     }
 }

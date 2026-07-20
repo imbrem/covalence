@@ -14,10 +14,11 @@ use std::sync::Arc;
 use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
     Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
-    HostEnvironment, HostEnvironments, LispEnvironment, RuntimeBinding, StackClosure,
-    StackClosureRecord, StackConfiguration, StackContinuation, StackInstructionSyntax,
-    StackMachineValue, StackProgramSyntax, StackRuntime, StackValue, StackValueLayer,
-    StackValueView, StepRelation, TerminalValue,
+    HostEnvironment, HostEnvironments, LispEnvironment, StackClosure, StackClosureRecord,
+    StackConfiguration, StackInstructionLayer, StackInstructionSyntax, StackInstructionView,
+    StackMachine, StackMachineError, StackMachineValue, StackPrimitiveSemantics,
+    StackProgramSyntax, StackRuntime, StackValue, StackValueLayer, StackValueView, StepRelation,
+    TerminalValue,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -592,6 +593,31 @@ impl StackProgramSyntax for ForspSyntax {
     }
 }
 
+impl StackInstructionView for ForspSyntax {
+    type Effect = ForspEffect;
+
+    fn view_instruction(
+        &self,
+        instruction: &Self::Instruction,
+    ) -> Result<
+        StackInstructionLayer<Self::Symbol, Self::Datum, Self::Primitive, Self::Code, Self::Effect>,
+        Self::Error,
+    > {
+        Ok(match instruction {
+            ForspInstruction::Literal(datum) => StackInstructionLayer::Literal(datum.clone()),
+            ForspInstruction::Quote(datum) => StackInstructionLayer::Quote(datum.clone()),
+            ForspInstruction::Closure(code) => StackInstructionLayer::Closure(code.clone()),
+            ForspInstruction::Bind(symbol) => StackInstructionLayer::Bind(symbol.clone()),
+            ForspInstruction::PushBinding(symbol) => {
+                StackInstructionLayer::PushBinding(symbol.clone())
+            }
+            ForspInstruction::Resolve(symbol) => StackInstructionLayer::Resolve(symbol.clone()),
+            ForspInstruction::Primitive(primitive) => StackInstructionLayer::Primitive(*primitive),
+            ForspInstruction::Effect(effect) => StackInstructionLayer::Effect(*effect),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ForspFrontend;
 
@@ -861,6 +887,181 @@ impl<E> From<ForspError> for RuntimeForspError<E> {
     }
 }
 
+/// Forsp's language-specific primitive dictionary.
+///
+/// The generic [`StackMachine`] owns closure invocation, binding, name
+/// resolution, and continuation behavior. This dictionary owns only the
+/// meanings of Forsp's data and arithmetic words.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspPrimitives;
+
+impl ForspPrimitives {
+    fn pop<R: StackRuntime>(
+        operands: &mut Vec<R::Value>,
+    ) -> Result<R::Value, RuntimeForspError<R::Error>> {
+        operands.pop().ok_or_else(|| ForspError::EmptyStack.into())
+    }
+
+    fn pop_datum<R>(
+        runtime: &R,
+        operands: &mut Vec<R::Value>,
+    ) -> Result<R::Datum, RuntimeForspError<R::Error>>
+    where
+        R: StackRuntime,
+    {
+        match runtime
+            .values()
+            .unroll(&Self::pop::<R>(operands)?)
+            .map_err(|error| RuntimeForspError::Runtime(runtime.value_error(error)))?
+        {
+            StackValueLayer::Datum(datum) => Ok(datum),
+            StackValueLayer::Closure(_) => Err(ForspError::ExpectedDatum.into()),
+        }
+    }
+
+    fn datum_value<R>(runtime: &R, datum: R::Datum) -> Result<R::Value, RuntimeForspError<R::Error>>
+    where
+        R: StackRuntime,
+    {
+        runtime
+            .values()
+            .datum(datum)
+            .map_err(|error| RuntimeForspError::Runtime(runtime.value_error(error)))
+    }
+
+    fn truth<R>(runtime: &R, value: bool) -> Result<R::Value, RuntimeForspError<R::Error>>
+    where
+        R: StackRuntime<Atom = CoreAtom>,
+    {
+        let datum = if value {
+            runtime
+                .data()
+                .atom(CoreAtom::symbol("t"))
+                .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?
+        } else {
+            runtime.data().nil()
+        };
+        Self::datum_value(runtime, datum)
+    }
+}
+
+impl<R> StackPrimitiveSemantics<R> for ForspPrimitives
+where
+    R: StackRuntime<Atom = CoreAtom, Datum = Datum<CoreAtom>, Primitive = ForspPrimitive>,
+{
+    type Error = RuntimeForspError<R::Error>;
+
+    fn apply(
+        &self,
+        runtime: &R,
+        primitive: &ForspPrimitive,
+        mut operands: Vec<R::Value>,
+    ) -> Result<Vec<R::Value>, Self::Error> {
+        match primitive {
+            ForspPrimitive::Eq => {
+                let right = Self::pop_datum(runtime, &mut operands)?;
+                let left = Self::pop_datum(runtime, &mut operands)?;
+                let equal = runtime
+                    .data()
+                    .equivalent(&left, &right)
+                    .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?;
+                operands.push(Self::truth(runtime, equal)?);
+            }
+            ForspPrimitive::Cons => {
+                let head = Self::pop_datum(runtime, &mut operands)?;
+                let tail = Self::pop_datum(runtime, &mut operands)?;
+                let datum = runtime
+                    .data()
+                    .cons(head, tail)
+                    .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?;
+                operands.push(Self::datum_value(runtime, datum)?);
+            }
+            ForspPrimitive::Car | ForspPrimitive::Cdr => {
+                let value = Self::pop_datum(runtime, &mut operands)?;
+                let SExprF::Cons { head, tail } = runtime
+                    .data()
+                    .view(&value)
+                    .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?
+                else {
+                    return Err(ForspError::ExpectedCons.into());
+                };
+                operands.push(Self::datum_value(
+                    runtime,
+                    if *primitive == ForspPrimitive::Car {
+                        head
+                    } else {
+                        tail
+                    },
+                )?);
+            }
+            ForspPrimitive::Cswap => {
+                let condition = Self::pop_datum(runtime, &mut operands)?;
+                let false_value = matches!(
+                    runtime
+                        .data()
+                        .view(&condition)
+                        .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?,
+                    SExprF::Nil
+                );
+                if !false_value {
+                    let right = Self::pop::<R>(&mut operands)?;
+                    let left = Self::pop::<R>(&mut operands)?;
+                    operands.push(right);
+                    operands.push(left);
+                }
+            }
+            ForspPrimitive::Add | ForspPrimitive::Subtract | ForspPrimitive::Multiply => {
+                let pop_integer =
+                    |operands: &mut Vec<R::Value>| -> Result<Int, RuntimeForspError<R::Error>> {
+                        let datum = Self::pop_datum(runtime, operands)?;
+                        match runtime.data().view(&datum).map_err(|error| {
+                            RuntimeForspError::Runtime(runtime.data_error(error))
+                        })? {
+                            SExprF::Atom(CoreAtom::Integer(integer)) => Ok(integer),
+                            _ => Err(ForspError::ExpectedInteger.into()),
+                        }
+                    };
+                let right = pop_integer(&mut operands)?;
+                let left = pop_integer(&mut operands)?;
+                let result = match primitive {
+                    ForspPrimitive::Add => left + right,
+                    ForspPrimitive::Subtract => left - right,
+                    ForspPrimitive::Multiply => left * right,
+                    _ => unreachable!(),
+                };
+                let datum = runtime
+                    .data()
+                    .atom(CoreAtom::Integer(result))
+                    .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?;
+                operands.push(Self::datum_value(runtime, datum)?);
+            }
+            ForspPrimitive::Stack => {
+                let mut datums = Vec::with_capacity(operands.len());
+                for value in operands.iter().rev() {
+                    datums.push(
+                        match runtime.values().view(value).map_err(|error| {
+                            RuntimeForspError::Runtime(runtime.value_error(error))
+                        })? {
+                            StackValueView::Datum(datum) => datum,
+                            StackValueView::Closure => {
+                                runtime.data().atom(CoreAtom::symbol("<closure>")).map_err(
+                                    |error| RuntimeForspError::Runtime(runtime.data_error(error)),
+                                )?
+                            }
+                        },
+                    );
+                }
+                let stack = runtime
+                    .data()
+                    .list(datums)
+                    .map_err(|error| RuntimeForspError::Runtime(runtime.data_error(error)))?;
+                operands.push(Self::datum_value(runtime, stack)?);
+            }
+        }
+        Ok(operands)
+    }
+}
+
 /// Concatenative evaluator over an abstract stack runtime.
 #[derive(Clone, Debug)]
 pub struct RuntimeForspMachine<R> {
@@ -886,286 +1087,32 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
 {
     pub fn initial(&self, code: R::Code) -> StackConfigurationOf<R> {
         StackConfiguration::new(code, self.runtime.environments().empty())
     }
 
-    fn pop(
-        configuration: &mut StackConfigurationOf<R>,
-    ) -> Result<R::Value, RuntimeForspError<R::Error>> {
-        configuration
-            .operands
-            .pop()
-            .ok_or_else(|| ForspError::EmptyStack.into())
-    }
-
-    fn pop_datum(
-        &self,
-        configuration: &mut StackConfigurationOf<R>,
-    ) -> Result<R::Datum, RuntimeForspError<R::Error>> {
-        match self
-            .runtime
-            .values()
-            .unroll(&Self::pop(configuration)?)
-            .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?
-        {
-            StackValueLayer::Datum(datum) => Ok(datum),
-            StackValueLayer::Closure(_) => Err(ForspError::ExpectedDatum.into()),
-        }
-    }
-
-    fn pop_integer(
-        &self,
-        configuration: &mut StackConfigurationOf<R>,
-    ) -> Result<Int, RuntimeForspError<R::Error>> {
-        let datum = self.pop_datum(configuration)?;
-        match self
-            .runtime
-            .data()
-            .view(&datum)
-            .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?
-        {
-            SExprF::Atom(CoreAtom::Integer(integer)) => Ok(integer),
-            _ => Err(ForspError::ExpectedInteger.into()),
-        }
-    }
-
-    fn datum_value(&self, datum: R::Datum) -> Result<R::Value, RuntimeForspError<R::Error>> {
-        self.runtime
-            .values()
-            .datum(datum)
-            .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))
-    }
-
-    fn truth(&self, value: bool) -> Result<R::Value, RuntimeForspError<R::Error>> {
-        let datum = if value {
-            self.runtime
-                .data()
-                .atom(CoreAtom::symbol("t"))
-                .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?
-        } else {
-            self.runtime.data().nil()
-        };
-        self.datum_value(datum)
-    }
-
-    fn invoke(
-        &self,
-        configuration: &mut StackConfigurationOf<R>,
-        closure: R::Closure,
-    ) -> Result<(), RuntimeForspError<R::Error>> {
-        let closure = self
-            .runtime
-            .closures()
-            .open(&closure)
-            .map_err(|error| RuntimeForspError::Runtime(self.runtime.closure_error(error)))?;
-        configuration.continuations.push(StackContinuation {
-            code: configuration.code.clone(),
-            cursor: configuration.cursor,
-            environment: configuration.environment.clone(),
-        });
-        configuration.code = closure.code;
-        configuration.cursor = 0;
-        configuration.environment = closure.environment;
-        Ok(())
-    }
-
-    fn apply(
-        &self,
-        primitive: ForspPrimitive,
-        configuration: &mut StackConfigurationOf<R>,
-    ) -> Result<(), RuntimeForspError<R::Error>> {
-        match primitive {
-            ForspPrimitive::Eq => {
-                let right = self.pop_datum(configuration)?;
-                let left = self.pop_datum(configuration)?;
-                let equal = self
-                    .runtime
-                    .data()
-                    .equivalent(&left, &right)
-                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?;
-                configuration.operands.push(self.truth(equal)?);
-            }
-            ForspPrimitive::Cons => {
-                let head = self.pop_datum(configuration)?;
-                let tail = self.pop_datum(configuration)?;
-                let datum =
-                    self.runtime.data().cons(head, tail).map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.data_error(error))
-                    })?;
-                configuration.operands.push(self.datum_value(datum)?);
-            }
-            ForspPrimitive::Car | ForspPrimitive::Cdr => {
-                let value = self.pop_datum(configuration)?;
-                let SExprF::Cons { head, tail } =
-                    self.runtime.data().view(&value).map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.data_error(error))
-                    })?
-                else {
-                    return Err(ForspError::ExpectedCons.into());
-                };
-                configuration.operands.push(self.datum_value(
-                    if primitive == ForspPrimitive::Car {
-                        head
-                    } else {
-                        tail
-                    },
-                )?);
-            }
-            ForspPrimitive::Cswap => {
-                let condition = self.pop_datum(configuration)?;
-                let false_value = matches!(
-                    self.runtime.data().view(&condition).map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.data_error(error))
-                    })?,
-                    SExprF::Nil
-                );
-                if !false_value {
-                    let right = Self::pop(configuration)?;
-                    let left = Self::pop(configuration)?;
-                    configuration.operands.push(right);
-                    configuration.operands.push(left);
-                }
-            }
-            ForspPrimitive::Add | ForspPrimitive::Subtract | ForspPrimitive::Multiply => {
-                let right = self.pop_integer(configuration)?;
-                let left = self.pop_integer(configuration)?;
-                let result = match primitive {
-                    ForspPrimitive::Add => left + right,
-                    ForspPrimitive::Subtract => left - right,
-                    ForspPrimitive::Multiply => left * right,
-                    _ => unreachable!(),
-                };
-                let datum = self
-                    .runtime
-                    .data()
-                    .atom(CoreAtom::Integer(result))
-                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.data_error(error)))?;
-                configuration.operands.push(self.datum_value(datum)?);
-            }
-            ForspPrimitive::Stack => {
-                let mut datums = Vec::with_capacity(configuration.operands.len());
-                for value in configuration.operands.iter().rev() {
-                    datums.push(
-                        match self.runtime.values().view(value).map_err(|error| {
-                            RuntimeForspError::Runtime(self.runtime.value_error(error))
-                        })? {
-                            StackValueView::Datum(datum) => datum,
-                            StackValueView::Closure => self
-                                .runtime
-                                .data()
-                                .atom(CoreAtom::symbol("<closure>"))
-                                .map_err(|error| {
-                                    RuntimeForspError::Runtime(self.runtime.data_error(error))
-                                })?,
-                        },
-                    );
-                }
-                let stack =
-                    self.runtime.data().list(datums).map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.data_error(error))
-                    })?;
-                configuration.operands.push(self.datum_value(stack)?);
-            }
-        }
-        Ok(())
-    }
-
     fn next_configuration(
         &self,
         configuration: &StackConfigurationOf<R>,
     ) -> Result<Option<StackConfigurationOf<R>>, RuntimeForspError<R::Error>> {
-        let mut next = configuration.clone();
-        let instructions = self
-            .runtime
-            .syntax()
-            .instructions(&next.code)
-            .map_err(|error| RuntimeForspError::Runtime(self.runtime.syntax_error(error)))?;
-        if next.cursor == instructions.len() {
-            let Some(caller) = next.continuations.pop() else {
-                return Ok(None);
-            };
-            next.code = caller.code;
-            next.cursor = caller.cursor;
-            next.environment = caller.environment;
-            return Ok(Some(next));
-        }
-        let instruction = instructions[next.cursor].clone();
-        next.cursor += 1;
-        match instruction {
-            ForspInstruction::Literal(datum) | ForspInstruction::Quote(datum) => {
-                next.operands.push(self.datum_value(datum)?);
-            }
-            ForspInstruction::Closure(code) => {
-                let closure = self
-                    .runtime
-                    .closures()
-                    .close(StackClosureRecord {
-                        code,
-                        environment: next.environment.clone(),
-                    })
-                    .map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.closure_error(error))
-                    })?;
-                let value = self
-                    .runtime
-                    .values()
-                    .roll(StackValueLayer::Closure(closure))
-                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?;
-                next.operands.push(value);
-            }
-            ForspInstruction::Bind(name) => {
-                let value = Self::pop(&mut next)?;
-                next.environment = self
-                    .runtime
-                    .environments()
-                    .extend(&next.environment, vec![RuntimeBinding::new(name, value)])
-                    .map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
-                    })?;
-            }
-            ForspInstruction::PushBinding(name) => {
-                let value = self
-                    .runtime
-                    .environments()
-                    .lookup(&next.environment, &name)
-                    .map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
-                    })?
-                    .ok_or_else(|| {
-                        RuntimeForspError::Language(ForspError::Unbound(name.clone()))
-                    })?;
-                next.operands.push(value);
-            }
-            ForspInstruction::Resolve(name) => {
-                let value = self
-                    .runtime
-                    .environments()
-                    .lookup(&next.environment, &name)
-                    .map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime.environment_error(error))
-                    })?
-                    .ok_or_else(|| {
-                        RuntimeForspError::Language(ForspError::Unbound(name.clone()))
-                    })?;
-                match self
-                    .runtime
-                    .values()
-                    .unroll(&value)
-                    .map_err(|error| RuntimeForspError::Runtime(self.runtime.value_error(error)))?
-                {
-                    StackValueLayer::Closure(closure) => self.invoke(&mut next, closure)?,
-                    StackValueLayer::Datum(_) => next.operands.push(value),
+        StackMachine::new(&self.runtime, ForspPrimitives)
+            .next_configuration(configuration)
+            .map_err(|error| match error {
+                StackMachineError::EmptyStack => {
+                    RuntimeForspError::Language(ForspError::EmptyStack)
                 }
-            }
-            ForspInstruction::Primitive(primitive) => self.apply(primitive, &mut next)?,
-            ForspInstruction::Effect(effect) => {
-                return Err(ForspError::UnhandledEffect(effect).into());
-            }
-        }
-        Ok(Some(next))
+                StackMachineError::Unbound(symbol) => {
+                    RuntimeForspError::Language(ForspError::Unbound(symbol))
+                }
+                StackMachineError::UnhandledEffect(effect) => {
+                    RuntimeForspError::Language(ForspError::UnhandledEffect(effect))
+                }
+                StackMachineError::Primitive(error) => error,
+                StackMachineError::Runtime(error) => RuntimeForspError::Runtime(error),
+            })
     }
 }
 
@@ -1178,6 +1125,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1206,6 +1154,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1228,6 +1177,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1317,6 +1267,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
 {
     pub fn initial(&self, code: R::Code) -> RuntimeForspEffectState<R> {
@@ -1391,6 +1342,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1416,6 +1368,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1438,6 +1391,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,
@@ -1462,6 +1416,7 @@ where
             Primitive = ForspPrimitive,
             Instruction = ForspInstruction,
             Code = ForspCode,
+            Syntax = ForspSyntax,
         >,
     R::Code: Debug + PartialEq,
     R::Value: Debug + PartialEq,

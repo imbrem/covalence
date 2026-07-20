@@ -69,6 +69,36 @@ pub trait StackProgramSyntax: StackInstructionSyntax {
     fn instructions(&self, code: &Self::Code) -> Result<Vec<Self::Instruction>, Self::Error>;
 }
 
+/// One observable concatenative instruction.
+///
+/// This is the stack-language analogue of [`crate::CoreExprLayer`]. Concrete
+/// frontends may use enums, logic terms, or opaque resources for instructions;
+/// the evaluator depends only on this one-layer observation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StackInstructionLayer<S, D, P, C, F> {
+    Literal(D),
+    Quote(D),
+    Closure(C),
+    Bind(S),
+    PushBinding(S),
+    Resolve(S),
+    Primitive(P),
+    Effect(F),
+}
+
+/// Machine-facing observation of stack instructions.
+pub trait StackInstructionView: StackInstructionSyntax {
+    type Effect: Clone;
+
+    fn view_instruction(
+        &self,
+        instruction: &Self::Instruction,
+    ) -> Result<
+        StackInstructionLayer<Self::Symbol, Self::Datum, Self::Primitive, Self::Code, Self::Effect>,
+        Self::Error,
+    >;
+}
+
 /// Public observation of a concatenative Lisp value.
 ///
 /// Closure contents remain opaque to ordinary clients; only the evaluator's
@@ -160,7 +190,7 @@ pub trait StackRuntime {
             Primitive = Self::Primitive,
             Instruction = Self::Instruction,
             Code = Self::Code,
-        >;
+        > + StackInstructionView;
     type Values: StackMachineValue<Datum = Self::Datum, Value = Self::Value, Closure = Self::Closure>;
     type Closures: StackClosure<Code = Self::Code, Environment = Self::Environment, Closure = Self::Closure>;
     type Environments: LispEnvironment<Symbol = Self::Symbol, Value = Self::Value, Environment = Self::Environment>;
@@ -182,4 +212,84 @@ pub trait StackRuntime {
         &self,
         error: <Self::Environments as LispEnvironment>::Error,
     ) -> Self::Error;
+}
+
+impl<R: StackRuntime> StackRuntime for &R {
+    type Symbol = R::Symbol;
+    type Atom = R::Atom;
+    type Datum = R::Datum;
+    type Primitive = R::Primitive;
+    type Instruction = R::Instruction;
+    type Code = R::Code;
+    type Value = R::Value;
+    type Closure = R::Closure;
+    type Environment = R::Environment;
+    type Error = R::Error;
+    type Data = R::Data;
+    type Syntax = R::Syntax;
+    type Values = R::Values;
+    type Closures = R::Closures;
+    type Environments = R::Environments;
+
+    fn data(&self) -> &Self::Data {
+        (*self).data()
+    }
+
+    fn syntax(&self) -> &Self::Syntax {
+        (*self).syntax()
+    }
+
+    fn values(&self) -> &Self::Values {
+        (*self).values()
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        (*self).closures()
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        (*self).environments()
+    }
+
+    fn data_error(
+        &self,
+        error: <Self::Data as covalence_sexpr_api::SExprSyntax>::Error,
+    ) -> Self::Error {
+        (*self).data_error(error)
+    }
+
+    fn syntax_error(&self, error: <Self::Syntax as StackInstructionSyntax>::Error) -> Self::Error {
+        (*self).syntax_error(error)
+    }
+
+    fn value_error(&self, error: <Self::Values as StackValue>::Error) -> Self::Error {
+        (*self).value_error(error)
+    }
+
+    fn closure_error(&self, error: <Self::Closures as StackClosure>::Error) -> Self::Error {
+        (*self).closure_error(error)
+    }
+
+    fn environment_error(
+        &self,
+        error: <Self::Environments as LispEnvironment>::Error,
+    ) -> Self::Error {
+        (*self).environment_error(error)
+    }
+}
+
+/// Language-specific meanings of primitive stack instructions.
+///
+/// The evaluator transfers ownership of the operand stack across this
+/// boundary. This avoids Rust callback or mutable-reference semantics in the
+/// capability and maps directly to a WIT `list<value> -> list<value>` shape.
+pub trait StackPrimitiveSemantics<R: StackRuntime> {
+    type Error;
+
+    fn apply(
+        &self,
+        runtime: &R,
+        primitive: &R::Primitive,
+        operands: Vec<R::Value>,
+    ) -> Result<Vec<R::Value>, Self::Error>;
 }

@@ -29,6 +29,7 @@ pub mod relation;
 pub mod resource;
 pub mod runtime;
 pub mod stack;
+pub mod stack_machine;
 pub mod syntax;
 
 pub use covalence_kernel_data as data;
@@ -66,10 +67,11 @@ pub use runtime::{
     RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
-    StackClosure, StackClosureRecord, StackConfiguration, StackContinuation,
-    StackInstructionSyntax, StackMachineValue, StackProgramSyntax, StackRuntime, StackValue,
-    StackValueLayer, StackValueView,
+    StackClosure, StackClosureRecord, StackConfiguration, StackContinuation, StackInstructionLayer,
+    StackInstructionSyntax, StackInstructionView, StackMachineValue, StackPrimitiveSemantics,
+    StackProgramSyntax, StackRuntime, StackValue, StackValueLayer, StackValueView,
 };
+pub use stack_machine::{StackMachine, StackMachineError, StackRuntimeConfiguration};
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
     Parameter, Strategy,

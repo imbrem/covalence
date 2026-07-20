@@ -89,7 +89,9 @@ disable-model-invocation: true
     instruction backend and WIT-shaped primitive dictionary. Forsp
     `read`/`print` and optional low-level pointer
     primitives suspend through A0025; the bundled safe host adapter handles
-    only I/O and rejects pointer requests. Pure Forsp machines implement the
+    only I/O and rejects pointer requests. Effect suspension observes the
+    generic instruction layer, so it does not depend on the concrete
+    instruction representation. Pure Forsp machines implement the
     common terminal-value observation and therefore produce checked `MayEval`
     traces on both the direct and opaque-resource runtimes; effectful runs
     retain the separate suspension/resume transcript.

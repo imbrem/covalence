@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 260,
+      "words": 262,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 79,
+      "words": 82,
       "updated": 0
     },
     {
@@ -9421,7 +9421,7 @@
       "title": "stack_machine.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/stack_machine.rs",
-      "words": 253,
+      "words": 291,
       "updated": 0
     },
     {
@@ -10807,7 +10807,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 1740,
+      "words": 1774,
       "updated": 0
     },
     {

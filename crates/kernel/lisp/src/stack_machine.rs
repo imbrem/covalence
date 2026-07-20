@@ -15,6 +15,7 @@ pub enum StackMachineError<S, F, P, R> {
     EmptyStack,
     Unbound(S),
     UnhandledEffect(F),
+    InvalidCursor { cursor: usize, length: usize },
     Primitive(P),
     Runtime(R),
 }
@@ -26,6 +27,12 @@ impl<S: Display, F: Debug, P: Display, R: Display> Display for StackMachineError
             Self::Unbound(symbol) => write!(f, "unbound stack-language name `{symbol}`"),
             Self::UnhandledEffect(effect) => {
                 write!(f, "pure stack machine cannot handle effect {effect:?}")
+            }
+            Self::InvalidCursor { cursor, length } => {
+                write!(
+                    f,
+                    "stack instruction cursor {cursor} exceeds program length {length}"
+                )
             }
             Self::Primitive(error) => write!(f, "stack primitive failed: {error}"),
             Self::Runtime(error) => write!(f, "stack runtime failed: {error}"),
@@ -43,6 +50,23 @@ pub type StackRuntimeConfiguration<R> = StackConfiguration<
     <R as StackRuntime>::Code,
     <R as StackRuntime>::Value,
     <R as StackRuntime>::Environment,
+>;
+
+/// Observable instruction layer selected by a [`StackRuntime`].
+pub type StackRuntimeInstruction<R> = StackInstructionLayer<
+    <R as StackRuntime>::Symbol,
+    <R as StackRuntime>::Datum,
+    <R as StackRuntime>::Primitive,
+    <R as StackRuntime>::Code,
+    <<R as StackRuntime>::Syntax as StackInstructionView>::Effect,
+>;
+
+/// Error selected by a stack runtime and primitive dictionary.
+pub type StackRuntimeMachineError<R, P> = StackMachineError<
+    <R as StackRuntime>::Symbol,
+    <<R as StackRuntime>::Syntax as StackInstructionView>::Effect,
+    <P as StackPrimitiveSemantics<R>>::Error,
+    <R as StackRuntime>::Error,
 >;
 
 /// Pure concatenative evaluator over abstract representations and primitives.
@@ -79,33 +103,54 @@ where
         StackConfiguration::new(code, self.runtime.environments().empty())
     }
 
-    fn runtime_error(
-        &self,
-        error: R::Error,
-    ) -> StackMachineError<R::Symbol, <R::Syntax as StackInstructionView>::Effect, P::Error, R::Error>
-    {
+    fn runtime_error(&self, error: R::Error) -> StackRuntimeMachineError<R, P> {
         StackMachineError::Runtime(error)
+    }
+
+    /// Observe and consume the instruction at the current cursor.
+    ///
+    /// The returned configuration differs only by its incremented cursor.
+    /// `None` means that the current code sequence is complete; callers may
+    /// then return through a continuation or classify the machine as terminal.
+    /// This seam lets an effect runner suspend before applying an instruction
+    /// without depending on its concrete representation.
+    pub fn take_instruction(
+        &self,
+        configuration: &StackRuntimeConfiguration<R>,
+    ) -> Result<
+        Option<(StackRuntimeInstruction<R>, StackRuntimeConfiguration<R>)>,
+        StackRuntimeMachineError<R, P>,
+    > {
+        let instructions = self
+            .runtime
+            .syntax()
+            .instructions(&configuration.code)
+            .map_err(|error| self.runtime_error(self.runtime.syntax_error(error)))?;
+        if configuration.cursor > instructions.len() {
+            return Err(StackMachineError::InvalidCursor {
+                cursor: configuration.cursor,
+                length: instructions.len(),
+            });
+        }
+        if configuration.cursor == instructions.len() {
+            return Ok(None);
+        }
+        let instruction = self
+            .runtime
+            .syntax()
+            .view_instruction(&instructions[configuration.cursor])
+            .map_err(|error| self.runtime_error(self.runtime.syntax_error(error)))?;
+        let mut continuation = configuration.clone();
+        continuation.cursor += 1;
+        Ok(Some((instruction, continuation)))
     }
 
     pub fn next_configuration(
         &self,
         configuration: &StackRuntimeConfiguration<R>,
-    ) -> Result<
-        Option<StackRuntimeConfiguration<R>>,
-        StackMachineError<
-            R::Symbol,
-            <R::Syntax as StackInstructionView>::Effect,
-            P::Error,
-            R::Error,
-        >,
-    > {
-        let mut next = configuration.clone();
-        let instructions = self
-            .runtime
-            .syntax()
-            .instructions(&next.code)
-            .map_err(|error| self.runtime_error(self.runtime.syntax_error(error)))?;
-        if next.cursor == instructions.len() {
+    ) -> Result<Option<StackRuntimeConfiguration<R>>, StackRuntimeMachineError<R, P>> {
+        let Some((instruction, mut next)) = self.take_instruction(configuration)? else {
+            let mut next = configuration.clone();
             let Some(caller) = next.continuations.pop() else {
                 return Ok(None);
             };
@@ -113,14 +158,7 @@ where
             next.cursor = caller.cursor;
             next.environment = caller.environment;
             return Ok(Some(next));
-        }
-
-        let instruction = self
-            .runtime
-            .syntax()
-            .view_instruction(&instructions[next.cursor])
-            .map_err(|error| self.runtime_error(self.runtime.syntax_error(error)))?;
-        next.cursor += 1;
+        };
         match instruction {
             StackInstructionLayer::Literal(datum) | StackInstructionLayer::Quote(datum) => {
                 let value = self

@@ -71,7 +71,10 @@ pub use stack::{
     StackInstructionSyntax, StackInstructionView, StackMachineValue, StackPrimitiveSemantics,
     StackProgramSyntax, StackRuntime, StackValue, StackValueLayer, StackValueView,
 };
-pub use stack_machine::{StackMachine, StackMachineError, StackRuntimeConfiguration};
+pub use stack_machine::{
+    StackMachine, StackMachineError, StackRuntimeConfiguration, StackRuntimeInstruction,
+    StackRuntimeMachineError,
+};
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
     Parameter, Strategy,

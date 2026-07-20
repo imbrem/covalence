@@ -519,6 +519,7 @@ pub enum ForspError {
     ExpectedInteger,
     MalformedQuote,
     UnhandledEffect(ForspEffect),
+    InvalidCursor { cursor: usize, length: usize },
     InvalidEffectResponse,
 }
 
@@ -533,6 +534,12 @@ impl Display for ForspError {
             Self::MalformedQuote => f.write_str("Forsp `quote` has no following datum"),
             Self::UnhandledEffect(effect) => {
                 write!(f, "Forsp effect `{effect:?}` requires an explicit handler")
+            }
+            Self::InvalidCursor { cursor, length } => {
+                write!(
+                    f,
+                    "Forsp instruction cursor {cursor} exceeds program length {length}"
+                )
             }
             Self::InvalidEffectResponse => {
                 f.write_str("Forsp handler returned a response of the wrong shape")
@@ -887,6 +894,25 @@ impl<E> From<ForspError> for RuntimeForspError<E> {
     }
 }
 
+fn forsp_stack_error<E>(
+    error: StackMachineError<String, ForspEffect, RuntimeForspError<E>, E>,
+) -> RuntimeForspError<E> {
+    match error {
+        StackMachineError::EmptyStack => RuntimeForspError::Language(ForspError::EmptyStack),
+        StackMachineError::Unbound(symbol) => {
+            RuntimeForspError::Language(ForspError::Unbound(symbol))
+        }
+        StackMachineError::UnhandledEffect(effect) => {
+            RuntimeForspError::Language(ForspError::UnhandledEffect(effect))
+        }
+        StackMachineError::InvalidCursor { cursor, length } => {
+            RuntimeForspError::Language(ForspError::InvalidCursor { cursor, length })
+        }
+        StackMachineError::Primitive(error) => error,
+        StackMachineError::Runtime(error) => RuntimeForspError::Runtime(error),
+    }
+}
+
 /// Forsp's language-specific primitive dictionary.
 ///
 /// The generic [`StackMachine`] owns closure invocation, binding, name
@@ -1100,19 +1126,7 @@ where
     ) -> Result<Option<StackConfigurationOf<R>>, RuntimeForspError<R::Error>> {
         StackMachine::new(&self.runtime, ForspPrimitives)
             .next_configuration(configuration)
-            .map_err(|error| match error {
-                StackMachineError::EmptyStack => {
-                    RuntimeForspError::Language(ForspError::EmptyStack)
-                }
-                StackMachineError::Unbound(symbol) => {
-                    RuntimeForspError::Language(ForspError::Unbound(symbol))
-                }
-                StackMachineError::UnhandledEffect(effect) => {
-                    RuntimeForspError::Language(ForspError::UnhandledEffect(effect))
-                }
-                StackMachineError::Primitive(error) => error,
-                StackMachineError::Runtime(error) => RuntimeForspError::Runtime(error),
-            })
+            .map_err(forsp_stack_error)
     }
 }
 
@@ -1306,19 +1320,12 @@ where
         match state {
             EffectState::Suspended(_) | EffectState::Returned(_) => Ok(None),
             EffectState::Running(configuration) => {
-                let instructions = self
-                    .runtime()
-                    .syntax()
-                    .instructions(&configuration.code)
-                    .map_err(|error| {
-                        RuntimeForspError::Runtime(self.runtime().syntax_error(error))
-                    })?;
-                if let Some(ForspInstruction::Effect(effect)) =
-                    instructions.get(configuration.cursor)
+                let machine = StackMachine::new(self.runtime(), ForspPrimitives);
+                if let Some((StackInstructionLayer::Effect(effect), mut continuation)) = machine
+                    .take_instruction(configuration)
+                    .map_err(forsp_stack_error)?
                 {
-                    let mut continuation = configuration.clone();
-                    continuation.cursor += 1;
-                    let request = Self::request(*effect, &mut continuation)?;
+                    let request = Self::request(effect, &mut continuation)?;
                     return Ok(Some(EffectState::Suspended(EffectSuspension {
                         continuation,
                         request,
@@ -1661,6 +1668,33 @@ mod tests {
             covalence_kernel_lisp::ExecutionError::Relation(ForspError::UnhandledEffect(
                 ForspEffect::Read
             ))
+        ));
+    }
+
+    #[test]
+    fn forged_instruction_cursors_fail_without_panicking() {
+        let pure = RuntimeForspMachine::new(ForspRuntime::default());
+        let mut pure_state = pure.initial(program("(1)"));
+        pure_state.cursor = 2;
+        assert_eq!(
+            pure.next(&pure_state),
+            Err(RuntimeForspError::Language(ForspError::InvalidCursor {
+                cursor: 2,
+                length: 1,
+            }))
+        );
+
+        let effects = RuntimeForspEffectMachine::new(ForspHandleRuntime::default());
+        let EffectState::Running(mut effect_state) = effects.initial(program("(read)")) else {
+            panic!("initial effect state must be running")
+        };
+        effect_state.cursor = 2;
+        assert!(matches!(
+            effects.next(&EffectState::Running(effect_state)),
+            Err(RuntimeForspError::Language(ForspError::InvalidCursor {
+                cursor: 2,
+                length: 1,
+            }))
         ));
     }
 

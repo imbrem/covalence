@@ -466,6 +466,112 @@ pub trait LispSyntax {
     fn apply_list_procedure(&self) -> Result<Self::Expr, Self::Error>;
 }
 
+/// Import a direct common-core tree into an arbitrary syntax backend.
+///
+/// Frontends use [`CoreExpr`] as a convenient parsed/lowered interchange
+/// value. Runtime backends need not use that Rust tree as their own
+/// representation: this fold reconstructs it exclusively through
+/// [`LispSyntax`] constructors, including opaque resource implementations.
+pub fn import_core<S>(
+    syntax: &S,
+    expression: &CoreExpr<S::Symbol, S::Datum, S::Primitive>,
+) -> Result<S::Expr, S::Error>
+where
+    S: LispSyntax,
+{
+    match expression {
+        CoreExpr::Literal(datum) => syntax.literal(datum.clone()),
+        CoreExpr::Truth(value) => syntax.truth(*value),
+        CoreExpr::Variable(symbol) => syntax.variable(symbol.clone()),
+        CoreExpr::Quote(datum) => syntax.quote(datum.clone()),
+        CoreExpr::If {
+            condition,
+            consequent,
+            alternative,
+        } => syntax.if_then_else(
+            import_core(syntax, condition)?,
+            import_core(syntax, consequent)?,
+            import_core(syntax, alternative)?,
+        ),
+        CoreExpr::Cond { clauses } => syntax.cond(
+            clauses
+                .iter()
+                .map(|(condition, body)| {
+                    Ok((import_core(syntax, condition)?, import_core(syntax, body)?))
+                })
+                .collect::<Result<Vec<_>, S::Error>>()?,
+        ),
+        CoreExpr::Sequence { first, rest } => syntax.sequence(
+            import_core(syntax, first)?,
+            rest.iter()
+                .map(|expression| import_core(syntax, expression))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        CoreExpr::Lambda {
+            name,
+            parameters,
+            rest,
+            body,
+        } => syntax.lambda(
+            name.clone(),
+            parameters
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .collect(),
+            rest.as_ref().map(|parameter| parameter.name.clone()),
+            import_core(syntax, body)?,
+        ),
+        CoreExpr::Apply {
+            operator,
+            arguments,
+        } => syntax.apply(
+            import_core(syntax, operator)?,
+            arguments
+                .iter()
+                .map(|argument| import_core(syntax, argument))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        CoreExpr::ApplyList {
+            operator,
+            arguments,
+            tail,
+        } => syntax.apply_list(
+            import_core(syntax, operator)?,
+            arguments
+                .iter()
+                .map(|argument| import_core(syntax, argument))
+                .collect::<Result<Vec<_>, _>>()?,
+            import_core(syntax, tail)?,
+        ),
+        CoreExpr::Let { bindings, body } => syntax.let_bind(
+            bindings
+                .iter()
+                .map(|binding| Ok((binding.name.clone(), import_core(syntax, &binding.value)?)))
+                .collect::<Result<Vec<_>, S::Error>>()?,
+            import_core(syntax, body)?,
+        ),
+        CoreExpr::LetRec { bindings, body } => syntax.let_rec(
+            bindings
+                .iter()
+                .map(|binding| Ok((binding.name.clone(), import_core(syntax, &binding.value)?)))
+                .collect::<Result<Vec<_>, S::Error>>()?,
+            import_core(syntax, body)?,
+        ),
+        CoreExpr::Primitive {
+            operator,
+            arguments,
+        } => syntax.primitive(
+            operator.clone(),
+            arguments
+                .iter()
+                .map(|argument| import_core(syntax, argument))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        CoreExpr::PrimitiveValue(operator) => syntax.primitive_value(operator.clone()),
+        CoreExpr::ApplyListProcedure => syntax.apply_list_procedure(),
+    }
+}
+
 /// Policy supplied by a concrete Lisp frontend.
 pub trait LispDialect {
     type Symbol;

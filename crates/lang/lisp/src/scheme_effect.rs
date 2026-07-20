@@ -163,9 +163,9 @@ where
             Atom = CoreAtom,
             Datum = covalence_kernel_lisp::Datum<CoreAtom>,
             Primitive = Primitive,
-            Expr = FrontendExpr,
         > + Clone,
     R: LispRuntimeSnapshot,
+    R::Expr: Debug + PartialEq,
     R::Value: Debug + PartialEq,
     R::Environment: Debug + PartialEq,
 {
@@ -199,6 +199,9 @@ where
     where
         H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
     {
+        let expression = self
+            .import_runtime_expression(expression)
+            .map_err(|error| SchemeEvaluationError::Run(EffectRunError::Machine(error)))?;
         let replay_machine = LispEffectMachine::new(LispMachine::with_runtime(
             self.runtime().replay_snapshot(),
             SchemePrimitives,
@@ -206,7 +209,7 @@ where
         ));
         let machine = LispEffectMachine::new(self.machine().clone());
         let initial = EffectState::Running(MachineConfiguration::with_environment(
-            expression.clone(),
+            expression,
             self.environment().clone(),
         ));
         let run = handle_to_completion(&machine, initial.clone(), handler, self.fuel())

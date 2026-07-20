@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 307,
+      "words": 312,
       "updated": 0
     },
     {
@@ -9358,7 +9358,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 489,
+      "words": 700,
       "updated": 0
     },
     {
@@ -9457,7 +9457,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 547,
+      "words": 653,
       "updated": 0
     },
     {
@@ -10843,7 +10843,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1677,
+      "words": 1697,
       "updated": 0
     },
     {
@@ -10897,7 +10897,7 @@
       "title": "scheme_effect.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/scheme_effect.rs",
-      "words": 450,
+      "words": 453,
       "updated": 0
     },
     {

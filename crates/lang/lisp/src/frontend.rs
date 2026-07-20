@@ -15,7 +15,7 @@ use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
     Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
     LispEnvironment, LispMachine, LispRuntime, LispValue, MachineConfiguration, MayEval,
-    PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
+    PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute, import_core,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -1011,8 +1011,8 @@ where
             Atom = CoreAtom,
             Datum = Datum<CoreAtom>,
             Primitive = Primitive,
-            Expr = FrontendExpr,
         >,
+    R::Expr: Debug + PartialEq,
     R::Value: Debug + PartialEq,
     R::Environment: Debug + PartialEq,
     P: PrimitiveSemantics<R::Values>,
@@ -1076,6 +1076,22 @@ where
         self.fuel
     }
 
+    pub(crate) fn import_runtime_expression(
+        &self,
+        expression: &FrontendExpr,
+    ) -> Result<R::Expr, RuntimeSessionMachineError<R, P>> {
+        import_core(self.machine.runtime().expressions(), expression)
+            .map_err(|error| CoreMachineError::Runtime(self.machine.runtime().syntax_error(error)))
+    }
+
+    fn import_expression(
+        &self,
+        expression: &FrontendExpr,
+    ) -> Result<R::Expr, RuntimeSessionError<R, P>> {
+        self.import_runtime_expression(expression)
+            .map_err(SessionError::Machine)
+    }
+
     pub fn evaluate(&self, form: &SExpr) -> Result<R::Value, RuntimeSessionError<R, P>> {
         let expression = self.frontend.lower(form).map_err(SessionError::Lower)?;
         self.evaluate_core(&expression)
@@ -1105,7 +1121,7 @@ where
         definition: LispDefinition<String, FrontendExpr>,
     ) -> Result<String, RuntimeSessionError<R, P>> {
         let name = definition.name.clone();
-        let expression = definition.into_recursive_lambda();
+        let expression = self.import_expression(&definition.into_recursive_lambda())?;
         self.environment = self
             .machine
             .bind_recursive(&self.environment, vec![(name.clone(), expression)])
@@ -1133,7 +1149,7 @@ where
                 return Err(SessionError::ExpectedDefinition { index });
             };
             names.push(name.clone());
-            bindings.push((name, expression));
+            bindings.push((name, self.import_expression(&expression)?));
         }
         self.environment = self
             .machine
@@ -1164,9 +1180,10 @@ where
         &self,
         expression: &FrontendExpr,
     ) -> Result<RuntimeEvaluation<R, P>, RuntimeSessionError<R, P>> {
+        let expression = self.import_expression(expression)?;
         let trace = execute(
             &self.machine,
-            MachineConfiguration::with_environment(expression.clone(), self.environment.clone()),
+            MachineConfiguration::with_environment(expression, self.environment.clone()),
             self.fuel,
         )
         .map_err(SessionError::Execute)?;
@@ -1191,8 +1208,8 @@ where
             Atom = CoreAtom,
             Datum = Datum<CoreAtom>,
             Primitive = Primitive,
-            Expr = FrontendExpr,
         >,
+    R::Expr: Debug + PartialEq,
     R::Value: Debug + PartialEq,
     R::Environment: Debug + PartialEq,
 {
@@ -1310,6 +1327,7 @@ mod tests {
             .lower(&one(source))
             .unwrap();
         let machine = arena_machine();
+        let expression = import_core(machine.runtime().expressions(), &expression).unwrap();
         let environment = initial_environment_for(
             machine.runtime().values(),
             machine.runtime().environments(),
@@ -1370,7 +1388,7 @@ mod tests {
 
     #[test]
     fn applicative_effects_share_the_direct_and_handle_runtime_contract() {
-        let expression = Frontend::new(SurfaceDialect::Scheme)
+        let core_expression = Frontend::new(SurfaceDialect::Scheme)
             .lower(&one("(+ 20 22)"))
             .unwrap();
 
@@ -1390,6 +1408,7 @@ mod tests {
             SuspendingAdd,
             covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
         ));
+        let expression = import_core(machine.runtime().expressions(), &core_expression).unwrap();
         let mut handler = OneResponse(Some(expected.clone()));
         let run = handle_to_completion(
             &machine,
@@ -1420,6 +1439,7 @@ mod tests {
             SuspendingAdd,
             covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
         ));
+        let expression = import_core(machine.runtime().expressions(), &core_expression).unwrap();
         let mut handler = OneResponse(Some(expected));
         let run = handle_to_completion(
             &machine,

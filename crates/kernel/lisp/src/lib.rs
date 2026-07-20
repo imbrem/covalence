@@ -46,8 +46,8 @@ pub use admission::{
 };
 pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{
-    ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaRecursiveCell,
-    ArenaRuntime, ArenaRuntimeError, ArenaValue, ArenaValues,
+    ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaExpr, ArenaRuntime,
+    ArenaRuntimeError, ArenaSyntax, ArenaValue, ArenaValues,
 };
 pub use effect::{
     EffectHandler, EffectReplay, EffectReplayError, EffectRequest, EffectResume, EffectRunError,
@@ -90,5 +90,5 @@ pub use stack_machine::{
 };
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
-    Parameter, Strategy,
+    Parameter, Strategy, import_core,
 };

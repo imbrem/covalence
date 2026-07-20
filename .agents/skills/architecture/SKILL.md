@@ -112,6 +112,11 @@ disable-model-invocation: true
     `RuntimeSession<R, P>` with that dictionary and returns a value plus the
     complete handled-effect transcript; the default `P = StandardPrimitives`
     preserves the pure Scheme/Sector/ACL2 session API.
+    `ArenaRuntime` makes expressions opaque resources as well as values,
+    closures, and environments. Frontends lower once to the neutral
+    `CoreExpr` interchange tree; `import_core` folds it through the selected
+    `LispSyntax` constructors, so the common machine does not require a backend
+    to retain Rust syntax trees across a future WIT boundary.
     Handled runs retain every machine state and can be checked by
     `check_handled_run`; external response authority remains separately supplied
     through `EffectReplay`. Allocation-sensitive opaque runtimes implement

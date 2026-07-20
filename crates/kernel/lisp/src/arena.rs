@@ -12,30 +12,33 @@ use core::marker::PhantomData;
 
 use covalence_sexpr_api::{Free, FreeSExpr};
 
-use crate::host::{CoreSyntax, Datum};
+use crate::host::Datum;
 use crate::resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispRuntimeSnapshot, LispValue, RecursiveAllocation, RuntimeBinding,
     RuntimeValueLayer, RuntimeValueView,
 };
-use crate::syntax::CoreExpr;
+use crate::syntax::{CoreExprLayer, LispExpression, LispSyntax};
 
 pub enum ArenaValueKind {}
 pub enum ArenaClosureKind {}
 pub enum ArenaEnvironmentKind {}
 pub enum ArenaCellKind {}
+pub enum ArenaExprKind {}
 
 pub type ArenaValue = Resource<ArenaValueKind>;
 pub type ArenaClosure = Resource<ArenaClosureKind>;
 pub type ArenaEnvironment = Resource<ArenaEnvironmentKind>;
 pub type ArenaRecursiveCell = Resource<ArenaCellKind>;
+pub type ArenaExpr = Resource<ArenaExprKind>;
 
-type ArenaExpr<S, A, P> = CoreExpr<S, Datum<A>, P>;
+type StoredExpr<S, A, P> = CoreExprLayer<S, Datum<A>, P, ArenaExpr>;
 type ValueLayer<A, P> = RuntimeValueLayer<A, ArenaClosure, P, ArenaValue>;
-type StoredClosure<S, A, P> = ClosureRecord<S, ArenaExpr<S, A, P>, ArenaEnvironment>;
+type StoredClosure<S> = ClosureRecord<S, ArenaExpr, ArenaEnvironment>;
+type ExprTable<S, A, P> = ResourceTable<ArenaExprKind, StoredExpr<S, A, P>>;
 type ValueTable<A, P> = ResourceTable<ArenaValueKind, ValueLayer<A, P>>;
-type ClosureTable<S, A, P> = ResourceTable<ArenaClosureKind, StoredClosure<S, A, P>>;
+type ClosureTable<S> = ResourceTable<ArenaClosureKind, StoredClosure<S>>;
 type EnvironmentTable<S> = ResourceTable<ArenaEnvironmentKind, Vec<(S, ArenaRecursiveCell)>>;
 type CellTable = ResourceTable<ArenaCellKind, Option<ArenaValue>>;
 
@@ -65,11 +68,180 @@ impl Display for ArenaRuntimeError {
 
 impl core::error::Error for ArenaRuntimeError {}
 
+/// Opaque expression-resource realization of the common Lisp syntax.
+#[derive(Clone, Debug)]
+pub struct ArenaSyntax<S, A, P> {
+    expressions: ExprTable<S, A, P>,
+}
+
+impl<S, A, P> ArenaSyntax<S, A, P> {
+    fn allocate(&self, layer: StoredExpr<S, A, P>) -> ArenaExpr {
+        self.expressions.insert(layer)
+    }
+}
+
+impl<S, A, P> LispExpression for ArenaSyntax<S, A, P>
+where
+    S: Clone,
+    A: Clone,
+    P: Clone,
+{
+    type Symbol = S;
+    type Datum = Datum<A>;
+    type Primitive = P;
+    type Expr = ArenaExpr;
+    type Error = ArenaRuntimeError;
+
+    fn view(&self, expression: &Self::Expr) -> Result<StoredExpr<S, A, P>, Self::Error> {
+        self.expressions.get_cloned(*expression).map_err(Into::into)
+    }
+}
+
+impl<S, A, P> LispSyntax for ArenaSyntax<S, A, P>
+where
+    S: Clone,
+    A: Clone,
+    P: Clone,
+{
+    type Symbol = S;
+    type Datum = Datum<A>;
+    type Primitive = P;
+    type Expr = ArenaExpr;
+    type Error = ArenaRuntimeError;
+
+    fn literal(&self, datum: Self::Datum) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Literal(datum)))
+    }
+
+    fn truth(&self, value: bool) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Truth(value)))
+    }
+
+    fn variable(&self, symbol: Self::Symbol) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Variable(symbol)))
+    }
+
+    fn quote(&self, datum: Self::Datum) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Quote(datum)))
+    }
+
+    fn if_then_else(
+        &self,
+        condition: Self::Expr,
+        consequent: Self::Expr,
+        alternative: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::If {
+            condition,
+            consequent,
+            alternative,
+        }))
+    }
+
+    fn cond(&self, clauses: Vec<(Self::Expr, Self::Expr)>) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Cond { clauses }))
+    }
+
+    fn sequence(
+        &self,
+        first: Self::Expr,
+        rest: Vec<Self::Expr>,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Sequence { first, rest }))
+    }
+
+    fn lambda(
+        &self,
+        name: Option<Self::Symbol>,
+        parameters: Vec<Self::Symbol>,
+        rest: Option<Self::Symbol>,
+        body: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Lambda {
+            name,
+            parameters: parameters.into_iter().map(crate::Parameter::new).collect(),
+            rest: rest.map(crate::Parameter::new),
+            body,
+        }))
+    }
+
+    fn apply(
+        &self,
+        operator: Self::Expr,
+        arguments: Vec<Self::Expr>,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Apply {
+            operator,
+            arguments,
+        }))
+    }
+
+    fn apply_list(
+        &self,
+        operator: Self::Expr,
+        arguments: Vec<Self::Expr>,
+        tail: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::ApplyList {
+            operator,
+            arguments,
+            tail,
+        }))
+    }
+
+    fn let_bind(
+        &self,
+        bindings: Vec<(Self::Symbol, Self::Expr)>,
+        body: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Let {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, value)| crate::Binding::new(name, value))
+                .collect(),
+            body,
+        }))
+    }
+
+    fn let_rec(
+        &self,
+        bindings: Vec<(Self::Symbol, Self::Expr)>,
+        body: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::LetRec {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, value)| crate::Binding::new(name, value))
+                .collect(),
+            body,
+        }))
+    }
+
+    fn primitive(
+        &self,
+        operator: Self::Primitive,
+        arguments: Vec<Self::Expr>,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::Primitive {
+            operator,
+            arguments,
+        }))
+    }
+
+    fn primitive_value(&self, operator: Self::Primitive) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::PrimitiveValue(operator)))
+    }
+
+    fn apply_list_procedure(&self) -> Result<Self::Expr, Self::Error> {
+        Ok(self.allocate(CoreExprLayer::ApplyListProcedure))
+    }
+}
+
 /// Arena-backed runtime-value capability.
 #[derive(Clone, Debug)]
 pub struct ArenaValues<S, A, P> {
     values: ValueTable<A, P>,
-    closures: ClosureTable<S, A, P>,
+    closures: ClosureTable<S>,
 }
 
 impl<S, A, P> ArenaValues<S, A, P> {
@@ -204,19 +376,17 @@ where
 
 /// Arena-backed opaque closure capability.
 #[derive(Clone, Debug)]
-pub struct ArenaClosures<S, A, P> {
-    closures: ClosureTable<S, A, P>,
+pub struct ArenaClosures<S> {
+    closures: ClosureTable<S>,
     environments: EnvironmentTable<S>,
 }
 
-impl<S, A, P> LispClosure for ArenaClosures<S, A, P>
+impl<S> LispClosure for ArenaClosures<S>
 where
     S: Clone,
-    A: Clone,
-    P: Clone,
 {
     type Symbol = S;
-    type Expr = ArenaExpr<S, A, P>;
+    type Expr = ArenaExpr;
     type Environment = ArenaEnvironment;
     type Closure = ArenaClosure;
     type Error = ArenaRuntimeError;
@@ -352,8 +522,8 @@ where
 pub struct ArenaRuntime<S, A, P> {
     data: Free<A>,
     values: ArenaValues<S, A, P>,
-    expressions: CoreSyntax<S, A, P>,
-    closures: ArenaClosures<S, A, P>,
+    expressions: ArenaSyntax<S, A, P>,
+    closures: ArenaClosures<S>,
     environments: ArenaEnvironments<S, A, P>,
     _marker: PhantomData<(S, A, P)>,
 }
@@ -362,6 +532,7 @@ impl<S, A, P> Default for ArenaRuntime<S, A, P> {
     fn default() -> Self {
         let arena = ResourceArena::new();
         let value_layers = arena.table("Lisp value");
+        let expressions = arena.table("Lisp expression");
         let closures = arena.table("Lisp closure");
         let environments = arena.table("Lisp environment");
         let cells = arena.table("Lisp recursive cell");
@@ -372,7 +543,7 @@ impl<S, A, P> Default for ArenaRuntime<S, A, P> {
                 values: value_layers.clone(),
                 closures: closures.clone(),
             },
-            expressions: CoreSyntax::default(),
+            expressions: ArenaSyntax { expressions },
             closures: ArenaClosures {
                 closures,
                 environments: environments.clone(),
@@ -396,6 +567,7 @@ where
 {
     fn replay_snapshot(&self) -> Self {
         let values = self.values.values.snapshot();
+        let expressions = self.expressions.expressions.snapshot();
         let closures = self.values.closures.snapshot();
         let environments = self.environments.environments.snapshot();
         let cells = self.environments.cells.snapshot();
@@ -405,7 +577,7 @@ where
                 values: values.clone(),
                 closures: closures.clone(),
             },
-            expressions: self.expressions.clone(),
+            expressions: ArenaSyntax { expressions },
             closures: ArenaClosures {
                 closures,
                 environments: environments.clone(),
@@ -431,15 +603,15 @@ where
     type Atom = A;
     type Datum = FreeSExpr<A>;
     type Primitive = P;
-    type Expr = ArenaExpr<S, A, P>;
+    type Expr = ArenaExpr;
     type Value = ArenaValue;
     type Closure = ArenaClosure;
     type Environment = ArenaEnvironment;
     type Error = ArenaRuntimeError;
     type Data = Free<A>;
     type Values = ArenaValues<S, A, P>;
-    type Expressions = CoreSyntax<S, A, P>;
-    type Closures = ArenaClosures<S, A, P>;
+    type Expressions = ArenaSyntax<S, A, P>;
+    type Closures = ArenaClosures<S>;
     type Environments = ArenaEnvironments<S, A, P>;
 
     fn values(&self) -> &Self::Values {
@@ -470,12 +642,12 @@ where
         error
     }
 
-    fn expression_error(&self, error: Infallible) -> Self::Error {
-        match error {}
+    fn expression_error(&self, error: ArenaRuntimeError) -> Self::Error {
+        error
     }
 
-    fn syntax_error(&self, error: Infallible) -> Self::Error {
-        match error {}
+    fn syntax_error(&self, error: ArenaRuntimeError) -> Self::Error {
+        error
     }
 
     fn closure_error(&self, error: ArenaRuntimeError) -> Self::Error {
@@ -484,5 +656,44 @@ where
 
     fn environment_error(&self, error: ArenaRuntimeError) -> Self::Error {
         error
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CoreExpr, LispRuntime, LispRuntimeSnapshot, import_core};
+
+    type TestRuntime = ArenaRuntime<&'static str, &'static str, &'static str>;
+
+    #[test]
+    fn expression_resources_import_observe_snapshot_and_reject_foreign_handles() {
+        let runtime = TestRuntime::default();
+        let expression = CoreExpr::Apply {
+            operator: Box::new(CoreExpr::Lambda {
+                name: None,
+                parameters: vec![crate::Parameter::new("x")],
+                rest: None,
+                body: Box::new(CoreExpr::Variable("x")),
+            }),
+            arguments: vec![CoreExpr::Quote(Datum::Atom("value"))],
+        };
+        let handle = import_core(runtime.expressions(), &expression).unwrap();
+        assert!(matches!(
+            runtime.expressions().view(&handle).unwrap(),
+            CoreExprLayer::Apply { arguments, .. } if arguments.len() == 1
+        ));
+
+        let snapshot = runtime.replay_snapshot();
+        assert!(matches!(
+            snapshot.expressions().view(&handle).unwrap(),
+            CoreExprLayer::Apply { arguments, .. } if arguments.len() == 1
+        ));
+
+        let foreign = TestRuntime::default();
+        assert!(matches!(
+            foreign.expressions().view(&handle),
+            Err(ArenaRuntimeError::Resource(ResourceError::Foreign { .. }))
+        ));
     }
 }

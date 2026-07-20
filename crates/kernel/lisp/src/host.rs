@@ -9,7 +9,7 @@ use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 use std::sync::{Arc, OnceLock};
 
-use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
+use crate::relation::{ClassifiedStepRelation, DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispRuntimeSnapshot, LispValue, PrimitiveOutcome, PrimitiveSemantics,
@@ -578,6 +578,34 @@ pub enum MachineApplicationPosition {
 pub enum MachineApplicationPart<E> {
     Operator(E),
     Argument { index: usize, expression: E },
+}
+
+/// Stable semantic classes for transitions of the common Lisp machine.
+///
+/// These labels deliberately describe language-independent machine rules,
+/// rather than a concrete Rust implementation.  They are suitable dispatch
+/// keys for a HOL replay backend and, eventually, a WIT trace format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LispMachineStep {
+    Literal,
+    Truth,
+    /// Resolve a variable in the active environment (the machine's δ step).
+    EnvironmentLookup,
+    SelectConditional,
+    DesugarConditional,
+    Sequence,
+    MakeClosure,
+    ScheduleApplication,
+    SchedulePrimitive,
+    DesugarLet,
+    BindRecursive,
+    MakePrimitive,
+    MakeApplyListProcedure,
+    ContinueApplication,
+    /// Apply a lexical closure by extending its captured environment.
+    Beta,
+    ApplyPrimitive,
+    ApplyList,
 }
 
 /// A complete machine configuration.
@@ -1387,6 +1415,85 @@ where
             }
         }
     }
+
+    fn classify_step(
+        &self,
+        configuration: &LispConfiguration<R, P>,
+    ) -> Result<LispMachineStep, LispMachineError<R, P>> {
+        match &configuration.control {
+            MachineControl::Suspended(_) => Err(CoreMachineError::UnhandledEffect),
+            MachineControl::Expression(expression) => {
+                let layer = self
+                    .runtime
+                    .expressions()
+                    .view(expression)
+                    .map_err(|error| {
+                        CoreMachineError::Runtime(self.runtime.expression_error(error))
+                    })?;
+                Ok(match layer {
+                    CoreExprLayer::Literal(_) | CoreExprLayer::Quote(_) => LispMachineStep::Literal,
+                    CoreExprLayer::Truth(_) => LispMachineStep::Truth,
+                    CoreExprLayer::Variable(_) => LispMachineStep::EnvironmentLookup,
+                    CoreExprLayer::If { .. } => LispMachineStep::SelectConditional,
+                    CoreExprLayer::Cond { .. } => LispMachineStep::DesugarConditional,
+                    CoreExprLayer::Sequence { .. } => LispMachineStep::Sequence,
+                    CoreExprLayer::Lambda { .. } => LispMachineStep::MakeClosure,
+                    CoreExprLayer::Apply { .. } | CoreExprLayer::ApplyList { .. } => {
+                        LispMachineStep::ScheduleApplication
+                    }
+                    CoreExprLayer::Let { .. } => LispMachineStep::DesugarLet,
+                    CoreExprLayer::LetRec { .. } => LispMachineStep::BindRecursive,
+                    CoreExprLayer::Primitive { .. } => LispMachineStep::SchedulePrimitive,
+                    CoreExprLayer::PrimitiveValue(_) => LispMachineStep::MakePrimitive,
+                    CoreExprLayer::ApplyListProcedure => LispMachineStep::MakeApplyListProcedure,
+                })
+            }
+            MachineControl::Value(value) => {
+                let Some(frame) = configuration.continuation.last() else {
+                    // A terminal value has no successor, so callers never observe
+                    // this label through `classified_successors`.
+                    return Ok(LispMachineStep::Sequence);
+                };
+                match frame {
+                    MachineFrame::If { .. } => Ok(LispMachineStep::SelectConditional),
+                    MachineFrame::Sequence { .. } => Ok(LispMachineStep::Sequence),
+                    MachineFrame::PrimitiveArguments { remaining, .. } => {
+                        if remaining.is_empty() {
+                            Ok(LispMachineStep::ApplyPrimitive)
+                        } else {
+                            Ok(LispMachineStep::SchedulePrimitive)
+                        }
+                    }
+                    MachineFrame::ApplyParts {
+                        function,
+                        current,
+                        remaining,
+                        ..
+                    } => {
+                        if !remaining.is_empty() {
+                            return Ok(LispMachineStep::ContinueApplication);
+                        }
+                        let function = match current {
+                            MachineApplicationPosition::Operator => value,
+                            MachineApplicationPosition::Argument(_) => function
+                                .as_ref()
+                                .expect("completed application has an operator value"),
+                        };
+                        match self.values().unroll(function).map_err(|error| {
+                            CoreMachineError::Runtime(self.runtime.value_error(error))
+                        })? {
+                            RuntimeValueLayer::Closure(_) => Ok(LispMachineStep::Beta),
+                            RuntimeValueLayer::Primitive(_) => Ok(LispMachineStep::ApplyPrimitive),
+                            RuntimeValueLayer::ApplyListProcedure => Ok(LispMachineStep::ApplyList),
+                            RuntimeValueLayer::Atom(_)
+                            | RuntimeValueLayer::Nil
+                            | RuntimeValueLayer::Cons { .. } => Err(CoreMachineError::NotCallable),
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<R, P> DeterministicStep for LispMachine<R, P>
@@ -1430,6 +1537,30 @@ where
         configuration: &Self::Configuration,
     ) -> Result<Vec<Self::Configuration>, Self::Error> {
         self.step_successors(configuration)
+    }
+}
+
+impl<R, P> ClassifiedStepRelation for LispMachine<R, P>
+where
+    R: LispRuntime,
+    R::Symbol: PartialEq,
+    R::Expr: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+    R::Primitive: Debug + PartialEq,
+    P: PrimitiveSemantics<R::Values>,
+{
+    type Label = LispMachineStep;
+
+    fn classify(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Option<Self::Label>, Self::Error> {
+        if configuration.terminal_value().is_some() {
+            Ok(None)
+        } else {
+            self.classify_step(configuration).map(Some)
+        }
     }
 }
 
@@ -2039,6 +2170,41 @@ mod tests {
             },
         );
         assert_eq!(relational.successors(&initial).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn classified_trace_exposes_beta_and_environment_lookup() {
+        let machine = CoreMachine::new(Sector);
+        let initial = HostConfiguration::initial(application_expression());
+        let trace = execute(&machine, initial.clone(), 32).unwrap();
+        let mut labels = trace
+            .states()
+            .iter()
+            .take(trace.steps())
+            .map(|configuration| machine.classify(configuration).unwrap().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(labels.contains(&LispMachineStep::Beta));
+        assert!(labels.contains(&LispMachineStep::EnvironmentLookup));
+        let checked =
+            crate::CheckedClassifiedTrace::label(&machine, trace, labels.clone()).unwrap();
+        assert_eq!(
+            checked.end().terminal_value(),
+            Some(&HostValue::Atom("left"))
+        );
+        let beta = labels
+            .iter_mut()
+            .find(|label| **label == LispMachineStep::Beta)
+            .unwrap();
+        *beta = LispMachineStep::ApplyPrimitive;
+        assert!(matches!(
+            crate::CheckedClassifiedTrace::label(
+                &machine,
+                execute(&machine, initial, 32).unwrap(),
+                labels
+            ),
+            Err(crate::ExecutionError::InvalidStep { .. })
+        ));
     }
 
     #[test]

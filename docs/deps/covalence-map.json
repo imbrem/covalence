@@ -9376,7 +9376,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 2284,
+      "words": 2450,
       "updated": 0
     },
     {
@@ -9394,7 +9394,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 94,
+      "words": 95,
       "updated": 0
     },
     {
@@ -9403,7 +9403,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
-      "words": 489,
+      "words": 599,
       "updated": 0
     },
     {

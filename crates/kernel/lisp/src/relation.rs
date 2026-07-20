@@ -29,6 +29,116 @@ pub trait StepRelation {
     }
 }
 
+/// One immediate successor paired with the semantic rule that produced it.
+///
+/// Labels are explanatory data, not theorem authority.  A proof-producing
+/// backend must still replay the transition itself; the label lets it select
+/// the corresponding rule without reverse-engineering an opaque state change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassifiedStep<C, L> {
+    pub configuration: C,
+    pub label: L,
+}
+
+/// A one-step relation that exposes stable semantic rule classes.
+///
+/// This is the bridge between an executable transition system and backends
+/// which replay the same transitions in a logic.  In particular, Lisp
+/// backends can distinguish lexical lookup (δ) from closure application (β)
+/// while sharing the ordinary [`StepRelation`] API.
+pub trait ClassifiedStepRelation: StepRelation {
+    type Label: Clone + PartialEq + Debug;
+
+    /// Classify the rule enabled at `configuration`, or return `None` when it
+    /// has no successor.
+    fn classify(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Option<Self::Label>, Self::Error>;
+
+    fn classified_successors(
+        &self,
+        configuration: &Self::Configuration,
+    ) -> Result<Vec<ClassifiedStep<Self::Configuration, Self::Label>>, Self::Error> {
+        let successors = self.successors(configuration)?;
+        let Some(label) = self.classify(configuration)? else {
+            return Ok(Vec::new());
+        };
+        Ok(successors
+            .into_iter()
+            .map(|configuration| ClassifiedStep {
+                configuration,
+                label: label.clone(),
+            })
+            .collect())
+    }
+}
+
+/// A checked finite path which retains the semantic class of every step.
+///
+/// Unlike a plain [`CheckedTrace`], this is directly consumable by a
+/// proof-producing replay backend: each label has been checked against the
+/// executable relation and may be used to select a logic rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckedClassifiedTrace<C, L> {
+    trace: CheckedTrace<C>,
+    labels: Vec<L>,
+}
+
+impl<C, L> CheckedClassifiedTrace<C, L> {
+    pub fn initial(&self) -> &C {
+        self.trace.start()
+    }
+
+    pub fn labels(&self) -> &[L] {
+        &self.labels
+    }
+
+    pub fn end(&self) -> &C {
+        self.trace.end()
+    }
+
+    pub fn trace(&self) -> &CheckedTrace<C> {
+        &self.trace
+    }
+
+    pub fn into_trace(self) -> CheckedTrace<C> {
+        self.trace
+    }
+}
+
+impl<C: Clone + PartialEq + Debug, L: Clone + PartialEq + Debug> CheckedClassifiedTrace<C, L> {
+    /// Attach checked semantic labels to an already checked state trace.
+    ///
+    /// Transition authority remains in `trace`; this operation checks only
+    /// that every label names the rule enabled at the corresponding source
+    /// state.  Keeping those checks separate matters for resource runtimes
+    /// whose semantically equal replay may allocate different opaque handles.
+    pub fn label<R>(
+        relation: &R,
+        trace: CheckedTrace<C>,
+        labels: Vec<L>,
+    ) -> Result<Self, ExecutionError<R::Error>>
+    where
+        R: ClassifiedStepRelation<Configuration = C, Label = L>,
+    {
+        if labels.len() != trace.steps() {
+            return Err(ExecutionError::InvalidStep {
+                index: labels.len().min(trace.steps()),
+            });
+        }
+        for (index, (configuration, claimed)) in trace.states().iter().zip(&labels).enumerate() {
+            let actual = relation
+                .classify(configuration)
+                .map_err(ExecutionError::Relation)?;
+            if actual.as_ref() != Some(claimed) {
+                return Err(ExecutionError::InvalidStep { index });
+            }
+        }
+        Ok(Self { trace, labels })
+    }
+}
+
 /// Optional deterministic execution strategy.
 pub trait DeterministicStep: StepRelation {
     fn next(

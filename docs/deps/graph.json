@@ -110,6 +110,10 @@
     },
     {
       "from": "covalence",
+      "to": "covalence-lisp"
+    },
+    {
+      "from": "covalence",
       "to": "covalence-lsp"
     },
     {
@@ -579,6 +583,10 @@
     {
       "from": "covalence-lisp",
       "to": "covalence-core"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-hash"
     },
     {
       "from": "covalence-lisp",

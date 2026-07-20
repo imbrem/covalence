@@ -88,6 +88,7 @@ digraph deps {
   "covalence" -> "hash";
   "covalence" -> "hol";
   "covalence" -> "init";
+  "covalence" -> "lisp";
   "covalence" -> "lsp";
   "covalence" -> "object";
   "covalence" -> "opentheory";
@@ -206,6 +207,7 @@ digraph deps {
   "lexer-parsing" -> "parsing-api";
   "lexer-parsing" -> "regex-parsing";
   "lisp" -> "core";
+  "lisp" -> "hash";
   "lisp" -> "hol-api";
   "lisp" -> "hol-eval";
   "lisp" -> "init";

@@ -538,7 +538,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7464,
+      "words": 7466,
       "updated": 0
     },
     {
@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 36806,
+      "words": 37201,
       "updated": 0
     },
     {
@@ -4030,7 +4030,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/app/cov/Cargo.toml",
-      "words": 63,
+      "words": 65,
       "updated": 0
     },
     {
@@ -4040,6 +4040,15 @@
       "status": "tracked",
       "path": "crates/app/cov/build.rs",
       "words": 7,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/app/cov/src/cmd/acl2.rs",
+      "kind": "file",
+      "title": "acl2.rs",
+      "status": "tracked",
+      "path": "crates/app/cov/src/cmd/acl2.rs",
+      "words": 123,
       "updated": 0
     },
     {
@@ -4084,7 +4093,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/app/cov/src/cmd/mod.rs",
-      "words": 91,
+      "words": 97,
       "updated": 0
     },
     {
@@ -4129,7 +4138,16 @@
       "title": "main.rs",
       "status": "tracked",
       "path": "crates/app/cov/src/main.rs",
-      "words": 71,
+      "words": 74,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/app/cov/tests/acl2_progress_integration.rs",
+      "kind": "file",
+      "title": "acl2_progress_integration.rs",
+      "status": "tracked",
+      "path": "crates/app/cov/tests/acl2_progress_integration.rs",
+      "words": 100,
       "updated": 0
     },
     {
@@ -7121,12 +7139,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/acl2/append.rs",
+      "kind": "file",
+      "title": "append.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/acl2/append.rs",
+      "words": 1168,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/acl2/carrier.rs",
       "kind": "file",
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/carrier.rs",
       "words": 756,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/acl2/count.rs",
+      "kind": "file",
+      "title": "count.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/acl2/count.rs",
+      "words": 375,
       "updated": 0
     },
     {
@@ -7144,7 +7180,16 @@
       "title": "derivable.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/derivable.rs",
-      "words": 3972,
+      "words": 4067,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/acl2/fixers.rs",
+      "kind": "file",
+      "title": "fixers.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/acl2/fixers.rs",
+      "words": 202,
       "updated": 0
     },
     {
@@ -7180,7 +7225,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/mod.rs",
-      "words": 94,
+      "words": 97,
       "updated": 0
     },
     {
@@ -7198,7 +7243,7 @@
       "title": "ordinal.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/ordinal.rs",
-      "words": 4765,
+      "words": 5468,
       "updated": 0
     },
     {
@@ -7216,7 +7261,7 @@
       "title": "simplify.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/simplify.rs",
-      "words": 2647,
+      "words": 3119,
       "updated": 0
     },
     {
@@ -11113,7 +11158,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lisp/Cargo.toml",
-      "words": 57,
+      "words": 63,
       "updated": 0
     },
     {
@@ -11135,6 +11180,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lisp/examples/acl2_progress.rs",
+      "kind": "file",
+      "title": "acl2_progress.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/examples/acl2_progress.rs",
+      "words": 61,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp/open_work.rs",
       "kind": "file",
       "title": "open_work.rs",
@@ -11149,7 +11203,16 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1887,
+      "words": 2340,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/acl2_api.rs",
+      "kind": "file",
+      "title": "acl2_api.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/acl2_api.rs",
+      "words": 110,
       "updated": 0
     },
     {
@@ -11158,7 +11221,7 @@
       "title": "book.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/book.rs",
-      "words": 3590,
+      "words": 4370,
       "updated": 0
     },
     {
@@ -11221,7 +11284,16 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 171,
+      "words": 177,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/progress.rs",
+      "kind": "file",
+      "title": "progress.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/progress.rs",
+      "words": 1762,
       "updated": 0
     },
     {
@@ -11239,7 +11311,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2502,
+      "words": 2847,
       "updated": 0
     },
     {
@@ -11275,7 +11347,7 @@
       "title": "world.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/world.rs",
-      "words": 4776,
+      "words": 4801,
       "updated": 0
     },
     {
@@ -11284,7 +11356,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 573,
+      "words": 656,
       "updated": 0
     },
     {
@@ -11302,7 +11374,7 @@
       "title": "book.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/book.rs",
-      "words": 1902,
+      "words": 2592,
       "updated": 0
     },
     {
@@ -11423,6 +11495,42 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lisp/tests/books/include-cycle-a.lisp",
+      "kind": "file",
+      "title": "include-cycle-a.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/include-cycle-a.lisp",
+      "words": 4,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/include-cycle-b.lisp",
+      "kind": "file",
+      "title": "include-cycle-b.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/include-cycle-b.lisp",
+      "words": 4,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/interface-dep.lisp",
+      "kind": "file",
+      "title": "interface-dep.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/interface-dep.lisp",
+      "words": 8,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/interface-target.lisp",
+      "kind": "file",
+      "title": "interface-target.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/interface-target.lisp",
+      "words": 7,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp/tests/books/linked/explicit.acl2",
       "kind": "file",
       "title": "explicit.acl2",
@@ -11447,6 +11555,15 @@
       "status": "tracked",
       "path": "crates/lang/lisp/tests/books/linking.lisp",
       "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/local-generated.lisp",
+      "kind": "file",
+      "title": "local-generated.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/local-generated.lisp",
+      "words": 10,
       "updated": 0
     },
     {
@@ -15757,7 +15874,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 36806,
+      "words": 37201,
       "updated": 0
     },
     {
@@ -15775,7 +15892,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 323,
+      "words": 325,
       "updated": 0
     },
     {
@@ -15784,7 +15901,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 1075,
+      "words": 1083,
       "updated": 0
     },
     {
@@ -15793,7 +15910,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 242,
+      "words": 244,
       "updated": 0
     },
     {
@@ -15802,7 +15919,16 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1916,
+      "words": 1928,
+      "updated": 0
+    },
+    {
+      "id": "file:docs/deps/graph.{dot,json,mmd,svg}",
+      "kind": "file",
+      "title": "docs/deps/graph.{dot,json,mmd,svg}",
+      "status": null,
+      "path": "docs/deps/graph.{dot,json,mmd,svg}",
+      "words": 0,
       "updated": 0
     },
     {
@@ -15865,7 +15991,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3859,
+      "words": 3869,
       "updated": 0
     },
     {
@@ -16136,6 +16262,15 @@
       "status": null,
       "path": "notes/chats/",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/chats/neel_meeting_1.md",
+      "kind": "file",
+      "title": "neel_meeting_1.md",
+      "status": "tracked",
+      "path": "notes/chats/neel_meeting_1.md",
+      "words": 359,
       "updated": 0
     },
     {
@@ -16940,12 +17075,30 @@
       "updated": 0
     },
     {
+      "id": "file:notes/vibes/lisp/acl2-green-islands.md",
+      "kind": "file",
+      "title": "acl2-green-islands.md",
+      "status": "tracked",
+      "path": "notes/vibes/lisp/acl2-green-islands.md",
+      "words": 298,
+      "updated": 0
+    },
+    {
       "id": "file:notes/vibes/lisp/acl2-premise-builder.md",
       "kind": "file",
       "title": "acl2-premise-builder.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/acl2-premise-builder.md",
       "words": 858,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "kind": "file",
+      "title": "acl2-refactor-handoff-2026-07-20.md",
+      "status": "tracked",
+      "path": "notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "words": 117,
       "updated": 0
     },
     {
@@ -17008,7 +17161,7 @@
       "title": "acl2-x86isa-roadmap.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/acl2-x86isa-roadmap.md",
-      "words": 467,
+      "words": 473,
       "updated": 0
     },
     {
@@ -17117,6 +17270,15 @@
       "status": "tracked",
       "path": "notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "words": 364,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "kind": "file",
+      "title": "lisp-first-acl2-redirect.md",
+      "status": "tracked",
+      "path": "notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "words": 185,
       "updated": 0
     },
     {
@@ -18422,7 +18584,7 @@
       "status": "draft",
       "path": "notes/chats/neel_meeting_1.md",
       "words": 4733,
-      "updated": 1784579392
+      "updated": 1784579458
     },
     {
       "id": "note:notes/design/README.md",
@@ -18938,6 +19100,15 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/vibes/lisp/acl2-green-islands.md",
+      "kind": "note",
+      "title": "ACL2 green islands and corpus completion",
+      "status": "draft",
+      "path": "notes/vibes/lisp/acl2-green-islands.md",
+      "words": 1843,
+      "updated": 1784579482
+    },
+    {
       "id": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "kind": "note",
       "title": "ACL2 generic premise builder — the object-level simplifier + IH splicer",
@@ -18945,6 +19116,15 @@
       "path": "notes/vibes/lisp/acl2-premise-builder.md",
       "words": 6797,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "kind": "note",
+      "title": "ACL2 refactor handoff — 2026-07-20",
+      "status": "draft",
+      "path": "notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "words": 651,
+      "updated": 1784579482
     },
     {
       "id": "note:notes/vibes/lisp/acl2-resync-handoff.md",
@@ -19006,8 +19186,8 @@
       "title": "ACL2 x86isa: corpus-derived import roadmap",
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-x86isa-roadmap.md",
-      "words": 3179,
-      "updated": 1784473467
+      "words": 3224,
+      "updated": 1784478326
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
@@ -19107,6 +19287,15 @@
       "path": "notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "words": 2765,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "kind": "note",
+      "title": "Discussion memo: restore Lisp-first ACL2 layering",
+      "status": "draft",
+      "path": "notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "words": 966,
+      "updated": 1784491165
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -19798,6 +19987,15 @@
       "title": "Relational residual",
       "status": "defined",
       "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:acl2.api.read-time-capability-split",
+      "kind": "todo",
+      "title": "Extract separate",
+      "status": "major",
+      "path": "crates/lang/lisp/src/acl2_api.rs",
       "words": 0,
       "updated": 0
     },
@@ -22828,7 +23026,7 @@
     {
       "id": "todo:lisp.acl2.admission-layer",
       "kind": "todo",
-      "title": "Prove existence and uniqueness from common partial Lisp execution, replay them into conservative ACL2 HOL definitions, and retire shallow assumed equations.",
+      "title": "Connect checked definition-graph adequacy to reified common Lisp configurations, generalize it beyond APPEND, totalize only from honest MayEval existence/uniqueness, and retire shallow assumed equations.",
       "status": "severe",
       "path": "crates/kernel/lisp/src/lib.rs",
       "words": 0,
@@ -23872,6 +24070,12 @@
       "source": "file:apps/covalence-web/src/routes/tcb/+page.svelte",
       "predicate": "imports",
       "target": "file:docs/deps/tcb-audit.json",
+      "detail": null
+    },
+    {
+      "source": "file:crates/app/cov/src/cmd/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/app/cov/src/cmd/acl2.rs",
       "detail": null
     },
     {
@@ -24993,7 +25197,19 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/acl2/append.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/acl2/carrier.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/acl2/count.rs",
       "detail": null
     },
     {
@@ -25006,6 +25222,12 @@
       "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/acl2/derivable.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/acl2/fixers.rs",
       "detail": null
     },
     {
@@ -26703,6 +26925,12 @@
     {
       "source": "file:crates/lang/lisp/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/acl2_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/lang/lisp/src/book.rs",
       "detail": null
     },
@@ -26740,6 +26968,12 @@
       "source": "file:crates/lang/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/lisp/src/int_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/progress.rs",
       "detail": null
     },
     {
@@ -30589,6 +30823,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/lisp/acl2-green-islands.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -30646,6 +30886,36 @@
       "source": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "predicate": "documents",
+      "target": "file:apps/covalence-map/static/covalence-map.json",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "predicate": "documents",
+      "target": "file:docs/deps/covalence-map.json",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "predicate": "documents",
+      "target": "file:docs/deps/graph.{dot,json,mmd,svg}",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "predicate": "documents",
+      "target": "file:docs/todos/todos.json",
       "detail": null
     },
     {
@@ -30796,6 +31066,12 @@
       "source": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
       "predicate": "documents",
       "target": "file:scripts/analyze-acl2-books.pl",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/lisp/acl2-green-islands.md",
       "detail": null
     },
     {
@@ -30983,6 +31259,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -34549,6 +34831,24 @@
       "stableId": "N0049",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-green-islands.md",
+      "stableId": "N0050",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "stableId": "N0051",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "stableId": "N0052",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -35443,6 +35743,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/lisp/acl2-green-islands.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "green-island-program",
+      "agent": "codex",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
       "noteId": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -35450,6 +35760,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "acl2-refactor-handoff",
+      "agent": "codex",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -35630,6 +35950,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "lisp-first-acl2-redirect",
+      "agent": "codex",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -36207,6 +36537,11 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/chats/neel_meeting_1.md",
+      "commit": "5882e40819eec001ae951c051fe436ba15577abd",
+      "committedAt": 1784579458
+    },
+    {
       "noteId": "note:notes/design/README.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -36492,9 +36827,19 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/vibes/lisp/acl2-green-islands.md",
+      "commit": "c8a59cf5f30248f0af72514a17f476f9690e8295",
+      "committedAt": 1784579482
+    },
+    {
       "noteId": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-refactor-handoff-2026-07-20.md",
+      "commit": "c8a59cf5f30248f0af72514a17f476f9690e8295",
+      "committedAt": 1784579482
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-resync-handoff.md",
@@ -36528,8 +36873,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
-      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
-      "committedAt": 1784473467
+      "commit": "7b9be32fe0a9bae789f8fd714792367abcf4b30e",
+      "committedAt": 1784478326
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
@@ -36585,6 +36930,11 @@
       "noteId": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "commit": "09cd182e51d33218c31ddf4e6a90f24bfeeb0bc3",
+      "committedAt": 1784491165
     },
     {
       "noteId": "note:notes/vibes/lisp/minimal-spec/README.md",

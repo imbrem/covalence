@@ -1,3 +1,17 @@
++++
+id = "N0052"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:codex"
+at = "2026-07-20T00:00:00+01:00"
+source = "acl2-refactor-handoff"
+agent = "codex"
+harness = "codex"
++++
+
 # ACL2 refactor handoff — 2026-07-20
 
 ## Synchronization baseline

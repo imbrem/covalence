@@ -14,6 +14,10 @@ harness = "claude"
 
 # notes/ — the map
 
+Historical, commit-addressed repository reports live in
+[`history/`](./history/README.md). They are indexed like every other Markdown
+note and are immutable; create a new snapshot for later work.
+
 Directories are organizational hints, not provenance or trust boundaries.
 Every Markdown note carries a stable ID, lifecycle/review state, and explicit
 contribution metadata. SQLite is the normalized query index for those authored

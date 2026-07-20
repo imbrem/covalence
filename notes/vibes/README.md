@@ -61,3 +61,6 @@ describe implementation gaps; Git preserves deleted design history.
 
 The map application and `bun run notes` provide the complete searchable index;
 this README is a reading route, not a catalogue of every file.
+
+Commit-addressed implementation reports live outside the design corpus in
+[`../history/`](../history/README.md).

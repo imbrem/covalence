@@ -8,8 +8,11 @@
 
 use core::convert::Infallible;
 use core::fmt::{Debug, Display, Formatter};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
@@ -236,34 +239,305 @@ impl StackRuntime for ForspRuntime {
     }
 }
 
+static NEXT_FORSP_HANDLE_ARENA: AtomicUsize = AtomicUsize::new(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ForspHandleValue {
+    arena: usize,
+    index: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ForspHandleClosure {
+    arena: usize,
+    index: usize,
+}
+
+pub type ForspHandleEnvironment = HostEnvironment<String, ForspHandleValue>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ForspRequest {
-    Read,
-    Print(ForspValue),
-    PointerState,
-    PointerRead(ForspValue),
-    PointerWrite {
-        address: ForspValue,
-        value: ForspValue,
-    },
-    PointerToObject(ForspValue),
-    PointerFromObject(ForspValue),
+pub enum ForspHandleError {
+    ForeignValue,
+    ForeignClosure,
+    StaleValue,
+    StaleClosure,
+}
+
+impl Display for ForspHandleError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::ForeignValue => "Forsp value handle belongs to another arena",
+            Self::ForeignClosure => "Forsp closure handle belongs to another arena",
+            Self::StaleValue => "stale Forsp value handle",
+            Self::StaleClosure => "stale Forsp closure handle",
+        })
+    }
+}
+
+impl core::error::Error for ForspHandleError {}
+
+#[derive(Clone, Debug)]
+struct ForspHandleStorage {
+    arena: usize,
+    values: Vec<StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>>,
+    closures: Vec<StackClosureRecord<ForspCode, ForspHandleEnvironment>>,
+}
+
+impl ForspHandleStorage {
+    fn new() -> Self {
+        Self {
+            arena: NEXT_FORSP_HANDLE_ARENA.fetch_add(1, Ordering::Relaxed),
+            values: Vec::new(),
+            closures: Vec::new(),
+        }
+    }
+}
+
+type SharedForspHandleStorage = Rc<RefCell<ForspHandleStorage>>;
+
+#[derive(Clone, Debug)]
+pub struct ForspHandleValues {
+    storage: SharedForspHandleStorage,
+}
+
+impl ForspHandleValues {
+    fn layer(
+        &self,
+        value: &ForspHandleValue,
+    ) -> Result<StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>, ForspHandleError> {
+        let storage = self.storage.borrow();
+        if value.arena != storage.arena {
+            return Err(ForspHandleError::ForeignValue);
+        }
+        storage
+            .values
+            .get(value.index)
+            .cloned()
+            .ok_or(ForspHandleError::StaleValue)
+    }
+
+    fn allocate(
+        &self,
+        layer: StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>,
+    ) -> ForspHandleValue {
+        let mut storage = self.storage.borrow_mut();
+        let value = ForspHandleValue {
+            arena: storage.arena,
+            index: storage.values.len(),
+        };
+        storage.values.push(layer);
+        value
+    }
+}
+
+impl StackValue for ForspHandleValues {
+    type Datum = Datum<CoreAtom>;
+    type Value = ForspHandleValue;
+    type Error = ForspHandleError;
+
+    fn datum(&self, datum: Self::Datum) -> Result<Self::Value, Self::Error> {
+        Ok(self.allocate(StackValueLayer::Datum(datum)))
+    }
+
+    fn view(&self, value: &Self::Value) -> Result<StackValueView<Self::Datum>, Self::Error> {
+        Ok(match self.layer(value)? {
+            StackValueLayer::Datum(datum) => StackValueView::Datum(datum),
+            StackValueLayer::Closure(_) => StackValueView::Closure,
+        })
+    }
+
+    fn equivalent(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error> {
+        if left == right {
+            return Ok(true);
+        }
+        Ok(match (self.layer(left)?, self.layer(right)?) {
+            (StackValueLayer::Datum(left), StackValueLayer::Datum(right)) => left == right,
+            (StackValueLayer::Closure(left), StackValueLayer::Closure(right)) => left == right,
+            _ => false,
+        })
+    }
+}
+
+impl StackMachineValue for ForspHandleValues {
+    type Closure = ForspHandleClosure;
+
+    fn roll(
+        &self,
+        layer: StackValueLayer<Self::Datum, Self::Closure>,
+    ) -> Result<Self::Value, Self::Error> {
+        if let StackValueLayer::Closure(closure) = layer {
+            let storage = self.storage.borrow();
+            if closure.arena != storage.arena {
+                return Err(ForspHandleError::ForeignClosure);
+            }
+            if closure.index >= storage.closures.len() {
+                return Err(ForspHandleError::StaleClosure);
+            }
+            drop(storage);
+            Ok(self.allocate(StackValueLayer::Closure(closure)))
+        } else {
+            Ok(self.allocate(layer))
+        }
+    }
+
+    fn unroll(
+        &self,
+        value: &Self::Value,
+    ) -> Result<StackValueLayer<Self::Datum, Self::Closure>, Self::Error> {
+        self.layer(value)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ForspHandleClosures {
+    storage: SharedForspHandleStorage,
+}
+
+impl StackClosure for ForspHandleClosures {
+    type Code = ForspCode;
+    type Environment = ForspHandleEnvironment;
+    type Closure = ForspHandleClosure;
+    type Error = ForspHandleError;
+
+    fn close(
+        &self,
+        record: StackClosureRecord<Self::Code, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error> {
+        let mut storage = self.storage.borrow_mut();
+        let closure = ForspHandleClosure {
+            arena: storage.arena,
+            index: storage.closures.len(),
+        };
+        storage.closures.push(record);
+        Ok(closure)
+    }
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<StackClosureRecord<Self::Code, Self::Environment>, Self::Error> {
+        let storage = self.storage.borrow();
+        if closure.arena != storage.arena {
+            return Err(ForspHandleError::ForeignClosure);
+        }
+        storage
+            .closures
+            .get(closure.index)
+            .cloned()
+            .ok_or(ForspHandleError::StaleClosure)
+    }
+}
+
+/// Opaque value/closure backend for the same Forsp machine.
+#[derive(Clone, Debug)]
+pub struct ForspHandleRuntime {
+    data: Free<CoreAtom>,
+    syntax: ForspSyntax,
+    values: ForspHandleValues,
+    closures: ForspHandleClosures,
+    environments: HostEnvironments<String, ForspHandleValue>,
+}
+
+impl Default for ForspHandleRuntime {
+    fn default() -> Self {
+        let storage = Rc::new(RefCell::new(ForspHandleStorage::new()));
+        Self {
+            data: Free::new(),
+            syntax: ForspSyntax,
+            values: ForspHandleValues {
+                storage: Rc::clone(&storage),
+            },
+            closures: ForspHandleClosures { storage },
+            environments: HostEnvironments::default(),
+        }
+    }
+}
+
+impl StackRuntime for ForspHandleRuntime {
+    type Symbol = String;
+    type Atom = CoreAtom;
+    type Datum = Datum<CoreAtom>;
+    type Primitive = ForspPrimitive;
+    type Instruction = ForspInstruction;
+    type Code = ForspCode;
+    type Value = ForspHandleValue;
+    type Closure = ForspHandleClosure;
+    type Environment = ForspHandleEnvironment;
+    type Error = ForspHandleError;
+    type Data = Free<CoreAtom>;
+    type Syntax = ForspSyntax;
+    type Values = ForspHandleValues;
+    type Closures = ForspHandleClosures;
+    type Environments = HostEnvironments<String, ForspHandleValue>;
+
+    fn data(&self) -> &Self::Data {
+        &self.data
+    }
+
+    fn syntax(&self) -> &Self::Syntax {
+        &self.syntax
+    }
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+
+    fn data_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn syntax_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn value_error(&self, error: ForspHandleError) -> Self::Error {
+        error
+    }
+
+    fn closure_error(&self, error: ForspHandleError) -> Self::Error {
+        error
+    }
+
+    fn environment_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ForspResponse {
-    Value(ForspValue),
+pub enum RuntimeForspRequest<V> {
+    Read,
+    Print(V),
+    PointerState,
+    PointerRead(V),
+    PointerWrite { address: V, value: V },
+    PointerToObject(V),
+    PointerFromObject(V),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeForspResponse<V> {
+    Value(V),
     Unit,
 }
 
+pub type ForspRequest = RuntimeForspRequest<ForspValue>;
+pub type ForspResponse = RuntimeForspResponse<ForspValue>;
 pub type ForspEffectState = EffectState<ForspConfiguration, ForspRequest>;
 
 /// Host I/O capability for the safe reference effects.
-pub trait ForspIo {
+pub trait ForspIo<V = ForspValue> {
     type Error;
 
-    fn read(&mut self) -> Result<ForspValue, Self::Error>;
-    fn print(&mut self, value: &ForspValue) -> Result<(), Self::Error>;
+    fn read(&mut self) -> Result<V, Self::Error>;
+    fn print(&mut self, value: &V) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,26 +551,32 @@ pub struct ForspIoHandler<H> {
     pub host: H,
 }
 
-impl<H: ForspIo> EffectHandler<ForspRequest, ForspResponse> for ForspIoHandler<H> {
+impl<H, V> EffectHandler<RuntimeForspRequest<V>, RuntimeForspResponse<V>> for ForspIoHandler<H>
+where
+    H: ForspIo<V>,
+{
     type Error = ForspIoHandlerError<H::Error>;
 
-    fn handle(&mut self, request: &ForspRequest) -> Result<ForspResponse, Self::Error> {
+    fn handle(
+        &mut self,
+        request: &RuntimeForspRequest<V>,
+    ) -> Result<RuntimeForspResponse<V>, Self::Error> {
         match request {
-            ForspRequest::Read => self
+            RuntimeForspRequest::Read => self
                 .host
                 .read()
-                .map(ForspResponse::Value)
+                .map(RuntimeForspResponse::Value)
                 .map_err(ForspIoHandlerError::Io),
-            ForspRequest::Print(value) => self
+            RuntimeForspRequest::Print(value) => self
                 .host
                 .print(value)
-                .map(|()| ForspResponse::Unit)
+                .map(|()| RuntimeForspResponse::Unit)
                 .map_err(ForspIoHandlerError::Io),
-            ForspRequest::PointerState
-            | ForspRequest::PointerRead(_)
-            | ForspRequest::PointerWrite { .. }
-            | ForspRequest::PointerToObject(_)
-            | ForspRequest::PointerFromObject(_) => Err(ForspIoHandlerError::UnsafeRequest),
+            RuntimeForspRequest::PointerState
+            | RuntimeForspRequest::PointerRead(_)
+            | RuntimeForspRequest::PointerWrite { .. }
+            | RuntimeForspRequest::PointerToObject(_)
+            | RuntimeForspRequest::PointerFromObject(_) => Err(ForspIoHandlerError::UnsafeRequest),
         }
     }
 }
@@ -615,7 +895,7 @@ fn effect(name: &str) -> Option<ForspEffect> {
     })
 }
 
-type StackConfigurationOf<R> = StackConfiguration<
+pub type StackConfigurationOf<R> = StackConfiguration<
     <R as StackRuntime>::Code,
     <R as StackRuntime>::Value,
     <R as StackRuntime>::Environment,
@@ -1010,10 +1290,6 @@ impl ForspMachine {
     pub fn initial(code: ForspCode) -> ForspConfiguration {
         RuntimeForspMachine::new(ForspRuntime::default()).initial(code)
     }
-
-    fn pop(configuration: &mut ForspConfiguration) -> Result<ForspValue, ForspError> {
-        configuration.operands.pop().ok_or(ForspError::EmptyStack)
-    }
 }
 
 impl StepRelation for ForspMachine {
@@ -1043,46 +1319,83 @@ impl DeterministicStep for ForspMachine {
     }
 }
 
-/// Forsp reduction with explicit effect suspension.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ForspEffectMachine;
+pub type RuntimeForspEffectState<R> =
+    EffectState<StackConfigurationOf<R>, RuntimeForspRequest<<R as StackRuntime>::Value>>;
 
-impl ForspEffectMachine {
-    pub fn initial(code: ForspCode) -> ForspEffectState {
-        EffectState::Running(ForspMachine::initial(code))
+/// Forsp effect suspension over a selected stack runtime.
+#[derive(Clone, Debug)]
+pub struct RuntimeForspEffectMachine<R> {
+    pure: RuntimeForspMachine<R>,
+}
+
+impl<R> RuntimeForspEffectMachine<R> {
+    pub fn new(runtime: R) -> Self {
+        Self {
+            pure: RuntimeForspMachine::new(runtime),
+        }
+    }
+
+    pub fn runtime(&self) -> &R {
+        self.pure.runtime()
+    }
+}
+
+impl<R> RuntimeForspEffectMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+{
+    pub fn initial(&self, code: R::Code) -> RuntimeForspEffectState<R> {
+        EffectState::Running(self.pure.initial(code))
     }
 
     fn request(
         effect: ForspEffect,
-        continuation: &mut ForspConfiguration,
-    ) -> Result<ForspRequest, ForspError> {
+        continuation: &mut StackConfigurationOf<R>,
+    ) -> Result<RuntimeForspRequest<R::Value>, RuntimeForspError<R::Error>> {
+        let mut pop = || {
+            continuation
+                .operands
+                .pop()
+                .ok_or(RuntimeForspError::Language(ForspError::EmptyStack))
+        };
         Ok(match effect {
-            ForspEffect::Read => ForspRequest::Read,
-            ForspEffect::Print => ForspRequest::Print(ForspMachine::pop(continuation)?),
-            ForspEffect::PointerState => ForspRequest::PointerState,
-            ForspEffect::PointerRead => ForspRequest::PointerRead(ForspMachine::pop(continuation)?),
+            ForspEffect::Read => RuntimeForspRequest::Read,
+            ForspEffect::Print => RuntimeForspRequest::Print(pop()?),
+            ForspEffect::PointerState => RuntimeForspRequest::PointerState,
+            ForspEffect::PointerRead => RuntimeForspRequest::PointerRead(pop()?),
             ForspEffect::PointerWrite => {
-                let value = ForspMachine::pop(continuation)?;
-                let address = ForspMachine::pop(continuation)?;
-                ForspRequest::PointerWrite { address, value }
+                let value = pop()?;
+                let address = pop()?;
+                RuntimeForspRequest::PointerWrite { address, value }
             }
-            ForspEffect::PointerToObject => {
-                ForspRequest::PointerToObject(ForspMachine::pop(continuation)?)
-            }
-            ForspEffect::PointerFromObject => {
-                ForspRequest::PointerFromObject(ForspMachine::pop(continuation)?)
-            }
+            ForspEffect::PointerToObject => RuntimeForspRequest::PointerToObject(pop()?),
+            ForspEffect::PointerFromObject => RuntimeForspRequest::PointerFromObject(pop()?),
         })
     }
-}
 
-impl DeterministicStep for ForspEffectMachine {
-    fn next(&self, state: &ForspEffectState) -> Result<Option<ForspEffectState>, ForspError> {
+    fn next_effect(
+        &self,
+        state: &RuntimeForspEffectState<R>,
+    ) -> Result<Option<RuntimeForspEffectState<R>>, RuntimeForspError<R::Error>> {
         match state {
             EffectState::Suspended(_) | EffectState::Returned(_) => Ok(None),
             EffectState::Running(configuration) => {
+                let instructions = self
+                    .runtime()
+                    .syntax()
+                    .instructions(&configuration.code)
+                    .map_err(|error| {
+                        RuntimeForspError::Runtime(self.runtime().syntax_error(error))
+                    })?;
                 if let Some(ForspInstruction::Effect(effect)) =
-                    configuration.code.get(configuration.cursor)
+                    instructions.get(configuration.cursor)
                 {
                     let mut continuation = configuration.clone();
                     continuation.cursor += 1;
@@ -1092,7 +1405,7 @@ impl DeterministicStep for ForspEffectMachine {
                         request,
                     })));
                 }
-                Ok(Some(match ForspMachine.next(configuration)? {
+                Ok(Some(match self.pure.next_configuration(configuration)? {
                     Some(next) => EffectState::Running(next),
                     None => EffectState::Returned(configuration.clone()),
                 }))
@@ -1101,19 +1414,162 @@ impl DeterministicStep for ForspEffectMachine {
     }
 }
 
+impl<R> StepRelation for RuntimeForspEffectMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    type Configuration = RuntimeForspEffectState<R>;
+    type Error = RuntimeForspError<R::Error>;
+
+    fn successors(
+        &self,
+        state: &Self::Configuration,
+    ) -> Result<Vec<Self::Configuration>, Self::Error> {
+        Ok(self.next_effect(state)?.into_iter().collect())
+    }
+}
+
+impl<R> DeterministicStep for RuntimeForspEffectMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    fn next(
+        &self,
+        state: &Self::Configuration,
+    ) -> Result<Option<Self::Configuration>, Self::Error> {
+        self.next_effect(state)
+    }
+}
+
+impl<R> TerminalValue for RuntimeForspEffectMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    type Value = StackConfigurationOf<R>;
+
+    fn terminal_value(&self, state: &Self::Configuration) -> Option<Self::Value> {
+        match state {
+            EffectState::Returned(configuration) => Some(configuration.clone()),
+            EffectState::Running(_) | EffectState::Suspended(_) => None,
+        }
+    }
+}
+
+impl<R> EffectResume for RuntimeForspEffectMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    type Configuration = StackConfigurationOf<R>;
+    type Request = RuntimeForspRequest<R::Value>;
+    type Response = RuntimeForspResponse<R::Value>;
+    type Error = RuntimeForspError<R::Error>;
+
+    fn resume(
+        &self,
+        suspension: EffectSuspension<Self::Configuration, Self::Request>,
+        response: Self::Response,
+    ) -> Result<Self::Configuration, Self::Error> {
+        let mut continuation = suspension.continuation;
+        match (suspension.request, response) {
+            (RuntimeForspRequest::Read, RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerState, RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerRead(_), RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerToObject(_), RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerFromObject(_), RuntimeForspResponse::Value(value)) => {
+                continuation.operands.push(value);
+            }
+            (RuntimeForspRequest::Print(_), RuntimeForspResponse::Unit)
+            | (RuntimeForspRequest::PointerWrite { .. }, RuntimeForspResponse::Unit) => {}
+            _ => return Err(ForspError::InvalidEffectResponse.into()),
+        }
+        Ok(continuation)
+    }
+}
+
+/// Compatibility façade for direct-runtime Forsp effects.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspEffectMachine;
+
+impl ForspEffectMachine {
+    pub fn initial(code: ForspCode) -> ForspEffectState {
+        RuntimeForspEffectMachine::new(ForspRuntime::default()).initial(code)
+    }
+}
+
+fn direct_effect_error(error: RuntimeForspError<Infallible>) -> ForspError {
+    match error {
+        RuntimeForspError::Language(error) => error,
+        RuntimeForspError::Runtime(never) => match never {},
+    }
+}
+
 impl StepRelation for ForspEffectMachine {
     type Configuration = ForspEffectState;
     type Error = ForspError;
 
-    fn successors(&self, state: &ForspEffectState) -> Result<Vec<ForspEffectState>, ForspError> {
-        Ok(self.next(state)?.into_iter().collect())
+    fn successors(
+        &self,
+        state: &Self::Configuration,
+    ) -> Result<Vec<Self::Configuration>, Self::Error> {
+        self.next(state).map(|next| next.into_iter().collect())
+    }
+}
+
+impl DeterministicStep for ForspEffectMachine {
+    fn next(
+        &self,
+        state: &Self::Configuration,
+    ) -> Result<Option<Self::Configuration>, Self::Error> {
+        RuntimeForspEffectMachine::new(ForspRuntime::default())
+            .next(state)
+            .map_err(direct_effect_error)
     }
 }
 
 impl TerminalValue for ForspEffectMachine {
     type Value = ForspConfiguration;
 
-    fn terminal_value(&self, state: &ForspEffectState) -> Option<Self::Value> {
+    fn terminal_value(&self, state: &Self::Configuration) -> Option<Self::Value> {
         match state {
             EffectState::Returned(configuration) => Some(configuration.clone()),
             EffectState::Running(_) | EffectState::Suspended(_) => None,
@@ -1129,23 +1585,12 @@ impl EffectResume for ForspEffectMachine {
 
     fn resume(
         &self,
-        suspension: EffectSuspension<ForspConfiguration, ForspRequest>,
-        response: ForspResponse,
-    ) -> Result<ForspConfiguration, ForspError> {
-        let mut continuation = suspension.continuation;
-        match (suspension.request, response) {
-            (ForspRequest::Read, ForspResponse::Value(value))
-            | (ForspRequest::PointerState, ForspResponse::Value(value))
-            | (ForspRequest::PointerRead(_), ForspResponse::Value(value))
-            | (ForspRequest::PointerToObject(_), ForspResponse::Value(value))
-            | (ForspRequest::PointerFromObject(_), ForspResponse::Value(value)) => {
-                continuation.operands.push(value);
-            }
-            (ForspRequest::Print(_), ForspResponse::Unit)
-            | (ForspRequest::PointerWrite { .. }, ForspResponse::Unit) => {}
-            _ => return Err(ForspError::InvalidEffectResponse),
-        }
-        Ok(continuation)
+        suspension: EffectSuspension<Self::Configuration, Self::Request>,
+        response: Self::Response,
+    ) -> Result<Self::Configuration, Self::Error> {
+        RuntimeForspEffectMachine::new(ForspRuntime::default())
+            .resume(suspension, response)
+            .map_err(direct_effect_error)
     }
 }
 
@@ -1212,16 +1657,24 @@ mod tests {
         );
     }
 
-    #[derive(Default)]
-    struct RecordingIo {
-        input: Vec<ForspValue>,
-        printed: Vec<ForspValue>,
+    struct RecordingIo<V = ForspValue> {
+        input: Vec<V>,
+        printed: Vec<V>,
     }
 
-    impl ForspIo for RecordingIo {
+    impl<V> Default for RecordingIo<V> {
+        fn default() -> Self {
+            Self {
+                input: Vec::new(),
+                printed: Vec::new(),
+            }
+        }
+    }
+
+    impl<V: Clone> ForspIo<V> for RecordingIo<V> {
         type Error = &'static str;
 
-        fn read(&mut self) -> Result<ForspValue, Self::Error> {
+        fn read(&mut self) -> Result<V, Self::Error> {
             if self.input.is_empty() {
                 Err("end of input")
             } else {
@@ -1229,7 +1682,7 @@ mod tests {
             }
         }
 
-        fn print(&mut self, value: &ForspValue) -> Result<(), Self::Error> {
+        fn print(&mut self, value: &V) -> Result<(), Self::Error> {
             self.printed.push(value.clone());
             Ok(())
         }
@@ -1249,7 +1702,7 @@ mod tests {
 
     #[test]
     fn safe_io_suspends_resumes_and_retains_a_transcript() {
-        let machine = ForspEffectMachine;
+        let machine = RuntimeForspEffectMachine::new(ForspRuntime::default());
         let mut handler = ForspIoHandler {
             host: RecordingIo {
                 input: vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(
@@ -1260,7 +1713,7 @@ mod tests {
         };
         let run = handle_to_completion(
             &machine,
-            ForspEffectMachine::initial(program("(read 1 + print)")),
+            machine.initial(program("(read 1 + print)")),
             &mut handler,
             32,
         )
@@ -1287,5 +1740,36 @@ mod tests {
             handler.handle(&ForspRequest::PointerState),
             Err(ForspIoHandlerError::UnsafeRequest)
         ));
+    }
+
+    #[test]
+    fn closures_and_effects_run_on_the_handle_backend() {
+        let machine = RuntimeForspEffectMachine::new(ForspHandleRuntime::default());
+        let input = machine
+            .runtime()
+            .values()
+            .datum(Datum::Atom(CoreAtom::Integer(Int::from(6))))
+            .unwrap();
+        let mut handler = ForspIoHandler {
+            host: RecordingIo {
+                input: vec![input],
+                printed: Vec::new(),
+            },
+        };
+        let run = handle_to_completion(
+            &machine,
+            machine.initial(program("(($x ^x ^x *) $square read square print)")),
+            &mut handler,
+            64,
+        )
+        .unwrap();
+
+        assert!(run.returned.operands.is_empty());
+        assert_eq!(run.transcript.len(), 2);
+        let printed = handler.host.printed.first().expect("printed value");
+        assert_eq!(
+            machine.runtime().values().view(printed).unwrap(),
+            StackValueView::Datum(Datum::Atom(CoreAtom::Integer(Int::from(36))))
+        );
     }
 }

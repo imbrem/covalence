@@ -88,6 +88,12 @@ The initial interoperable waists are:
 - SQLite for relational kernel state, persistence, querying, and exchange;
 - HOL-omega above the substrate for ordinary mathematical specification.
 
+The substrate itself is relational in a stronger sense than this list first
+suggested: sets have logical element types and stored witness types; relations
+are projectable sets; `MThm` certifies membership using a witness; and SQLite
+tables are one realization of those witnesses. This interface, rather than a
+fixed theorem-record schema, is the prospective thin waist.
+
 Higher formats are identified by a decoder/interpreter plus bytes. Higher
 content-addressed objects lower to hashed blobs and interpretations rather than
 adding special object kinds to the trusted floor.
@@ -194,6 +200,13 @@ Nat wrapper.
   hardware, and remote attestation uniformly.
 - SSA/MLIR and binary verification as the preferred bridge from legacy C.
 - Fixed-width bitvectors as substrate-grade data rather than a Nat wrapper.
+- Typed column roles (`DEF`, `USE`, `NAME`, data, metadata), row-field
+  projections, and scoped completeness.
+- Unconditional lifting of substrate relations to uninterpreted HOL relations,
+  with their mathematical meaning supplied separately.
+- A split between execution/grounding trust and HOL semantic assumptions.
+- Multiple TCB groundings and multiple substrate implementations over the same
+  relational API.
 
 ## Questions intentionally left open
 

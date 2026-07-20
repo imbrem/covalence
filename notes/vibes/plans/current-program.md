@@ -20,9 +20,10 @@ from this directory remain available in Git.
 
 ## Priority order
 
-1. **Specify the substrate rewrite.** Transcribe the maintainer's handwritten
-   design into [`N0054`](../kernel/substrate-rewrite.md), settle the nucleus API,
-   and build a disposable SQLite spike.
+1. **Specify the relational substrate.** Settle `Set`, `Relation`, witness,
+   projection, `MThm`, schema-grounding, and completeness semantics from
+   [`N0056`](../../plans/relational-design.md), then build matching in-memory
+   and SQLite witnesses.
 2. **Stabilize consumer APIs.** Logic/relations, data/numerics, inductives,
    parsing, Lisp, graphs, and JSON must have capability-sized interfaces and
    backend-neutral conformance tests.
@@ -46,8 +47,10 @@ compatibility suites            │
       │                         │
       ├──────────────┬──────────┘
       ↓              ↓
-substrate model   SQLite spike
+relational API    schema/grounding model
       └──────┬───────┘
+             ↓
+      dual witness prototype
              ↓
       nucleus transition API
        ├─ blobs/snapshots
@@ -72,4 +75,3 @@ substrate model   SQLite spike
 
 Any plan that repeats this portfolio should be deleted or reduced to a link.
 Project status belongs in queryable tasks/TODOs rather than narrative snapshots.
-

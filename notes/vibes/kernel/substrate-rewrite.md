@@ -56,6 +56,12 @@ unless referring to a concrete existing crate.
    commits cannot leave an externally visible half-transition.
 8. **The durable format is versioned and deterministic.** Schema, canonical
    dump/hash rules, and migrations are explicit.
+9. **Substrate equality is not HOL equality.** Row identity, projections, and
+   meta-judgements can be used to implement HOL, but do not inherit HOL meaning
+   until an explicit grounding/bridge supplies it.
+10. **Relations lift without interpretation.** Every substrate relation can be
+    named as an uninterpreted HOL relation. Separate assumptions state what its
+    observations mean.
 
 ## Conceptual state
 
@@ -73,27 +79,71 @@ stronger than merely persisting theorem records:
 - serializable sets connect logical elements to SQLite rows;
 - schema metadata records how table keys refer to objects.
 
-This suggests the key API question is not “how do we serialize today's theorem
+The full sketch adds five important pieces:
+
+1. Columns have substrate types and roles. `DEF(ty)` introduces an opaque
+   object, `USE(table, ty)` references an object defined by another table, and
+   `NAME(ty)` ranges over a global unrealized namespace such as a cryptographic
+   `seen` relation. Data columns participate directly in a relation; metadata
+   columns do not unless named by its interpretation.
+2. Rows support projections such as `lhs@id` or `hash@id`. A row ID may witness
+   a structured object while field projections expose its components without
+   adding artificial equalities like `id = blob`.
+3. Relations are normally open-world. A scoped `COMPLETE` declaration is the
+   exceptional evidence that a table exhausts a relation along selected
+   projections, enabling closed-set and negative reasoning. Duplicate rows may
+   carry meaning for multisets, so `ROWID` and `WITHOUT ROWID` cannot be treated
+   as interchangeable implementation details.
+4. A single database may carry relations grounded by different TCBs. Grounding
+   is flexible and partial, and may be selected per table or by a TCB column.
+5. Well-known O256 names identify substrate types, relations, runtimes, and
+   specifications without relying on local strings. Their grounding should be
+   anchored to manifests/specifications; random names remain available for
+   genuinely fresh identities.
+
+This makes the key API question not “how do we serialize today's theorem
 struct?” but “what common relational interface is implemented by proton values
 and neutron tables?” The first prototype should therefore exercise one set with
 two witness representations—an in-memory witness and a SQLite row—plus a
 checked theorem-preserving conversion between them.
 
-The first useful neutron schema should express roles, not freeze table names:
+The substrate metamodel should precede any fixed application schema:
 
 ```text
-blob observations     (algorithm, key, digest, bytes)
-execution observations(executor, program, input, start, output, end)
-assumptions            (scope, proposition/interpreter reference, provenance)
-derivations            (rule, inputs, output, replay payload)
-signatures             (key, signed object/state, signature)
-roots                  (named exported theorem/state roots)
-metadata               (ignored by mathematical interpretation unless named)
+substrate types
+well-known and fresh names
+relation definitions
+column definitions: DEF | USE | NAME | DATA | METADATA
+column substrate types and optionality
+relation/table groundings and their TCB
+completeness declarations
+row/field projections
 ```
 
-The database may contain indexes, caches, denormalized query aids, and ignored
-application tables. Its mathematical interpretation must explicitly select the
-relations that matter. A schema is not itself a logic.
+Application relations—terms, typing, implications, blob observations,
+executions, derivations, signatures, and roots—are then ordinary instances of
+that metamodel. The database may also contain indexes, caches, denormalized
+query aids, and ignored application tables. Its mathematical interpretation
+must explicitly select the relations and columns that matter. A schema is not
+itself a logic.
+
+### Worked relational shapes
+
+The design should be tested against these examples before generalization:
+
+```text
+App(id DEF(HolTerm), lhs USE(Tm, HolTerm), rhs USE(Tm, HolTerm))
+HasTy(tm USE(Tm, HolTerm), ty USE(Ty, HolType))
+Imp(lhs USE(Tm, HolTerm), rhs USE(Tm, HolTerm))
+Member(lhs, rhs) + COMPLETE(rhs)
+Cas(id DEF(Blob), hash NAME(Digest), key DATA?, data DATA?)
+```
+
+A fixed-type table can omit a type column; a family of constructor relations
+may instead use discriminants, sums, or dependent table sources. Basic
+substrate polymorphism is now a design question driven by storage reuse, not by
+HOL polymorphism. Start monomorphic and prove that real examples require more
+before extending the trusted metamodel.
 
 The proton owns compact live representations and theorem handles. References
 between proton and neutron need generation/transaction discipline so stale
@@ -112,6 +162,18 @@ A signature does not automatically confer trust. Loading has two modes:
 
 These modes may yield extensionally equal theorem sets while retaining
 different trust dependencies. That is a useful consilience test.
+
+Trust reporting has two orthogonal components:
+
+- **execution/grounding TCB**: why rows under a well-known relation name are
+  faithful observations of the named computation or meta-judgement;
+- **HOL assumption set**: which implications connect those uninterpreted
+  observations to HOL truth or object-logic derivability.
+
+For example, a runtime may populate a well-known `WasmStep` relation under an
+execution TCB, while an ordinary segregated HOL assumption states that selected
+steps refine a particular WASM specification. Keeping these separate allows the
+same execution state to be interpreted under competing specifications.
 
 ## Relation to the current code
 
@@ -132,20 +194,22 @@ lookup or database row “mints” a theorem is superseded by this design.
 
 ```text
 S0 terminology + invariants
- ├─ S1 high-level API inventory and compatibility harness
- ├─ S2 minimal mathematical state model
- └─ S3 SQLite behavior/profiling spike
+ ├─ S1 Set/Relation/Witness/MThm paper API
+ ├─ S2 schema + grounding metamodel
+ └─ S3 high-level API inventory and compatibility harness
        ↓
-S4 proton/neutron transaction API
- ├─ S5 blob + snapshot identity
- ├─ S6 derivation replay
- └─ S7 trust/signature policies
+S4 dual in-memory/SQLite witness spike
        ↓
-S8 second backend + differential tests
+S5 proton/neutron transition API
+ ├─ S6 blob + snapshot identity
+ ├─ S7 derivation replay
+ └─ S8 trust/signature policies
        ↓
-S9 migrate one vertical proof path
+S9 WASM instance/lifecycle relations
        ↓
-S10 audit, benchmark, then replace old substrate
+S10 differential old/new backend
+       ↓
+S11 audit, benchmark, then replace old substrate
 ```
 
 ## Work packages
@@ -155,7 +219,25 @@ S10 audit, benchmark, then replace old substrate
 Acceptance: one glossary, explicit authority boundary, and removal or clear
 supersession of contradictory notes. This document is the initial artifact.
 
-### S1 — freeze consumers, not representations
+### S1 — relational paper API
+
+Specify `Set`, `Relation`, witness types, projections, and `MThm` independently
+of Rust layout and SQLite. State precisely what an `MThm<S>` certifies about a
+witness, how products/projections work, how the same logical element can have
+multiple witnesses, and which operations require completeness. Give a dynamic
+language rendition alongside the Rust-shaped API to prevent accidental
+dependence on Rust traits.
+
+### S2 — schema and grounding metamodel
+
+Specify substrate types; `DEF`, `USE`, `NAME`, data, and metadata roles; optional
+columns; row identity; field projection; foreign keys; duplicates; sums; and
+scoped completeness. Define partial groundings from schemas/relations to Rust
+and other hosts, each identified by a TCB and manifest. Include range checks for
+SQLite `INTEGER`: mathematical integers and unsigned 64-bit values must not
+silently lower through SQLite's signed 64-bit storage class.
+
+### S3 — freeze consumers, not representations
 
 Inventory operations actually required by Metamath, ACL2/Lisp, SMT/SAT,
 parsing, and WASM. Turn them into capability-sized interfaces and black-box
@@ -163,9 +245,19 @@ conformance suites. Record latency, allocation, database size, and replay cost
 for representative workloads. Do not add a compatibility method merely because
 the current kernel exposes it.
 
-### S2 — mathematical model
+### S4 — dual witness spike
 
-Write a small paper model of a nucleus state and its transitions. Separate:
+Implement one term relation and one typing relation twice: direct in-memory
+witnesses and SQLite rows. Demonstrate construction, projection, foreign-key
+validation, open-world membership, one scoped completeness claim, and checked
+conversion preserving the same `MThm` statement. Measure prepared-query and
+allocation costs; discard the implementation if its types distort the paper
+API.
+
+### S5 — nucleus transition API
+
+Write the state-transition model and define the sole boundary where proton and
+neutron change together. Separate:
 
 - state membership;
 - theorem authority;
@@ -174,24 +266,11 @@ Write a small paper model of a nucleus state and its transitions. Separate:
 - merge/join conditions;
 - failure and rollback.
 
-Prove or mechanically test the invariants on a toy implementation before
-choosing the production Rust types.
-
-### S3 — SQLite spike
-
-Prototype an in-memory database with transactions, prepared statements,
-snapshot export/import, deterministic logical dumps, and the likely hot joins.
-Measure it against current set.mm and parser/SMT-shaped access patterns. This
-spike is disposable and contains no theorem authority.
-
-### S4 — nucleus transition API
-
-Define the sole boundary where proton and neutron change together. Candidate
-shape: prepare evidence, validate against the current state, construct theorem
-and relational deltas, commit transaction, then publish handles. Specify panic,
+Candidate shape: prepare evidence, validate against the current state, construct
+theorem and relational deltas, commit transaction, then publish handles. Specify panic,
 OOM, interruption, rollback, concurrency, and stale-handle behavior.
 
-### S5 — content and snapshots
+### S6 — content and snapshots
 
 Implement the finite blob observation relation and canonical snapshot identity.
 Hashing the database requires a canonical logical representation; hashing raw
@@ -199,43 +278,51 @@ SQLite file bytes is only acceptable if byte-level determinism is explicitly
 part of the format. Support database-as-blob without recursively assuming its
 own hash.
 
-### S6 — replay
+### S7 — replay
 
 Define a minimal derivation/event log sufficient to reconstruct exported roots.
 Replay must not trust SQL query results. It should be possible to retain full
 execution evidence, compact it to intermediate checkpoints, or retain only a
 proved theorem, with each choice visible in provenance.
 
-### S7 — signatures
+### S8 — signatures
 
 Keep cryptographic verification separate from authorization policy. Specify
 what exactly is signed: canonical snapshot identity, schema/version,
 interpretation, roots, and possibly trust assumptions. Demonstrate accept and
 replay modes for the same snapshot.
 
-### S8 — differential backend
+### S9 — WASM lifecycle
+
+Model initialization and linking explicitly rather than jumping straight to a
+single `executes` tuple. Candidate relations include `StartInit`,
+`LinkMemory`, `LinkModule`, `LinkFunction`, `FinishInit`, and `Call`, with
+before/after state identities. Runtime kind/version/subset, concrete executor,
+hardware or attestation identity, and timestamps are separate relations or
+metadata. Lift each relation uninterpreted into HOL, then state refinement to
+SpecTec/K/other WASM semantics as ordinary conditional assumptions or proofs.
+
+### S10 — differential backend
 
 Run the old implementation and new nucleus behind the same high-level APIs.
 Compare exported statements, assumptions, and proof results—not internal term
 IDs. This is the primary defense against a premature flag day.
 
-### S9 — vertical slice
+### S11 — vertical slice and replacement
 
-Recommended first slice:
+Recommended first three slices:
 
 ```text
-bytes → finite seen relation → one proof object → snapshot → reload/replay
-      → same exported theorem and trust report
+App + HasTy → dual witnesses → projection → same MThm
+bytes → Cas/seen relation → snapshot → reload/replay
+WASM init/link/call → uninterpreted HOL lift → one semantic bridge
 ```
 
-Then add a stateful WASM execution observation. Metamath import is the first
-scale benchmark; SMT/SAT stresses proposition and bitvector representation;
-ACL2/Lisp stresses recursive definitions and execution traces.
-
-### S10 — replacement
-
-Only after correctness and performance gates pass, move audited modules onto a
-fresh main line one by one. Delete adapters as their last consumer migrates.
+Metamath import is the first scale benchmark; SMT/SAT stresses proposition and
+bitvector representation; ACL2/Lisp stresses recursive definitions and
+execution traces. Only after correctness and performance gates pass, move
+audited modules onto a fresh main line one by one. Delete adapters as their last
+consumer migrates.
 Keep old snapshots readable through a versioned importer, not permanent core
 branches.
 
@@ -255,12 +342,22 @@ branches.
 Before production implementation, resolve:
 
 - the exact primitive proposition/relation language;
+- the laws and object-safety/dynamic equivalent of `Set`, `Relation`, and
+  `MThm`;
+- whether `DEF` identities denote opaque chosen values, witness identities, or
+  both through separate projections;
+- the precise semantics and trusted checks for `COMPLETE`;
+- whether sums/dependent table sources are primitive or compiled to monomorphic
+  relations;
 - in-memory term identity and lifetime model;
 - whether theorem handles directly reference neutron rows;
 - transaction granularity and concurrent nucleus semantics;
 - schema interpretation and canonical snapshot encoding;
 - minimal accepted signed-state policy;
-- which accelerators belong in the initial nucleus configuration.
+- which accelerators belong in the initial nucleus configuration;
+- how multiple TCB groundings coexist in one database and compose;
+- which well-known O256 namespaces are specification-derived and which permit
+  random freshness.
 
 The unfinished key/object idea in `N0056` should be completed before the schema
 is frozen. In particular, decide whether a key identifies a logical object, a

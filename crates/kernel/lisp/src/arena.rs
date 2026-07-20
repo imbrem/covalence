@@ -16,8 +16,8 @@ use crate::host::{CoreSyntax, Datum};
 use crate::resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispRuntime, LispValue, RecursiveAllocation, RuntimeBinding, RuntimeValueLayer,
-    RuntimeValueView,
+    LispRuntime, LispRuntimeSnapshot, LispValue, RecursiveAllocation, RuntimeBinding,
+    RuntimeValueLayer, RuntimeValueView,
 };
 use crate::syntax::CoreExpr;
 
@@ -382,6 +382,39 @@ impl<S, A, P> Default for ArenaRuntime<S, A, P> {
                 environments,
                 cells,
                 empty,
+            },
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<S, A, P> LispRuntimeSnapshot for ArenaRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone + PartialEq,
+    P: Clone + PartialEq,
+{
+    fn replay_snapshot(&self) -> Self {
+        let values = self.values.values.snapshot();
+        let closures = self.values.closures.snapshot();
+        let environments = self.environments.environments.snapshot();
+        let cells = self.environments.cells.snapshot();
+        Self {
+            data: self.data.clone(),
+            values: ArenaValues {
+                values: values.clone(),
+                closures: closures.clone(),
+            },
+            expressions: self.expressions.clone(),
+            closures: ArenaClosures {
+                closures,
+                environments: environments.clone(),
+            },
+            environments: ArenaEnvironments {
+                values,
+                environments,
+                cells,
+                empty: self.environments.empty,
             },
             _marker: PhantomData,
         }

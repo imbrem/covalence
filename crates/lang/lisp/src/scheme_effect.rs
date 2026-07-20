@@ -7,9 +7,11 @@
 use core::fmt::{Debug, Display, Formatter};
 
 use covalence_kernel_lisp::{
-    EffectHandler, EffectRunError, EffectState, HandledEffect, LispEffectMachine, LispIoRequest,
-    LispIoResponse, LispMachineError, LispRuntime, LispValue, MachineConfiguration,
-    PrimitiveOutcome, PrimitiveSemantics, handle_to_completion,
+    EffectHandler, EffectReplay, EffectReplayError, EffectRunError, EffectState, HandledRun,
+    HandledRunCheckError, LispConfiguration, LispEffectMachine, LispIoRequest, LispIoResponse,
+    LispMachine, LispMachineError, LispRuntime, LispRuntimeSnapshot, LispValue,
+    MachineConfiguration, PrimitiveOutcome, PrimitiveSemantics, ReplayedHandledRun, Strategy,
+    check_handled_run, handle_to_completion, replay_handled_effects,
 };
 use covalence_sexp::SExpr;
 
@@ -106,19 +108,33 @@ where
 
 pub type SchemeSession<R> = RuntimeSession<R, SchemePrimitives>;
 pub type SchemeMachineError<R> = LispMachineError<R, SchemePrimitives>;
+pub type RuntimeSchemeEvaluation<R> =
+    SchemeEvaluation<LispConfiguration<R, SchemePrimitives>, <R as LispRuntime>::Value>;
 
 /// High-level result of one handled Scheme evaluation.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SchemeEvaluation<V> {
+pub struct SchemeEvaluation<C, V> {
     pub value: V,
-    pub transcript: Vec<HandledEffect<LispIoRequest<V>, LispIoResponse<V>>>,
-    pub steps: usize,
+    pub run: HandledRun<C, LispIoRequest<V>, LispIoResponse<V>>,
+}
+
+impl<C, V> SchemeEvaluation<C, V> {
+    pub fn replay_effects<P>(
+        &self,
+        replay: &P,
+    ) -> Result<ReplayedHandledRun<P::Evidence>, EffectReplayError<P::Error>>
+    where
+        P: EffectReplay<LispIoRequest<V>, LispIoResponse<V>>,
+    {
+        replay_handled_effects(&self.run, replay)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SchemeEvaluationError<M, H> {
     Lower(LowerError),
     Run(EffectRunError<M, H>),
+    InvalidRun(HandledRunCheckError<M>),
     MissingValue,
 }
 
@@ -127,6 +143,7 @@ impl<M: Display, H: Display> Display for SchemeEvaluationError<M, H> {
         match self {
             Self::Lower(error) => Display::fmt(error, f),
             Self::Run(error) => Display::fmt(error, f),
+            Self::InvalidRun(error) => Display::fmt(error, f),
             Self::MissingValue => f.write_str("handled Scheme evaluation returned no value"),
         }
     }
@@ -148,6 +165,7 @@ where
             Primitive = Primitive,
             Expr = FrontendExpr,
         > + Clone,
+    R: LispRuntimeSnapshot,
     R::Value: Debug + PartialEq,
     R::Environment: Debug + PartialEq,
 {
@@ -162,7 +180,7 @@ where
         &self,
         form: &SExpr,
         handler: &mut H,
-    ) -> Result<SchemeEvaluation<R::Value>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
+    ) -> Result<RuntimeSchemeEvaluation<R>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
     where
         H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
     {
@@ -177,31 +195,30 @@ where
         &self,
         expression: &FrontendExpr,
         handler: &mut H,
-    ) -> Result<SchemeEvaluation<R::Value>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
+    ) -> Result<RuntimeSchemeEvaluation<R>, SchemeEvaluationError<SchemeMachineError<R>, H::Error>>
     where
         H: EffectHandler<LispIoRequest<R::Value>, LispIoResponse<R::Value>>,
     {
+        let replay_machine = LispEffectMachine::new(LispMachine::with_runtime(
+            self.runtime().replay_snapshot(),
+            SchemePrimitives,
+            Strategy::STRICT_LEXICAL,
+        ));
         let machine = LispEffectMachine::new(self.machine().clone());
-        let run = handle_to_completion(
-            &machine,
-            EffectState::Running(MachineConfiguration::with_environment(
-                expression.clone(),
-                self.environment().clone(),
-            )),
-            handler,
-            self.fuel(),
-        )
-        .map_err(SchemeEvaluationError::Run)?;
+        let initial = EffectState::Running(MachineConfiguration::with_environment(
+            expression.clone(),
+            self.environment().clone(),
+        ));
+        let run = handle_to_completion(&machine, initial.clone(), handler, self.fuel())
+            .map_err(SchemeEvaluationError::Run)?;
+        check_handled_run(&replay_machine, &initial, &run)
+            .map_err(SchemeEvaluationError::InvalidRun)?;
         let value = run
             .returned
             .terminal_value()
             .cloned()
             .ok_or(SchemeEvaluationError::MissingValue)?;
-        Ok(SchemeEvaluation {
-            value,
-            transcript: run.transcript,
-            steps: run.steps,
-        })
+        Ok(SchemeEvaluation { value, run })
     }
 
     /// Evaluate a single non-recursive definition's right-hand side with an
@@ -211,7 +228,7 @@ where
         form: &SExpr,
         handler: &mut H,
     ) -> Result<
-        Option<(String, SchemeEvaluation<R::Value>)>,
+        Option<(String, RuntimeSchemeEvaluation<R>)>,
         DefineHandledError<
             RuntimeSessionError<R, SchemePrimitives>,
             SchemeEvaluationError<SchemeMachineError<R>, H::Error>,
@@ -283,6 +300,29 @@ mod tests {
         read: Option<V>,
     }
 
+    struct ShapeReplay {
+        reject_reads: bool,
+    }
+
+    impl<V> EffectReplay<LispIoRequest<V>, LispIoResponse<V>> for ShapeReplay {
+        type Evidence = &'static str;
+        type Error = &'static str;
+
+        fn replay(
+            &self,
+            handled: &covalence_kernel_lisp::HandledEffect<LispIoRequest<V>, LispIoResponse<V>>,
+        ) -> Result<Self::Evidence, Self::Error> {
+            match (&handled.request, &handled.response) {
+                (LispIoRequest::Read, LispIoResponse::Value(_)) if self.reject_reads => {
+                    Err("read response lacks external evidence")
+                }
+                (LispIoRequest::Read, LispIoResponse::Value(_)) => Ok("read"),
+                (LispIoRequest::Write(_), LispIoResponse::Unit) => Ok("write"),
+                _ => Err("response shape does not match request"),
+            }
+        }
+    }
+
     impl<V> LispIo<V> for Scripted<V> {
         type Error = Infallible;
 
@@ -317,12 +357,28 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(run.transcript.len(), 2);
+        assert_eq!(run.run.transcript.len(), 2);
         assert!(matches!(
-            &run.transcript[0].request,
+            &run.run.transcript[0].request,
             LispIoRequest::Write(_)
         ));
         assert_eq!(run.value, expected);
+        assert_eq!(
+            run.replay_effects(&ShapeReplay {
+                reject_reads: false
+            })
+            .unwrap()
+            .effect_evidence,
+            vec!["write", "read"]
+        );
+        assert_eq!(
+            run.replay_effects(&ShapeReplay { reject_reads: true })
+                .unwrap_err(),
+            EffectReplayError {
+                index: 1,
+                error: "read response lacks external evidence"
+            }
+        );
 
         let runtime = ArenaRuntime::<String, CoreAtom, Primitive>::default();
         let expected = runtime
@@ -340,7 +396,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(run.transcript.len(), 2);
+        assert_eq!(run.run.transcript.len(), 2);
         assert_eq!(
             session.runtime().values().view(&run.value).unwrap(),
             RuntimeValueView::Atom(CoreAtom::Integer(Int::from(42)))
@@ -368,7 +424,7 @@ mod tests {
             .expect("definition");
         assert_eq!(name, "answer");
         assert_eq!(definition.value, expected);
-        assert_eq!(definition.transcript.len(), 2);
+        assert_eq!(definition.run.transcript.len(), 2);
 
         let evaluation = session
             .evaluate_handled(
@@ -379,7 +435,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(evaluation.value, expected);
-        assert!(evaluation.transcript.is_empty());
+        assert!(evaluation.run.transcript.is_empty());
     }
 
     #[test]

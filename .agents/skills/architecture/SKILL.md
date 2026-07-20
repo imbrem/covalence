@@ -112,6 +112,12 @@ disable-model-invocation: true
     `RuntimeSession<R, P>` with that dictionary and returns a value plus the
     complete handled-effect transcript; the default `P = StandardPrimitives`
     preserves the pure Scheme/Sector/ACL2 session API.
+    Handled runs retain every machine state and can be checked by
+    `check_handled_run`; external response authority remains separately supplied
+    through `EffectReplay`. Allocation-sensitive opaque runtimes implement
+    `LispRuntimeSnapshot`: resource-table snapshots preserve existing handle
+    identities but isolate later allocation/mutation, so replay compares the
+    same deterministic handle sequence rather than unrelated arena IDs.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

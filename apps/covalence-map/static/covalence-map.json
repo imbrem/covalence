@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 279,
+      "words": 285,
       "updated": 0
     },
     {
@@ -9358,7 +9358,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 456,
+      "words": 489,
       "updated": 0
     },
     {
@@ -9367,7 +9367,7 @@
       "title": "effect.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/effect.rs",
-      "words": 178,
+      "words": 453,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 2272,
+      "words": 2284,
       "updated": 0
     },
     {
@@ -9394,7 +9394,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 92,
+      "words": 93,
       "updated": 0
     },
     {
@@ -9412,7 +9412,7 @@
       "title": "resource.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/resource.rs",
-      "words": 239,
+      "words": 278,
       "updated": 0
     },
     {
@@ -9421,7 +9421,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 694,
+      "words": 704,
       "updated": 0
     },
     {
@@ -10897,7 +10897,7 @@
       "title": "scheme_effect.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/scheme_effect.rs",
-      "words": 394,
+      "words": 450,
       "updated": 0
     },
     {

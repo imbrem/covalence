@@ -157,6 +157,23 @@ impl<K, T> Debug for ResourceTable<K, T> {
 }
 
 impl<K, T> ResourceTable<K, T> {
+    /// Copy the current entries while preserving the arena identity.
+    ///
+    /// Existing handles are valid in both tables. Later allocations and
+    /// updates are isolated, which makes deterministic resource traces
+    /// replayable without equating handles from unrelated arenas.
+    pub fn snapshot(&self) -> Self
+    where
+        T: Clone,
+    {
+        Self {
+            identity: Rc::clone(&self.identity),
+            resource: self.resource,
+            entries: Rc::new(RefCell::new(self.entries.borrow().clone())),
+            _kind: PhantomData,
+        }
+    }
+
     pub fn insert(&self, value: T) -> Resource<K> {
         let mut entries = self.entries.borrow_mut();
         let handle = Resource {
@@ -234,5 +251,27 @@ mod tests {
             second.get_cloned(handle),
             Err(ResourceError::Foreign { .. })
         ));
+    }
+
+    #[test]
+    fn snapshots_preserve_existing_handles_and_isolate_later_mutations() {
+        let table = ResourceArena::new().table::<Number, usize>("number");
+        let existing = table.insert(41);
+        let snapshot = table.snapshot();
+
+        table.update(existing, |value| *value += 1).unwrap();
+        let later = table.insert(7);
+
+        assert_eq!(table.get_cloned(existing).unwrap(), 42);
+        assert_eq!(snapshot.get_cloned(existing).unwrap(), 41);
+        assert!(matches!(
+            snapshot.get_cloned(later),
+            Err(ResourceError::Stale { .. })
+        ));
+        assert_eq!(
+            snapshot.insert(99),
+            later,
+            "isolated deterministic allocation preserves handle identity"
+        );
     }
 }

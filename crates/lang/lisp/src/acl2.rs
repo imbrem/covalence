@@ -120,7 +120,7 @@ use covalence_init::init::eq::{beta_expand, beta_reduce};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_kernel_lisp::{
     AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
-    EvaluationExistence, MayEvalReplay, SourcedDefinition, TraceReplay, evaluate,
+    EvaluationExistence, MayEvalReplay, MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -133,7 +133,7 @@ use crate::frontend::{
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::relation::{LispMayEvalEvidence, LispRel};
-use crate::semantics::{LispRepr, LispSemantics, ValueKind};
+use crate::semantics::{EquationalHostMayEvalEvidence, LispRepr, LispSemantics, ValueKind};
 
 /// Step budget for a value reduction — recursion is admitted by a *syntactic*
 /// check, not a proof, so the driver must stay fuel-bounded (divergence is a
@@ -662,6 +662,23 @@ impl Acl2Session {
         self.operational
             .evaluate_core_evidence(&core)
             .map_err(|error| Acl2Error::Malformed(format!("shared Lisp execution failed: {error}")))
+    }
+
+    /// Replay one concrete common-machine execution into the equational HOL
+    /// backend used by this ACL2 generation.
+    ///
+    /// The returned theorem retains every definition equation it used as a
+    /// hypothesis. This connects concrete ACL2 execution to kernel authority,
+    /// but intentionally does not establish the universal existence and
+    /// uniqueness required by [`covalence_kernel_lisp::ExecutionAdequacyReplay`].
+    pub fn operational_hol_evidence(
+        &self,
+        form: &SExpr,
+    ) -> Result<EquationalHostMayEvalEvidence, Acl2Error> {
+        let evaluation = self.operational_evidence(form)?;
+        LispSemantics::with_defs(self.defs.clone())?
+            .transport_may_eval(&evaluation)
+            .map_err(Acl2Error::Eval)
     }
 
     /// A proved `defthm` by name — the genuine kernel theorem (its hypotheses

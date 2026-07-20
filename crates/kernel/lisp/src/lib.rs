@@ -58,14 +58,15 @@ pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
     HostClosures, HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame,
     HostRuntime, HostValue, HostValues, LispConfiguration, LispMachine, LispMachineError,
-    MachineApplicationPart, MachineApplicationPosition, MachineConfiguration, MachineControl,
-    MachineFrame,
+    LispMachineStep, MachineApplicationPart, MachineApplicationPosition, MachineConfiguration,
+    MachineControl, MachineFrame,
 };
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{
-    CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
-    Exploration, ExplorationBounds, MayEval, MayEvalReplay, MayEvalTransport, StepRelation,
-    TerminalValue, TraceReplay, TraceSoundness, evaluate, execute, explore,
+    CheckedClassifiedTrace, CheckedTrace, ClassifiedStep, ClassifiedStepRelation,
+    DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError, Exploration,
+    ExplorationBounds, MayEval, MayEvalReplay, MayEvalTransport, StepRelation, TerminalValue,
+    TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{

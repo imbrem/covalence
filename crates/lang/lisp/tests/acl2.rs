@@ -174,6 +174,16 @@ fn admitted_definition_reuses_the_shared_partial_core() {
         "the normalized recursive core must retain checked execution evidence"
     );
 
+    let form = read_one("(app (quote (a b)) (quote (c)))").unwrap();
+    let direct = s.reduce(&form).unwrap();
+    let hol = s.operational_hol_evidence(&form).unwrap();
+    assert_eq!(hol.value, direct.value);
+    assert_eq!(
+        hol.equality.hyps().len(),
+        1,
+        "concrete transport must retain the recursive definition equation"
+    );
+
     s.reset();
     assert!(
         s.operational_evidence(&read_one("(app (quote (a b)) (quote (c)))").unwrap())

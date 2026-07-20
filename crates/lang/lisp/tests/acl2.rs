@@ -19,7 +19,7 @@
 use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_kernel_lisp::{CoreExpr, Datum};
 use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
-use covalence_lisp::frontend::{CoreAtom, HostSession, SurfaceDialect};
+use covalence_lisp::frontend::{CoreAtom, Frontend, HostSession, SurfaceDialect};
 use covalence_lisp::reader::read_one;
 
 fn session() -> Acl2Session {
@@ -104,11 +104,12 @@ fn admitted_definition_reuses_the_shared_partial_core() {
 
     let mut partial = HostSession::new(SurfaceDialect::Acl2Core, 256);
     partial.define_core(definition.core.clone()).unwrap();
-    let value = partial
-        .evaluate(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
+    let expression = Frontend::new(SurfaceDialect::Acl2Core)
+        .lower(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
         .unwrap();
+    let evaluation = partial.evaluate_core_evidence(&expression).unwrap();
     assert_eq!(
-        value.as_datum(),
+        evaluation.value.as_datum(),
         Some(Datum::list([
             Datum::Atom(CoreAtom::symbol("a")),
             Datum::Atom(CoreAtom::symbol("b")),
@@ -116,7 +117,10 @@ fn admitted_definition_reuses_the_shared_partial_core() {
         ])),
         "ACL2 admission and generic partial execution must share the lowered program"
     );
-
+    assert!(
+        evaluation.trace.steps() > 0,
+        "the shared core result must retain a nontrivial checked execution"
+    );
     s.eval_cell(
         "(defun app-core (x y)
            (if (endp x) y (cons (car x) (app-core (cdr x) y))))",
@@ -126,17 +130,22 @@ fn admitted_definition_reuses_the_shared_partial_core() {
         .definition("app-core")
         .expect("recursive ACL2 definition retains its normalized shared core");
     partial.define_core(app.core.clone()).unwrap();
-    let value = partial
-        .evaluate(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
+    let expression = Frontend::new(SurfaceDialect::Acl2Core)
+        .lower(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
         .unwrap();
+    let evaluation = partial.evaluate_core_evidence(&expression).unwrap();
     assert_eq!(
-        value.as_datum(),
+        evaluation.value.as_datum(),
         Some(Datum::list([
             Datum::Atom(CoreAtom::symbol("a")),
             Datum::Atom(CoreAtom::symbol("b")),
             Datum::Atom(CoreAtom::symbol("c")),
         ])),
         "ACL2 ENDP normalization must survive into generic partial execution"
+    );
+    assert!(
+        evaluation.trace.steps() > 0,
+        "the normalized recursive core must retain checked execution evidence"
     );
 }
 

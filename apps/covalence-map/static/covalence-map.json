@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 253,
+      "words": 256,
       "updated": 0
     },
     {
@@ -718,7 +718,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35777,
+      "words": 35792,
       "updated": 0
     },
     {
@@ -9340,7 +9340,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 182,
+      "words": 280,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 76,
+      "words": 77,
       "updated": 0
     },
     {
@@ -9386,6 +9386,15 @@
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
       "words": 474,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/resource.rs",
+      "kind": "file",
+      "title": "resource.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/resource.rs",
+      "words": 239,
       "updated": 0
     },
     {
@@ -10789,7 +10798,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 1704,
+      "words": 1785,
       "updated": 0
     },
     {
@@ -10798,7 +10807,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1449,
+      "words": 1475,
       "updated": 0
     },
     {
@@ -10879,7 +10888,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 555,
+      "words": 560,
       "updated": 0
     },
     {
@@ -15352,7 +15361,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35777,
+      "words": 35792,
       "updated": 0
     },
     {
@@ -25369,6 +25378,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/resource.rs",
       "detail": null
     },
     {

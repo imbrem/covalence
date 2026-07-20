@@ -829,6 +829,15 @@ pub type StackConfigurationOf<R> = StackConfiguration<
     <R as StackRuntime>::Environment,
 >;
 
+/// A checked pure Forsp execution over a selected stack runtime.
+///
+/// The terminal configuration is retained as both the trace endpoint and the
+/// result because a concatenative program returns an operand stack rather than
+/// one distinguished value. Direct and resource-handle backends therefore
+/// expose the same evidence shape.
+pub type ForspEvaluation<R> =
+    covalence_kernel_lisp::MayEval<StackConfigurationOf<R>, StackConfigurationOf<R>>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RuntimeForspError<E> {
     Language(ForspError),
@@ -1210,6 +1219,28 @@ where
     }
 }
 
+impl<R> TerminalValue for RuntimeForspMachine<R>
+where
+    R: StackRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = ForspPrimitive,
+            Instruction = ForspInstruction,
+            Code = ForspCode,
+        >,
+    R::Code: Debug + PartialEq,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    type Value = StackConfigurationOf<R>;
+
+    fn terminal_value(&self, configuration: &Self::Configuration) -> Option<Self::Value> {
+        (configuration.continuations.is_empty() && configuration.cursor == configuration.code.len())
+            .then(|| configuration.clone())
+    }
+}
+
 /// Compatibility façade for the direct Forsp runtime.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ForspMachine;
@@ -1244,6 +1275,15 @@ impl DeterministicStep for ForspMachine {
                 RuntimeForspError::Language(error) => error,
                 RuntimeForspError::Runtime(never) => match never {},
             })
+    }
+}
+
+impl TerminalValue for ForspMachine {
+    type Value = ForspConfiguration;
+
+    fn terminal_value(&self, configuration: &Self::Configuration) -> Option<Self::Value> {
+        (configuration.continuations.is_empty() && configuration.cursor == configuration.code.len())
+            .then(|| configuration.clone())
     }
 }
 
@@ -1525,7 +1565,7 @@ impl EffectResume for ForspEffectMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::{execute, handle_to_completion};
+    use covalence_kernel_lisp::{Evaluation, evaluate, execute, handle_to_completion};
 
     fn program(source: &str) -> ForspCode {
         let form = read(source).unwrap().pop().unwrap();
@@ -1536,6 +1576,47 @@ mod tests {
         let machine = RuntimeForspMachine::new(ForspRuntime::default());
         let trace = execute(&machine, machine.initial(program(source)), 128).unwrap();
         trace.end().clone()
+    }
+
+    #[test]
+    fn pure_execution_retains_may_eval_evidence_across_runtime_backends() {
+        let code = program("(($x ^x ^x *) $square 7 square)");
+
+        let direct = RuntimeForspMachine::new(ForspRuntime::default());
+        let Evaluation::Value(direct_evaluation) =
+            evaluate(&direct, direct.initial(code.clone()), 64).unwrap()
+        else {
+            panic!("direct Forsp execution must return a stack")
+        };
+
+        let handles = RuntimeForspMachine::new(ForspHandleRuntime::default());
+        let Evaluation::Value(handle_evaluation) =
+            evaluate(&handles, handles.initial(code), 64).unwrap()
+        else {
+            panic!("handle Forsp execution must return a stack")
+        };
+
+        assert!(direct_evaluation.trace.steps() > 0);
+        assert!(handle_evaluation.trace.steps() > 0);
+        assert_eq!(direct_evaluation.value.operands.len(), 1);
+        assert_eq!(handle_evaluation.value.operands.len(), 1);
+        assert_eq!(
+            direct
+                .runtime()
+                .values()
+                .view(&direct_evaluation.value.operands[0]),
+            Ok(StackValueView::Datum(Datum::Atom(CoreAtom::Integer(
+                Int::from(49)
+            ))))
+        );
+        assert_eq!(
+            handles
+                .runtime()
+                .values()
+                .view(&handle_evaluation.value.operands[0])
+                .unwrap(),
+            StackValueView::Datum(Datum::Atom(CoreAtom::Integer(Int::from(49))))
+        );
     }
 
     #[test]

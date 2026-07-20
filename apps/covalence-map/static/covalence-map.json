@@ -29,6 +29,15 @@
       "updated": 0
     },
     {
+      "id": "actor:human:tekne",
+      "kind": "actor",
+      "title": "tekne",
+      "status": "human",
+      "path": null,
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "api:A0001",
       "kind": "api",
       "title": "Logic carriers and capabilities",
@@ -727,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 36399,
+      "words": 36806,
       "updated": 0
     },
     {
@@ -15748,7 +15757,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 36399,
+      "words": 36806,
       "updated": 0
     },
     {
@@ -16124,7 +16133,7 @@
       "id": "file:notes/chats/",
       "kind": "file",
       "title": "notes/chats/",
-      "status": "missing",
+      "status": null,
       "path": "notes/chats/",
       "words": 0,
       "updated": 0
@@ -18405,6 +18414,15 @@
       "path": "notes/README.md",
       "words": 438,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/chats/neel_meeting_1.md",
+      "kind": "note",
+      "title": "notes/chats/neel_meeting_1.md",
+      "status": "draft",
+      "path": "notes/chats/neel_meeting_1.md",
+      "words": 4733,
+      "updated": 1784579392
     },
     {
       "id": "note:notes/design/README.md",
@@ -28261,6 +28279,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/chats/neel_meeting_1.md",
+      "predicate": "contributed-by",
+      "target": "actor:human:tekne",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/design/README.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -29308,7 +29332,7 @@
       "source": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
       "predicate": "documents",
       "target": "file:notes/chats/",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/k/README.md",
@@ -34519,6 +34543,12 @@
       "stableId": "N0048",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/chats/neel_meeting_1.md",
+      "stableId": "N0049",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -34814,6 +34844,11 @@
       "id": "agent:gpt-5.6-sol",
       "kind": "agent",
       "displayName": "gpt-5.6-sol"
+    },
+    {
+      "id": "human:tekne",
+      "kind": "human",
+      "displayName": "tekne"
     }
   ],
   "contributions": [
@@ -34825,6 +34860,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/chats/neel_meeting_1.md",
+      "actorId": "human:tekne",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "human-authored",
+      "agent": "none",
+      "harness": "editor",
       "ordinal": 0
     },
     {

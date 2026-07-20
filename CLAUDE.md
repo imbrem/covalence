@@ -34,7 +34,7 @@ design rationale/status history in `notes/vibes/` with a link where useful.
 
 The portfolio-level current-state report, workstream ownership boundaries, and
 dependency DAG live in
-[`notes/vibes/plans/workstreams-and-state-report.md`](./notes/vibes/plans/workstreams-and-state-report.md).
+[`notes/vibes/plans/current-program.md`](./notes/vibes/plans/current-program.md).
 The concise agent entry point is [`AGENTS.md`](./AGENTS.md).
 
 ## Build & Run
@@ -120,7 +120,8 @@ Documentation is split by **trust and authorship**:
 - **[`notes/vibes/`](./notes/vibes/README.md)** — the AI-generated design corpus
   (index in its README). Read first: `vision/VISION.md` (the vision),
   `kernel-design.md` (the TCB — before touching `covalence-core`),
-  `vision/roadmap.md`, `closed-world-kernel.md` (the covalence-pure kernel).
+  `vision/neel-meeting-synthesis.md`, `kernel/substrate-rewrite.md` (the current
+  rewrite direction).
   Sketches in `sketches/`.
 
 **Authorship policy (current):** everything outside `notes/vibes/` — all of

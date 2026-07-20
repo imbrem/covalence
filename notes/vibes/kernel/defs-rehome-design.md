@@ -15,8 +15,8 @@ harness = "claude"
 # `defs/` re-home: the dual-representation bridge (toHOL purge S9/S10/S11)
 
 **Status:** design doc (2026-07). Companion to
-[`../plans/pure-hol-and-build-plan.md`](../plans/pure-hol-and-build-plan.md) (Track 2)
-and [`closed-world-kernel.md`](./closed-world-kernel.md). Records the decisions
+the historical kernel migration and [`closed-world-kernel.md`](./closed-world-kernel.md).
+Records the decisions
 building **S9a — the reversible dual-representation bridge** — and the plan for the
 maintainer-gated flip (S10/S11).
 

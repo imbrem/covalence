@@ -9,7 +9,7 @@ Recommended reading path:
 [`notes/vibes/kernel/kernel-design.md`](./notes/vibes/kernel/kernel-design.md) (the kernel TCB) →
 [`notes/vibes/kernel/type-hierarchy.md`](./notes/vibes/kernel/type-hierarchy.md) (type catalogue) →
 [`notes/vibes/vision/roadmap.md`](./notes/vibes/vision/roadmap.md) (what's next) →
-[`notes/vibes/plans/workstreams-and-state-report.md`](./notes/vibes/plans/workstreams-and-state-report.md) (current state + parallel workstreams) →
+[`notes/vibes/plans/current-program.md`](./notes/vibes/plans/current-program.md) (current priorities + dependency DAG) →
 [`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout
@@ -42,7 +42,7 @@ bun run todos:check
 `--diff <commit>` reports added, resolved, and changed stable IDs. The
 deterministic index is [`docs/todos/todos.json`](./docs/todos/todos.json);
 the queryable cache is `target/covalence-todos.sqlite`. See the
-[workstream plan](./notes/vibes/plans/workstreams-and-state-report.md) for the
+[current program](./notes/vibes/plans/current-program.md) for the
 current-state report, biggest holes, dependency DAG, and parallel execution
 lanes.
 

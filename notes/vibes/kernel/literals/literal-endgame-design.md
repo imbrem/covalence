@@ -15,8 +15,7 @@ harness = "claude"
 # The literal-leaf endgame — symbolic-prop design
 
 Authoritative design for the literal-leaf endgame's *additive mechanism* wave.
-Companion to [`../../plans/pure-hol-and-build-plan.md`](../../plans/pure-hol-and-build-plan.md)
-and [`eg5-preflight.md`](./eg5-preflight.md) (the irreversible deletion). The
+Companion to [`eg5-preflight.md`](./eg5-preflight.md) (the irreversible deletion). The
 winning mechanism is **B1** (generalize the conclusion operand); the alternatives
 and judging are summarized in §2.
 

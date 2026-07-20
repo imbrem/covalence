@@ -5,90 +5,57 @@ review = "unreviewed"
 
 [[contributions]]
 role = "author"
-actor = "agent:claude"
-at = "2026-07-03T21:05:38+01:00"
-source = "legacy"
-agent = "claude"
-harness = "claude"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-20T00:00:00+01:00"
+source = "vision-consolidation"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
-# notes/vibes/ — the AI-generated design corpus
+# Design corpus
 
-Design notes and plans, organized by area. Deleted material is recoverable from
-git history (and `backup/pre-hol-cleanup` for the pre-HOL-cleanup pass).
+`notes/vibes/` contains agent-authored design and analysis. It is deliberately
+disposable: source code and generated audits describe what exists; stable TODOs
+describe implementation gaps; Git preserves deleted design history.
 
-## Start here
+## Read first
 
-| Doc | What it covers |
-|---|---|
-| [`vision/project-map.md`](./vision/project-map.md) | The map — crate groups + active threads, each with status + pointers. |
-| [`vision/VISION.md`](./vision/VISION.md) | The system vision: metatheory-as-default, executors → HOL → internal Metamath waist, scoped truths. |
-| [`vision/development-vision.md`](./vision/development-vision.md) | The breadth map: the parallel projects (base rewrite, datatypes/functors, arrows/monads, graph & computation theory, Lisp/ACL2, Prolog, K/MM/SpecTec/WASM consilience, verified I/O) and how they interlock. |
-| [`plans/consolidation-and-context-roadmap.md`](./plans/consolidation-and-context-roadmap.md) | Proposed operating model: work database, project manifests, benchmarks, demo product line, agent context, and phased consolidation. |
-| [`plans/workstreams-and-state-report.md`](./plans/workstreams-and-state-report.md) | Current-state and biggest-holes report, workstream decomposition, dependency DAG, and parallel execution waves. |
-| [`vision/k-framework-vision.md`](./vision/k-framework-vision.md) | North star: full K + all sublanguages, the K-Wasm ⟷ SpecTec goal. |
-| [`vision/roadmap.md`](./vision/roadmap.md) | Time-to-product for the Metamath vision (set.mm in GT; analysis in SOA). |
-| [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) | The TCB in human terms: trusted crates, mint sites, admitted rules. |
-| [`../design/README.md`](../design/README.md) | The design-doc queue (decision records with status). |
+1. [`vision/neel-meeting-synthesis.md`](./vision/neel-meeting-synthesis.md) —
+   current vision, extracted from the maintainer's meeting notes.
+2. [`kernel/substrate-rewrite.md`](./kernel/substrate-rewrite.md) — nucleus,
+   proton/neutron boundaries, invariants, and first rewrite plan.
+3. [`plans/current-program.md`](./plans/current-program.md) — priorities and the
+   portfolio DAG.
+4. [`kernel/kernel-design.md`](./kernel/kernel-design.md) — current HOL kernel
+   implementation, useful during migration but not the new architecture.
+5. [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) — current
+   trusted surface and audit vocabulary.
 
-## `kernel/` — the TCB and its design
+## Organization
 
-Read `kernel-design.md` before touching the trusted base.
+- `vision/`: durable goals and research direction.
+- `kernel/`: substrate, TCB, data, and inductive designs.
+- `logics/`: object logics, imports, K/SpecTec/WASM, and metatheory.
+- `lisp/`: reusable Lisp semantics and ACL2 work.
+- `surface/`: future mathematical authoring language.
+- `web/`: browser/runtime/product designs.
+- `research/`: sourced investigations and note-system conventions.
+- `plans/`: only the current portfolio plan and bounded active plans.
+- `handoff/`: temporary branch state; delete once absorbed.
+- `sketches/`: explicitly speculative material.
 
-| Doc | What it covers |
-|---|---|
-| [`kernel/kernel-design.md`](./kernel/kernel-design.md) | `covalence-core`, the TCB: term/type representation, the rule surface, the `defs/` catalogue. |
-| [`kernel/closed-world-kernel.md`](./kernel/closed-world-kernel.md) | Current kernel direction: first-order theories in the type system; soundness by uniqueness-of-implementation. |
-| [`kernel/pure-design.md`](./kernel/pure-design.md) | The value-directed `Thm<C,P>` floor: `Stmt`/`Rule`/`Derive`, nuclei & bridges, content-addressing + federation. |
-| [`kernel/base-relcalc-holomega-design.md`](./kernel/base-relcalc-holomega-design.md) | Authoritative base + middle redesign: base as a relations-as-untrusted-functions calculus; middle retargeted to HOL-ω. |
-| [`kernel/type-hierarchy.md`](./kernel/type-hierarchy.md) | The equality hierarchy + the `defs/` type catalogue (nat/int/rat/real/bytes/list/…). |
-| [`kernel/covalence-fol.md`](./kernel/covalence-fol.md) · [`kernel/base-abstraction.md`](./kernel/base-abstraction.md) · [`kernel/base-api-surface.md`](./kernel/base-api-surface.md) · [`kernel/defs-rehome-design.md`](./kernel/defs-rehome-design.md) | Base API surface, the typed-repr FOL sketch, and the active defs re-home. |
+## Maintenance rules
 
-**`kernel/tcb/`** — [`what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) · [`soundness-audit.md`](./kernel/tcb/soundness-audit.md) · [`tcb-holomega-roadmap.md`](./kernel/tcb/tcb-holomega-roadmap.md)
-**`kernel/literals/`** — the leaf-elimination endgame: [`literal-endgame-design.md`](./kernel/literals/literal-endgame-design.md) · [`eg5-preflight.md`](./kernel/literals/eg5-preflight.md) · [`sha256-round-keystone.md`](./kernel/literals/sha256-round-keystone.md)
-**`kernel/inductive/`** — [`inductive-support.md`](./kernel/inductive/inductive-support.md) (how it works now) · [`inductive-api-design.md`](./kernel/inductive/inductive-api-design.md) (the `covalence-inductive` API)
+- Prefer one short authoritative note per decision boundary.
+- Put acceptance criteria in source-local TODOs, not duplicated prose lists.
+- Mark implementation descriptions with a date or commit when staleness matters.
+- A new plan must replace or delete an old plan that covers the same scope.
+- A superseded note should be deleted unless live code still needs it as
+  implementation history; retained history must link to its replacement.
+- Keep raw human notes intact under `notes/chats/`; syntheses belong here and
+  must cite them.
+- Never infer theorem authority from a database row, observation, or signature
+  alone. Follow the nucleus trust policy in `kernel/substrate-rewrite.md`.
 
-## `logics/` — object logics over the waist
-
-| Doc | What it covers |
-|---|---|
-| [`logics/logic-frontends.md`](./logics/logic-frontends.md) | Umbrella + difficulty matrix for external systems as object logics (MLTT/HoTT, ACL2/Lisp, LF/Dedukti). |
-| [`logics/theories-models-and-logics.md`](./logics/theories-models-and-logics.md) | signature → theory → model; within-logic model multiplicity; Metamath as shared substrate; PA→SOA→ZF. |
-| [`logics/metatheory.md`](./logics/metatheory.md) | Object theories + derivations as first-class HOL objects; theory morphisms/transport. |
-| [`logics/metamath-axiom-set-metatheory.md`](./logics/metamath-axiom-set-metatheory.md) | Axiom sets (ZFC/TG/IZF/reals) as first-class objects; checked implication/interpretation certificates; reals-over-ZFC; HOL-side composition facade. |
-| [`logics/structural-sigma-transport.md`](./logics/structural-sigma-transport.md) | Structural (non-identity) σ for `transport`: the variable-renaming slice landed on the reified-prop `Φ⟨bool⟩` carrier; the inductive-`MmExpr` `Φ=nat` path still open. |
-| [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
-| [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
-| [`logics/cfg-stratum-design.md`](./logics/cfg-stratum-design.md) | The CFG stratum: SpecTec grammars → per-env `Derives` judgement + family soundness; corpus facts; milestones. |
-| [`logics/spectec-fragment-api.md`](./logics/spectec-fragment-api.md) | High-level trait-based SpecTec-fragment API (`Fragment`, `RelationEnv` peer of `GrammarEnv`); basic WASM semantics derived; layering + K reuse. |
-| [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
-| [`logics/opentheory-import.md`](./logics/opentheory-import.md) | Verifying OpenTheory articles on the native HOL kernel (`NativeOt` backend, zero-TCB hyp-tracked axioms, defineTypeOp v6, `cov hol` + `bun run opentheory`). |
-
-## `surface/` — the authoring layer (aspirational)
-
-[`surface/surface-compiler.md`](./surface/surface-compiler.md) (canonical: theories/models/logics, the multi-stage compiler) ·
-[`surface/surface-syntax.md`](./surface/surface-syntax.md) (rationale) ·
-[`surface/frontend.md`](./surface/frontend.md) (UX vision: one surface, handler-dispatched reasoning)
-
-## `lisp/` — the Lisp/ACL2 frontend
-
-[`lisp/minimal-spec/`](./lisp/minimal-spec/) — the buildable spec: a `/lisp` REPL where an S-expr is evaluated as a reduction theorem, on a generic `Repl` ≤ `SExprRepl` ≤ `Lisp` trait stack, ending at the metacircular interpreter in the browser. [`lisp/initial-ideas/`](./lisp/initial-ideas/) — the design corpus behind it (dialects/UB, parsing relations, content-addressing, proptest-as-theorem, ACL2-inside).
-
-## `k/` — the K-framework frontend
-
-[`k/README.md`](./k/README.md) — index. Sourced research surveys (`k/research/`:
-K today, KORE, backends+SMT, the semantics ecosystem, RV's proof-generation
-line, reachability/matching-logic theory; researched 2026-07-13, verified,
-certainty-tagged) behind [`../design/k-frontend.md`](../design/k-frontend.md)
-(KORE ingestion + the F0–F4 fragment ladder; first slice `crates/lang/k`).
-North star: [`vision/k-framework-vision.md`](./vision/k-framework-vision.md).
-
-## `web/` · `observers/` · `plans/`
-
-- **web/** — [`web-kernel.md`](./web/web-kernel.md) (kernel in the browser; `.cov` articles; federation) · [`cov-project.md`](./web/cov-project.md) · [`wasm3-rust.md`](./web/wasm3-rust.md)
-- **observers/** — [`observers.md`](./observers/observers.md) (untrusted facts into HOL without growing the TCB) · [`backend-decoupling.md`](./observers/backend-decoupling.md) (the `covalence-hol-api` trait surface)
-- **plans/** — [`refactor-plan.md`](./plans/refactor-plan.md) · [`next-stage-breakdown.md`](./plans/next-stage-breakdown.md) · [`pure-hol-and-build-plan.md`](./plans/pure-hol-and-build-plan.md) · [`sketch-separation-thoughts.md`](./plans/sketch-separation-thoughts.md)
-
-## `sketches/` · `handoff/` · `build/`
-
-Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build notes ([`build/known-issues.md`](./build/known-issues.md), [`build/buck2-experiment.md`](./build/buck2-experiment.md)).
+The map application and `bun run notes` provide the complete searchable index;
+this README is a reading route, not a catalogue of every file.

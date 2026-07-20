@@ -12,14 +12,17 @@ agent = "claude"
 harness = "claude"
 +++
 
-# `covalence-pure` — value-directed kernel design
+# `covalence-pure` — value-directed kernel design (superseded)
 
-> **Design sketch.** The Rust-trait encoding of `covalence-pure` as built in
+> **Historical design sketch.** Superseded as architecture by
+> [`substrate-rewrite.md`](./substrate-rewrite.md). In particular, its observer
+> and minting vocabulary is not the nucleus authority boundary. The Rust-trait
+> encoding of `covalence-pure` as built in
 > `crates/kernel/base/`. Superseded for the *kernel layer* by
 > [`closed-world-kernel.md`](./closed-world-kernel.md) (the realized `Thm<L,P>`
 > shape) and [`base-relcalc-holomega-design.md`](./base-relcalc-holomega-design.md)
 > (the relation-calculus redesign) — but the nuclei / federation / store content
-> here still holds. Companion to [`../plans/refactor-plan.md`](../plans/refactor-plan.md) §2.
+> is retained only as implementation history.
 
 ## 1. The judgement: `Thm<C, P>`
 

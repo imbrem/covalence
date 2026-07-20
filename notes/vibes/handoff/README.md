@@ -14,8 +14,8 @@ harness = "claude"
 
 # Handoff docs — per-task status
 
-Pick-up-here snapshots for active workstreams. Full plan:
-[`../pure-hol-and-build-plan.md`](../plans/pure-hol-and-build-plan.md).
+Pick-up-here snapshots for active workstreams. Current program:
+[`../plans/current-program.md`](../plans/current-program.md).
 
 | Task | Doc | Open work |
 |---|---|---|

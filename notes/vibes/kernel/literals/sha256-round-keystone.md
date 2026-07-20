@@ -20,8 +20,8 @@ mechanism of the verified-WASM + import-fuel thesis end-to-end, on the cheap imp
 [`../../vision/roadmap.md`](../../vision/roadmap.md) Phase C/D and realizes the assumption-ledger of
 [`../tcb/soundness-audit.md`](../tcb/soundness-audit.md) §4. Companion to
 [`../../vision/VISION.md`](../../vision/VISION.md) §3 (oracles as theorems) and
-[`../../plans/refactor-plan.md`](../../plans/refactor-plan.md) (the `covalence-pure` executor base
-this sits on).
+[`../substrate-rewrite.md`](../substrate-rewrite.md) (the replacement substrate
+this should eventually exercise).
 
 ## The keystone, and what it falsifies
 

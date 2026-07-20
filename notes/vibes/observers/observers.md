@@ -12,9 +12,14 @@ agent = "claude"
 harness = "claude"
 +++
 
-# Covalence — Observers and Validators
+# Covalence — Observers and Validators (superseded)
 
-> **DESIGN SKETCH (not yet code).** How *untrusted* code (a WASM executor, a
+> **Historical design sketch.** Superseded by
+> [`../kernel/substrate-rewrite.md`](../kernel/substrate-rewrite.md). Rows and
+> observations do not mint facts; checked nucleus transitions are the authority
+> boundary. This note remains as prior art for scoped trust reporting.
+>
+> How *untrusted* code (a WASM executor, a
 > "trust the bytes" backend, an external solver) feeds facts into the kernel's
 > HOL model **without growing the TCB** — by routing every claim through a
 > *validator* trusted only for a specific *observer type*. The computational
@@ -25,8 +30,8 @@ harness = "claude"
 > **Note on prior art.** An earlier kernel *did* implement an observer substrate
 > (`trait Observer` + `ObsEq`/`ObsTrue`/`ObsImp` policy traits + `Thm::obs_*`
 > rules, sound under a parametric ε-model). That surface was **removed** in the
-> observer/literal purge (see [`pure-hol-and-build-plan.md`](../plans/pure-hol-and-build-plan.md)
-> Track 2): facts now enter as base-layer axioms / `IsThm` certificates rather
+> observer/literal purge: facts then entered as base-layer axioms / `IsThm`
+> certificates rather
 > than obs-rules. This doc is the *validator concept* that direction still wants;
 > read it as design, not as a description of current code.
 
@@ -226,8 +231,8 @@ An earlier version of this doc proposed making the built-in literals
 (`Int`/`Bytes`/`Nat`) into *trusted observers*. The chosen direction is
 different: literals **denote** via uninterpreted `toHOL` base ops + `IsThm`
 certificates, and the `TermKind::Int`/`Blob` leaves are being **deleted**, not
-reclassified as observers (see [`pure-hol-and-build-plan.md`](../plans/pure-hol-and-build-plan.md)
-Track 2 and [`literal-endgame-design.md`](../kernel/literals/literal-endgame-design.md)).
+reclassified as observers (see
+[`literal-endgame-design.md`](../kernel/literals/literal-endgame-design.md)).
 
 Two ideas survive the reframing and stay relevant here:
 

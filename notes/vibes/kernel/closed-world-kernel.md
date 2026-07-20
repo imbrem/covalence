@@ -12,9 +12,13 @@ agent = "claude"
 harness = "claude"
 +++
 
-# Closed-world kernel: first-order theories in the type system
+# Closed-world kernel: first-order theories in the type system (superseded)
 
-**Status:** Stage 0 **built** (2026-07); stages 1–5 are still a forward-looking
+> **Historical design.** Superseded by
+> [`substrate-rewrite.md`](./substrate-rewrite.md). It describes the current
+> base experiment, not the planned nucleus.
+
+**Status:** Stage 0 **built** (2026-07); stages 1–5 were a forward-looking
 sketch. Supersedes the opaque-context / `IsThm` direction in
 [`pure-design.md`](./pure-design.md) for the kernel layer; the base-relcalc
 redesign that builds on it is [`base-relcalc-holomega-design.md`](./base-relcalc-holomega-design.md).

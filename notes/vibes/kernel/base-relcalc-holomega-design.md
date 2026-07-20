@@ -12,9 +12,15 @@ agent = "claude"
 harness = "claude"
 +++
 
-# The relation-calculus base — authoritative redesign
+# The relation-calculus base (superseded)
 
-**Status:** authoritative plan for the **base redesign** (2026-07). The base
+> **Historical design.** Superseded by
+> [`substrate-rewrite.md`](./substrate-rewrite.md). Its rule that execution or a
+> store lookup directly mints relational membership is specifically rejected:
+> neutron rows are state/evidence, and only nucleus transitions construct
+> theorem authority.
+
+This was the plan for the **base redesign** in early 2026-07. The base
 becomes a *calculus of relations-as-untrusted-functions* with a reflected
 type-representation sort `TyRep` as a first-class base sort. Committed scope is
 binding: **base relation-calculus (`Rel`/`execute` + the positive calculus) +

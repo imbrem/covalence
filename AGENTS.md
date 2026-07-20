@@ -29,7 +29,7 @@ Never recreate `SKELETONS.md`. The generated truth is
 `target/covalence-todos.sqlite`.
 
 For portfolio context and dependencies, read
-[`notes/vibes/plans/workstreams-and-state-report.md`](./notes/vibes/plans/workstreams-and-state-report.md).
+[`notes/vibes/plans/current-program.md`](./notes/vibes/plans/current-program.md).
 Claim one workstream/task boundary, keep cross-stream dependencies explicit, and
 do not duplicate TODOs in multiple crates.
 

@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 36613,
+      "words": 36676,
       "updated": 0
     },
     {
@@ -15856,7 +15856,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 36613,
+      "words": 36676,
       "updated": 0
     },
     {
@@ -16639,7 +16639,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/README.md",
-      "words": 62,
+      "words": 64,
       "updated": 0
     },
     {
@@ -16936,7 +16936,7 @@
       "title": "substrate-rewrite.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 366,
+      "words": 406,
       "updated": 0
     },
     {
@@ -16964,6 +16964,15 @@
       "status": "tracked",
       "path": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "words": 127,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/kernel/trusted-database-algebra.md",
+      "kind": "file",
+      "title": "trusted-database-algebra.md",
+      "status": "tracked",
+      "path": "notes/vibes/kernel/trusted-database-algebra.md",
+      "words": 193,
       "updated": 0
     },
     {
@@ -17530,7 +17539,7 @@
       "title": "current-program.md",
       "status": "tracked",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 78,
+      "words": 83,
       "updated": 0
     },
     {
@@ -17674,7 +17683,7 @@
       "title": "neel-meeting-synthesis.md",
       "status": "tracked",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 222,
+      "words": 226,
       "updated": 0
     },
     {
@@ -18655,8 +18664,8 @@
       "title": "Design corpus",
       "status": "draft",
       "path": "notes/vibes/README.md",
-      "words": 325,
-      "updated": 1784580813
+      "words": 338,
+      "updated": 1784584541
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -18925,8 +18934,8 @@
       "title": "Substrate rewrite: SQLite-backed nucleus",
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 2259,
-      "updated": 1784584064
+      "words": 2526,
+      "updated": 1784584541
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -18954,6 +18963,15 @@
       "path": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "words": 889,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "kind": "note",
+      "title": "Trusted database algebra",
+      "status": "draft",
+      "path": "notes/vibes/kernel/trusted-database-algebra.md",
+      "words": 1248,
+      "updated": 1784584541
     },
     {
       "id": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -19492,8 +19510,8 @@
       "title": "Current program",
       "status": "draft",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 303,
-      "updated": 1784584064
+      "words": 323,
+      "updated": 1784584541
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -19636,8 +19654,8 @@
       "title": "Neel meeting: current vision and concrete proposals",
       "status": "draft",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 1377,
-      "updated": 1784584064
+      "words": 1415,
+      "updated": 1784584541
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
@@ -28914,6 +28932,12 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/plans/current-program.md",
       "detail": null
     },
@@ -29914,6 +29938,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "detail": null
+    },
+    {
       "source": "note:notes/vibes/kernel/tcb/soundness-audit.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -30062,6 +30092,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/tcb/soundness-audit.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -31777,6 +31813,12 @@
       "source": "note:notes/vibes/plans/current-program.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/current-program.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/trusted-database-algebra.md",
       "detail": null
     },
     {
@@ -34276,6 +34318,12 @@
       "stableId": "N0056",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "stableId": "N0057",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -35087,6 +35135,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T00:00:00+01:00",
+      "source": "trusted-database-algebra-sketch",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -36035,8 +36093,8 @@
     },
     {
       "noteId": "note:notes/vibes/README.md",
-      "commit": "95f3a1f7ddd343679cb9460c6e3745ae7dd15278",
-      "committedAt": 1784580813
+      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
+      "committedAt": 1784584541
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -36185,8 +36243,8 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/substrate-rewrite.md",
-      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
-      "committedAt": 1784584064
+      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
+      "committedAt": 1784584541
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -36202,6 +36260,11 @@
       "noteId": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
+      "committedAt": 1784584541
     },
     {
       "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -36500,8 +36563,8 @@
     },
     {
       "noteId": "note:notes/vibes/plans/current-program.md",
-      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
-      "committedAt": 1784584064
+      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
+      "committedAt": 1784584541
     },
     {
       "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -36580,8 +36643,8 @@
     },
     {
       "noteId": "note:notes/vibes/vision/neel-meeting-synthesis.md",
-      "commit": "62b3acedfb1dcd0e637abb2e96eb7b02bc2ffd48",
-      "committedAt": 1784584064
+      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
+      "committedAt": 1784584541
     },
     {
       "noteId": "note:notes/vibes/vision/project-map.md",

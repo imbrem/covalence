@@ -64,8 +64,8 @@ pub use host::{
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
-    Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
-    TraceReplay, TraceSoundness, evaluate, execute, explore,
+    Exploration, ExplorationBounds, MayEval, MayEvalReplay, MayEvalTransport, StepRelation,
+    TerminalValue, TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{

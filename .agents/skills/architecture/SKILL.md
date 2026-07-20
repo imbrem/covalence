@@ -125,6 +125,12 @@ disable-model-invocation: true
     order—inspection, termination replay, common-relation existence and
     uniqueness, then conservative totalization—and the ACL2 backend does not
     yet implement its adequacy or totalization phases.
+  - `MayEvalTransport` is the cross-semantics replay seam. The first HOL
+    adapter validates a closed, data-valued host-machine endpoint, interprets
+    the same `CoreExpr` and value in `LispRel`, and returns a hypothesis-free
+    `Reduces` theorem. It currently covers the first-order primitive fragment;
+    CEK administrative steps are not falsely identified with `LispRel` steps,
+    and β/δ/recursive transport remains the next adequacy prerequisite.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

@@ -337,6 +337,21 @@ pub trait MayEvalReplay<R: TerminalValue>: TraceReplay<R> {
     ) -> Result<Self::EvaluationEvidence, Self::Error>;
 }
 
+/// Proof-producing interpretation of a concrete `MayEval` witness in another
+/// semantics.
+///
+/// Unlike [`MayEvalReplay`], this need not use the same configuration type or
+/// one-step relation. Implementations must validate the source endpoint,
+/// interpret both the source program and value, and return existing target
+/// evidence that the interpreted program reaches that interpreted value.
+pub trait MayEvalTransport<C, V> {
+    type Evidence;
+    type Error;
+
+    fn transport_may_eval(&self, evaluation: &MayEval<C, V>)
+    -> Result<Self::Evidence, Self::Error>;
+}
+
 /// Optional proof that a semantics has at most one result for an initial
 /// configuration.
 ///

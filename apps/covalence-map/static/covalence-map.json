@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 292,
+      "words": 298,
       "updated": 0
     },
     {
@@ -9403,7 +9403,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
-      "words": 474,
+      "words": 489,
       "updated": 0
     },
     {
@@ -10888,7 +10888,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2365,
+      "words": 2502,
       "updated": 0
     },
     {

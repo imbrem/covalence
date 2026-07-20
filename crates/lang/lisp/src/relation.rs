@@ -48,7 +48,8 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
-    CheckedTrace, CoreExpr, Datum, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
+    CheckedTrace, CoreExpr, Datum, DeterministicStep, MachineControl, MayEval, MayEvalReplay,
+    MayEvalTransport, StepRelation, TerminalValue, TraceReplay, TraceSoundness,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -57,7 +58,9 @@ use std::sync::Arc;
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
 use crate::carrier::{CarvedCarrier, exact_datum_carved};
-use crate::frontend::{CoreAtom, FrontendExpr, Primitive, SurfaceDialect};
+use crate::frontend::{
+    CoreAtom, FrontendConfiguration, FrontendExpr, FrontendValue, Primitive, SurfaceDialect,
+};
 use crate::hol::HolError;
 use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
 
@@ -1802,6 +1805,21 @@ impl DeterministicStep for LispRel {
     }
 }
 
+impl TerminalValue for LispRel {
+    type Value = Term;
+
+    fn terminal_value(&self, configuration: &Term) -> Option<Self::Value> {
+        self.is_value(configuration).then(|| configuration.clone())
+    }
+}
+
+/// A kernel theorem for one finite evaluation in the HOL Lisp relation.
+#[derive(Clone, Debug)]
+pub struct HolMayEvalEvidence {
+    pub value: Term,
+    pub reduces: Thm,
+}
+
 impl TraceReplay<LispRel> for LispRel {
     type Evidence = Thm;
     type Error = HolError;
@@ -1830,6 +1848,88 @@ impl TraceSoundness<LispRel> for LispRel {
 
     fn trace_implies_execution(&self, evidence: &Thm) -> Result<Thm, HolError> {
         Ok(evidence.clone())
+    }
+}
+
+impl MayEvalReplay<LispRel> for LispRel {
+    type EvaluationEvidence = HolMayEvalEvidence;
+
+    fn replay_may_eval(
+        &self,
+        _relation: &LispRel,
+        evaluation: &MayEval<Term, Term>,
+        trace_evidence: &Thm,
+    ) -> Result<Self::EvaluationEvidence, HolError> {
+        if evaluation.trace.end() != &evaluation.value || !self.is_value(&evaluation.value) {
+            return Err(HolError::Stuck(
+                "HOL Lisp MayEval witness names a nonterminal or mismatched value".into(),
+            ));
+        }
+        Ok(HolMayEvalEvidence {
+            value: evaluation.value.clone(),
+            reduces: trace_evidence.clone(),
+        })
+    }
+}
+
+/// Evidence transporting one common host-machine evaluation into the HOL
+/// `Reduces` relation.
+#[derive(Clone, Debug)]
+pub struct HostMayEvalHolEvidence {
+    pub operational_steps: usize,
+    pub input: Term,
+    pub value: Term,
+    pub reduces: Thm,
+}
+
+impl MayEvalTransport<FrontendConfiguration, FrontendValue> for LispRel {
+    type Evidence = HostMayEvalHolEvidence;
+    type Error = HolError;
+
+    fn transport_may_eval(
+        &self,
+        evaluation: &MayEval<FrontendConfiguration, FrontendValue>,
+    ) -> Result<Self::Evidence, Self::Error> {
+        let initial = evaluation.trace.start();
+        if !initial.continuation.is_empty() {
+            return Err(HolError::Stuck(
+                "common Lisp evaluation starts inside a continuation".into(),
+            ));
+        }
+        let MachineControl::Expression(expression) = &initial.control else {
+            return Err(HolError::Stuck(
+                "common Lisp evaluation does not start from an expression".into(),
+            ));
+        };
+        let endpoint = evaluation.trace.end();
+        if !endpoint.continuation.is_empty()
+            || !matches!(
+                &endpoint.control,
+                MachineControl::Value(value) if value == &evaluation.value
+            )
+        {
+            return Err(HolError::Stuck(
+                "common Lisp MayEval witness has a mismatched nonterminal endpoint".into(),
+            ));
+        }
+        let datum = evaluation.value.as_datum().ok_or_else(|| {
+            HolError::Stuck("common Lisp result is not an inductive data value".into())
+        })?;
+        let expected = self.compile_core(&CoreExpr::Quote(datum))?;
+        let input = self.compile_core(expression)?;
+        let fuel = evaluation.trace.steps().saturating_mul(8).max(32);
+        let (value, reduces) = self.reduce_core(expression, fuel)?;
+        if value != expected {
+            return Err(HolError::Stuck(
+                "common Lisp and HOL Lisp interpretations produced different values".into(),
+            ));
+        }
+        Ok(HostMayEvalHolEvidence {
+            operational_steps: evaluation.trace.steps(),
+            input,
+            value,
+            reduces,
+        })
     }
 }
 
@@ -1868,7 +1968,9 @@ fn to_core(e: HolError) -> covalence_core::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::{TraceReplay, execute};
+    use covalence_kernel_lisp::{MayEvalTransport, TraceReplay, execute};
+
+    use crate::frontend::{Frontend, HostSession};
 
     fn rel() -> LispRel {
         LispRel::new().unwrap()
@@ -1902,6 +2004,41 @@ mod tests {
         let theorem = r.replay(&r, &trace).expect("checked HOL replay");
         assert!(theorem.hyps().is_empty());
         assert_eq!(theorem.concl(), &r.reduces_prop(&input, &head).unwrap());
+        let evaluation = MayEval::check(&r, trace, head.clone()).unwrap();
+        let evidence = r
+            .replay_may_eval(&r, &evaluation, &theorem)
+            .expect("terminal HOL replay");
+        assert_eq!(evidence.value, head);
+        assert_eq!(evidence.reduces.concl(), theorem.concl());
+    }
+
+    #[test]
+    fn common_host_may_eval_transports_to_hol_reduces() {
+        let form = crate::reader::read("(car (cons (quote head) (quote tail)))")
+            .unwrap()
+            .pop()
+            .unwrap();
+        let expression = Frontend::new(SurfaceDialect::Scheme).lower(&form).unwrap();
+        let host = HostSession::new(SurfaceDialect::Scheme, 64);
+        let evaluation = host.evaluate_core_evidence(&expression).unwrap();
+        let relation = rel();
+        let evidence = relation.transport_may_eval(&evaluation).unwrap();
+
+        assert_eq!(relation.render_value(&evidence.value), "head");
+        assert_eq!(
+            evidence.reduces.concl(),
+            &relation
+                .reduces_prop(&evidence.input, &evidence.value)
+                .unwrap()
+        );
+        assert!(evidence.reduces.hyps().is_empty());
+
+        let mut forged = evaluation;
+        forged.value = FrontendValue::datum(Datum::Atom(CoreAtom::symbol("other")));
+        assert!(
+            relation.transport_may_eval(&forged).is_err(),
+            "transport must reject a source witness naming the wrong result"
+        );
     }
 
     /// A multi-step nested reduction:

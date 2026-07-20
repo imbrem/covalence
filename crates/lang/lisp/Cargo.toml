@@ -24,6 +24,7 @@ covalence-kernel-lisp = { path = "../../kernel/lisp" }
 covalence-types = { path = "../../lib/types" }
 # The generic REPL + ReductionStrategy seam (kernel-independent).
 covalence-repl-core = { path = "../../lib/repl-core" }
+covalence-hash = { path = "../../lib/hash", optional = true, default-features = false }
 thiserror = "2"
 
 # Optional HOL backend (`hol` feature): lowers S-expressions into the carved
@@ -45,6 +46,7 @@ covalence-core = { path = "../../kernel/hol/core", optional = true }
 # reduction strategy over the carved carrier's proved computation laws + the
 # multi-step evaluator and the `Session` REPL.
 hol = [
+    "dep:covalence-hash",
     "dep:covalence-init",
     "dep:covalence-hol-eval",
     "dep:covalence-hol-api",
@@ -53,4 +55,8 @@ hol = [
 
 [[example]]
 name = "acl2_perf_bench"
+required-features = ["hol"]
+
+[[example]]
+name = "acl2_progress"
 required-features = ["hol"]

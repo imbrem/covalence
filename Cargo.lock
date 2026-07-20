@@ -901,6 +901,7 @@ dependencies = [
  "covalence-hash",
  "covalence-hol",
  "covalence-init",
+ "covalence-lisp",
  "covalence-lsp",
  "covalence-object",
  "covalence-opentheory",
@@ -1354,6 +1355,7 @@ name = "covalence-lisp"
 version = "0.0.0"
 dependencies = [
  "covalence-core",
+ "covalence-hash",
  "covalence-hol-api",
  "covalence-hol-eval",
  "covalence-init",

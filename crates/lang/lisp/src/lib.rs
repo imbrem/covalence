@@ -60,7 +60,13 @@ pub mod session;
 pub mod acl2;
 
 #[cfg(feature = "hol")]
+pub mod acl2_api;
+
+#[cfg(feature = "hol")]
 pub mod book;
+
+#[cfg(feature = "hol")]
+pub mod progress;
 
 #[cfg(feature = "hol")]
 pub mod world;

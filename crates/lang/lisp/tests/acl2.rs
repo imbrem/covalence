@@ -16,13 +16,37 @@
 //!   rejected with a clear message (and no definition is installed).
 #![cfg(feature = "hol")]
 
+use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_kernel_lisp::{CoreExpr, Datum};
-use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
+use covalence_lisp::acl2::{
+    Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution,
+    replay_acl2_append_existence, replay_acl2_append_graph_adequacy,
+};
+use covalence_lisp::carrier::Acl2Carrier;
 use covalence_lisp::frontend::CoreAtom;
 use covalence_lisp::reader::read_one;
+use covalence_sexp::AbstractSExpr;
 
 fn session() -> Acl2Session {
     Acl2Session::new().expect("session")
+}
+
+#[test]
+fn stale_generation_induction_fact_is_rejected_at_registration() {
+    let mut s = session();
+    let fact = acl2_count_natp_fact(s.induction_env()).expect("current-generation count fact");
+    s.add_induction_lemma(fact.clone())
+        .expect("a fact checked in the current generation is accepted");
+
+    s.eval_cell("(defun generation-step (x) x)")
+        .expect("admit a deep definition and advance the ACL2 generation");
+    let err = s
+        .add_induction_lemma(fact)
+        .expect_err("the old generation's checked fact must fail closed");
+    assert!(
+        err.to_string().contains("current ACL2 generation"),
+        "registration should diagnose the generation mismatch: {err}"
+    );
 }
 
 /// Reduce `src` and assert the honesty invariant: the value is the RHS of the
@@ -54,6 +78,39 @@ fn eval_closed(s: &Acl2Session, src: &str, want: &str) {
 // ---- Little-Schemer app: defun + recursion --------------------------------
 
 const APP: &str = "(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))";
+
+#[test]
+fn relational_append_agrees_with_conservatively_admitted_acl2_append() {
+    let s = session();
+    let carrier = Acl2Carrier::new().unwrap();
+    let left = carrier.quote(&read_one("(a b)").unwrap()).unwrap();
+    let right = carrier.quote(&read_one("(c d)").unwrap()).unwrap();
+    let expected = carrier.quote(&read_one("(a b c d)").unwrap()).unwrap();
+
+    let evidence = replay_acl2_append_execution(s.induction_env(), left, right, 16).unwrap();
+    assert_eq!(evidence.execution.value, expected);
+    assert!(evidence.execution.reduction.hyps().is_empty());
+    assert!(evidence.model_agreement.hyps().is_empty());
+    assert_eq!(
+        evidence.model_agreement.concl().as_eq().unwrap().1,
+        &evidence.execution.value
+    );
+}
+
+#[test]
+fn relational_append_exists_for_every_acl2_object() {
+    let s = session();
+    let existence = replay_acl2_append_existence(s.induction_env()).unwrap();
+    assert!(existence.theorem.hyps().is_empty());
+}
+
+#[test]
+fn reified_append_evaluation_exists_and_is_unique() {
+    let s = session();
+    let adequacy = replay_acl2_append_graph_adequacy(s.induction_env()).unwrap();
+    assert!(adequacy.existence.theorem.hyps().is_empty());
+    assert!(adequacy.uniqueness.theorem.hyps().is_empty());
+}
 
 #[test]
 fn defun_app_and_apply() {
@@ -99,6 +156,32 @@ fn admitted_definition_reuses_the_shared_partial_core() {
         evaluation.trace.steps() > 0,
         "the shared core result must retain a nontrivial checked execution"
     );
+    s.eval_cell(
+        "(defun app-core (x y)
+           (if (endp x) y (cons (car x) (app-core (cdr x) y))))",
+    )
+    .unwrap();
+    let app = s
+        .definition("app-core")
+        .expect("recursive ACL2 definition retains its normalized shared core");
+    assert!(matches!(&app.core.body, CoreExpr::If { .. }));
+    let evaluation = s
+        .operational_evidence(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
+        .unwrap();
+    assert_eq!(
+        evaluation.value.as_datum(),
+        Some(Datum::list([
+            Datum::Atom(CoreAtom::symbol("a")),
+            Datum::Atom(CoreAtom::symbol("b")),
+            Datum::Atom(CoreAtom::symbol("c")),
+        ])),
+        "ACL2 ENDP normalization must survive into generic partial execution"
+    );
+    assert!(
+        evaluation.trace.steps() > 0,
+        "the normalized recursive core must retain checked execution evidence"
+    );
+
     let form = read_one("(app (quote (a b)) (quote (c)))").unwrap();
     let direct = s.reduce(&form).unwrap();
     let hol = s.operational_hol_evidence(&form).unwrap();

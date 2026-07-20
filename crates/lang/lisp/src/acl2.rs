@@ -86,24 +86,46 @@
 use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 
+use covalence_core::subst;
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_int};
 use covalence_init::Term;
+use covalence_init::init::acl2::append::{
+    append_assoc_fact, append_count_strict_fact, append_definition_fact, append_nonempty_fact,
+    append_of_cons_fact, append_when_consp_nil_fact, car_of_append_fact,
+    car_of_append_when_consp_fact, cdr_of_append_fact, cdr_of_append_when_consp_fact,
+    consp_of_append_fact, equal_when_append_same_fact, with_append, with_append_count_laws,
+};
+use covalence_init::init::acl2::carrier::acl2_payload;
+use covalence_init::init::acl2::count::{
+    acl2_count_car_strict_fact, acl2_count_car_weak_fact, acl2_count_cdr_strict_fact,
+    acl2_count_cdr_weak_fact, acl2_count_cons_greater_fact, acl2_count_consp_positive_fact,
+    acl2_count_natp_fact, acl2_count_sum_strict_fact, acl2_count_sum_weak_fact, with_acl2_count,
+};
 use covalence_init::init::acl2::defun::{
-    Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
+    Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun, defun_ground,
+    defun_law,
 };
 use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
+use covalence_init::init::acl2::fixers::with_fixers;
+use covalence_init::init::acl2::hilbert::Fact;
 use covalence_init::init::acl2::ordinal::with_ordinals;
 use covalence_init::init::acl2::simplify::{
     FactCache, IndConfig, prove_by_induction, with_arith_rules,
 };
 use covalence_init::init::acl2::term::Terms;
+use covalence_init::init::eq::{beta_expand, beta_reduce};
 use covalence_init::init::ext::{TermExt, ThmExt};
+use covalence_init::init::inductive::data::Inductive;
+use covalence_init::init::inductive::determinacy::graph_det;
+use covalence_init::init::inductive::existence::graph_total;
+use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, MayEvalTransport,
-    SourcedDefinition,
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
+    EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
+    MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -115,6 +137,7 @@ use crate::frontend::{
 };
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
+use crate::relation::{LispMayEvalEvidence, LispRel};
 use crate::semantics::{EquationalHostMayEvalEvidence, LispRepr, LispSemantics, ValueKind};
 
 /// Step budget for a value reduction — recursion is admitted by a *syntactic*
@@ -129,7 +152,44 @@ const FUEL: u64 = 100_000;
 fn shadow_env() -> covalence_core::Result<Acl2Env> {
     let structural = s6_env()?;
     let ordinal = with_ordinals(&structural)?;
-    with_arith_rules(&ordinal)
+    let fixers = with_fixers(&ordinal)?;
+    let count = with_acl2_count(&fixers)?;
+    let append = with_append(&count)?;
+    let append_count = with_append_count_laws(&append)?;
+    with_arith_rules(&append_count)
+}
+
+fn shadow_cache(env: &Acl2Env) -> covalence_core::Result<FactCache> {
+    let cache = FactCache::default();
+    for fact in [
+        acl2_count_natp_fact(env)?,
+        acl2_count_sum_strict_fact(env)?,
+        acl2_count_sum_weak_fact(env)?,
+        acl2_count_car_strict_fact(env)?,
+        acl2_count_cdr_strict_fact(env)?,
+        acl2_count_car_weak_fact(env)?,
+        acl2_count_cdr_weak_fact(env)?,
+        acl2_count_consp_positive_fact(env)?,
+        acl2_count_cons_greater_fact(env)?,
+        // Keep specific APPEND rules ahead of the generic defining equation:
+        // lemma selection is deliberately deterministic and first-match, so
+        // unfolding first would hide the stronger constructor/guard shapes.
+        consp_of_append_fact(env)?,
+        equal_when_append_same_fact(env)?,
+        append_nonempty_fact(env)?,
+        append_count_strict_fact(env)?,
+        car_of_append_when_consp_fact(env)?,
+        car_of_append_fact(env)?,
+        cdr_of_append_when_consp_fact(env)?,
+        cdr_of_append_fact(env)?,
+        append_assoc_fact(env)?,
+        append_of_cons_fact(env)?,
+        append_when_consp_nil_fact(env)?,
+        append_definition_fact(env)?,
+    ] {
+        cache.add_lemma(fact);
+    }
+    Ok(cache)
 }
 
 // ============================================================================
@@ -174,6 +234,10 @@ impl From<HolError> for Acl2Error {
 
 fn kernel_err(e: impl core::fmt::Display) -> Acl2Error {
     Acl2Error::Eval(HolError::Kernel(e.to_string()))
+}
+
+fn bridge_kernel_err(e: impl core::fmt::Display) -> HolError {
+    HolError::Kernel(e.to_string())
 }
 
 // ============================================================================
@@ -289,6 +353,294 @@ pub struct Acl2HolReplayEvidence {
     pub definition: Acl2HolDefinition,
 }
 
+/// Checked pointwise agreement between relational Lisp execution and ACL2's
+/// conservatively admitted `APPEND` model.
+///
+/// `execution.reduction` proves that the common operational relation reaches
+/// `execution.value`. `model_agreement` independently proves that ACL2's
+/// total model at the same inputs equals that value. Both are closed kernel
+/// theorems; the host driver below carries no theorem authority.
+///
+/// This is deliberately pointwise. The universal existence theorem is exposed
+/// separately; universal uniqueness remains the admission-layer obligation.
+#[derive(Clone)]
+pub struct Acl2AppendExecutionEvidence {
+    pub execution: LispMayEvalEvidence,
+    pub model_agreement: Thm,
+}
+
+/// Replay one concrete ACL2 `APPEND` call through both semantic layers.
+pub fn replay_acl2_append_execution(
+    environment: &Acl2Env,
+    left: Term,
+    right: Term,
+    fuel: usize,
+) -> Result<Acl2AppendExecutionEvidence, HolError> {
+    let relation = LispRel::over_acl2_carrier()?;
+    if !relation.is_value(&left) || !relation.is_value(&right) {
+        return Err(HolError::Stuck(
+            "ACL2 APPEND execution inputs must be carrier values".into(),
+        ));
+    }
+    let input = relation.append_of(left.clone(), right.clone())?;
+    let evaluation = evaluate(&relation, input, fuel)
+        .map_err(|error| HolError::Stuck(format!("ACL2 APPEND execution failed: {error:?}")))?;
+    let Evaluation::Value(evaluation) = evaluation else {
+        return Err(HolError::Stuck(
+            "ACL2 APPEND relational execution ended stuck".into(),
+        ));
+    };
+    let trace = relation.replay(&relation, &evaluation.trace)?;
+    let execution = relation.replay_may_eval(&relation, &evaluation, &trace)?;
+    let model_agreement = defun_ground(environment, "APPEND", &[left, right])
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let (_, model_value) = model_agreement
+        .concl()
+        .as_eq()
+        .ok_or_else(|| HolError::Kernel("ACL2 APPEND model replay was not an equation".into()))?;
+    if model_value != &execution.value || !model_agreement.hyps().is_empty() {
+        return Err(HolError::Kernel(
+            "ACL2 APPEND model and relational execution disagree".into(),
+        ));
+    }
+    Ok(Acl2AppendExecutionEvidence {
+        execution,
+        model_agreement,
+    })
+}
+
+/// Prove universal existence of relational execution for ACL2 `APPEND`.
+///
+/// The result is exactly
+///
+/// ```text
+/// ⊢ ∀x y. Reduces (rel-append x y) (ACL2-APPEND-model x y)
+/// ```
+///
+/// over ACL2's actual object carrier. The proof uses structural induction on
+/// `x`, rule induction for the `Reduces` congruence under `cons`, and the
+/// conservatively admitted APPEND equation. It performs no host execution.
+pub fn replay_acl2_append_existence(
+    environment: &Acl2Env,
+) -> Result<EvaluationExistence<Thm>, HolError> {
+    let (_, append) = environment
+        .user("APPEND")
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let relation = LispRel::over_acl2_carrier()?;
+    let tm = &*environment.tm;
+    let carrier = tm.th.ty.clone();
+    let x = Term::free("__append_total_x", carrier.clone());
+    let y = Term::free("__append_total_y", carrier.clone());
+    let relational = |left: Term, right: Term| relation.append_of(left, right);
+    let model = |left: Term, right: Term| {
+        append
+            .model
+            .clone()
+            .apply(left)
+            .map_err(|error| HolError::Kernel(error.to_string()))?
+            .apply(right)
+            .map_err(|error| HolError::Kernel(error.to_string()))
+    };
+    let body = relation.reduces_prop(
+        &relational(x.clone(), y.clone())?,
+        &model(x.clone(), y.clone())?,
+    )?;
+    let all_y = body
+        .clone()
+        .forall("__append_total_y", carrier.clone())
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let motive = Term::abs(carrier.clone(), subst::close(&all_y, "__append_total_x"));
+
+    let leaf_case = |leaf: Term, step: Thm| -> Result<Thm, HolError> {
+        let input = relational(leaf.clone(), y.clone())?;
+        let raw = relation.reduces_step(&input, &y, &y, step, relation.reduces_refl(&y)?)?;
+        let law = defun_law(environment, append, &[leaf.clone(), y.clone()])
+            .map_err(|error| HolError::Kernel(error.to_string()))?;
+        let model_value = model(leaf.clone(), y.clone())?;
+        let retargeted = relation.retarget_reduces(
+            &input,
+            &y,
+            &model_value,
+            raw,
+            law.sym().map_err(bridge_kernel_err)?,
+        )?;
+        let all_y = retargeted
+            .all_intro("__append_total_y", carrier.clone())
+            .map_err(bridge_kernel_err)?;
+        beta_expand(&motive, leaf, all_y).map_err(bridge_kernel_err)
+    };
+
+    let payload = Term::free("b", acl2_payload());
+    let atom = tm
+        .th
+        .atom
+        .clone()
+        .apply(payload.clone())
+        .map_err(bridge_kernel_err)?;
+    let case_atom = leaf_case(atom, relation.step_append_atom(&payload, &y)?)?;
+    let case_nil = leaf_case(tm.th.nil.clone(), relation.step_append_nil(&y)?)?;
+    let case_cons = {
+        let h = Term::free("h", carrier.clone());
+        let t = Term::free("t", carrier.clone());
+        let ph = motive.clone().apply(h.clone()).map_err(bridge_kernel_err)?;
+        let pt = motive.clone().apply(t.clone()).map_err(bridge_kernel_err)?;
+        let recursive_input = relational(t.clone(), y.clone())?;
+        let recursive_model = model(t.clone(), y.clone())?;
+        let ih = beta_reduce(Thm::assume(pt.clone()).map_err(bridge_kernel_err)?)
+            .map_err(bridge_kernel_err)?
+            .all_elim(y.clone())
+            .map_err(bridge_kernel_err)?;
+        let lifted = relation.reduces_scons_tail(&h, &recursive_input, &recursive_model, ih)?;
+        let cons = relation.scons(h.clone(), t.clone())?;
+        let input = relational(cons.clone(), y.clone())?;
+        let middle = relation.scons(h.clone(), recursive_input)?;
+        let output = relation.scons(h.clone(), recursive_model)?;
+        let step = relation.step_append_cons(&h, &t, &y)?;
+        let raw = relation.reduces_step(&input, &middle, &output, step, lifted)?;
+        let law = defun_law(environment, append, &[cons.clone(), y.clone()])
+            .map_err(|error| HolError::Kernel(error.to_string()))?;
+        let model_value = model(cons.clone(), y.clone())?;
+        let retargeted = relation.retarget_reduces(
+            &input,
+            &output,
+            &model_value,
+            raw,
+            law.sym().map_err(bridge_kernel_err)?,
+        )?;
+        let all_y = retargeted
+            .all_intro("__append_total_y", carrier.clone())
+            .map_err(bridge_kernel_err)?;
+        beta_expand(&motive, cons, all_y)
+            .map_err(bridge_kernel_err)?
+            .imp_intro(&pt)
+            .map_err(bridge_kernel_err)?
+            .imp_intro(&ph)
+            .map_err(bridge_kernel_err)?
+    };
+    let induction = tm
+        .th
+        .induct(&motive, vec![case_atom, case_nil, case_cons])
+        .map_err(bridge_kernel_err)?;
+    let theorem = beta_reduce(induction.all_elim(x.clone()).map_err(bridge_kernel_err)?)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_total_x", carrier.clone())
+        .map_err(bridge_kernel_err)?;
+    let expected = body
+        .forall("__append_total_y", carrier.clone())
+        .map_err(bridge_kernel_err)?
+        .forall("__append_total_x", carrier)
+        .map_err(bridge_kernel_err)?;
+    if !theorem.hyps().is_empty() || theorem.concl() != &expected {
+        return Err(HolError::Kernel(
+            "universal ACL2 APPEND existence proof has the wrong theorem shape".into(),
+        ));
+    }
+    Ok(EvaluationExistence { theorem })
+}
+
+/// The reified, functional APPEND evaluation graph at a fixed right operand.
+///
+/// Unlike [`LispRel::reduces_prop`], this graph separates the recursive input
+/// from its result. Its three checked clauses are the ACL2 carrier cases:
+///
+/// ```text
+/// atom b  ↦ y
+/// nil     ↦ y
+/// cons h t ↦ cons h (eval t)
+/// ```
+///
+/// Keeping this role separation is essential: the current first-order
+/// `Reduces` relation represents configurations and values in the same HOL
+/// carrier, so reflexivity prevents an unrestricted endpoint-uniqueness
+/// theorem.
+fn acl2_append_graph_steps(environment: &Acl2Env, y: &Term) -> Result<[Term; 3], HolError> {
+    let tm = &*environment.tm;
+    let carrier = tm.th.ty.clone();
+    let atom_step = Term::abs(acl2_payload(), subst::close(y, "__append_graph_payload"));
+    let nil_step = y.clone();
+    let head = Term::free("__append_graph_head", carrier.clone());
+    let tail = Term::free("__append_graph_tail", carrier.clone());
+    let head_image = Term::free("__append_graph_head_image", carrier.clone());
+    let tail_image = Term::free("__append_graph_tail_image", carrier.clone());
+    let cons_result = tm
+        .th
+        .cons
+        .clone()
+        .apply(head.clone())
+        .map_err(bridge_kernel_err)?
+        .apply(tail_image.clone())
+        .map_err(bridge_kernel_err)?;
+    let cons_step = [
+        ("__append_graph_tail_image", tail_image),
+        ("__append_graph_head_image", head_image),
+        ("__append_graph_tail", tail),
+        ("__append_graph_head", head),
+    ]
+    .into_iter()
+    .fold(cons_result, |body, (name, _)| {
+        Term::abs(carrier.clone(), subst::close(&body, name))
+    });
+    Ok([atom_step, nil_step, cons_step])
+}
+
+/// `AppendEval x y value`, a reified big-step graph with an explicit result.
+pub fn acl2_append_eval_prop(
+    environment: &Acl2Env,
+    x: Term,
+    y: Term,
+    value: Term,
+) -> Result<Term, HolError> {
+    let steps = acl2_append_graph_steps(environment, &y)?;
+    let theory = environment.tm.th.cs.inductive();
+    graph::graph(theory.sig(), &steps, &environment.tm.th.ty, x, value).map_err(bridge_kernel_err)
+}
+
+/// Prove existence and uniqueness for the reified ACL2 APPEND evaluation
+/// graph.
+///
+/// The two closed theorems have the semantic content
+///
+/// ```text
+/// ∀y x. ∃value. AppendEval x y value
+/// ∀y x a b. AppendEval x y a → AppendEval x y b → a = b
+/// ```
+///
+/// They come directly from the generic inductive recursion-graph totality and
+/// determinacy proofs. No host evaluator, parser, or syntactic value test has
+/// theorem authority.
+pub fn replay_acl2_append_graph_adequacy(
+    environment: &Acl2Env,
+) -> Result<ExistenceUniqueness<Thm>, HolError> {
+    // Fail closed unless this is the same world generation that contains the
+    // conservatively admitted APPEND definition used by the execution bridge.
+    environment
+        .user("APPEND")
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let carrier = environment.tm.th.ty.clone();
+    let y = Term::free("__append_graph_y", carrier.clone());
+    let steps = acl2_append_graph_steps(environment, &y)?;
+    let theory = environment.tm.th.cs.inductive();
+    let existence = graph_total(&theory, &steps, &carrier)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_graph_y", carrier.clone())
+        .map_err(bridge_kernel_err)?;
+    let uniqueness = graph_det(&theory, &steps, &carrier)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_graph_y", carrier)
+        .map_err(bridge_kernel_err)?;
+    if !existence.hyps().is_empty() || !uniqueness.hyps().is_empty() {
+        return Err(HolError::Kernel(
+            "ACL2 APPEND graph adequacy unexpectedly retained hypotheses".into(),
+        ));
+    }
+    Ok(ExistenceUniqueness {
+        existence: EvaluationExistence { theorem: existence },
+        uniqueness: EvaluationUniqueness {
+            theorem: uniqueness,
+        },
+    })
+}
+
 impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {
     type Termination = Acl2HolReplayEvidence;
     type Error = String;
@@ -367,6 +719,8 @@ impl Acl2Session {
     /// Build a session over the process-global kernel theories, with no
     /// definitions and no theorems.
     pub fn new() -> Result<Self, Acl2Error> {
+        let env = shadow_env().map_err(kernel_err)?;
+        let cache = shadow_cache(&env).map_err(kernel_err)?;
         Ok(Acl2Session {
             defs: Defs::new(),
             admissions: BTreeMap::new(),
@@ -375,8 +729,8 @@ impl Acl2Session {
             operational: HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
-            deep: KernelAcl2Session::new(shadow_env().map_err(kernel_err)?),
-            deep_cache: Mutex::new(FactCache::default()),
+            deep: KernelAcl2Session::new(env),
+            deep_cache: Mutex::new(cache),
         })
     }
 
@@ -449,6 +803,53 @@ impl Acl2Session {
         self.thms.get(name)
     }
 
+    /// The checked deep ACL2 environment against which induction lemmas can
+    /// be constructed.
+    ///
+    /// This is a deliberately ACL2-facing seam: reusable law packs such as
+    /// ACL2-COUNT build genuine [`Fact`]s here, then register them with
+    /// [`add_induction_lemma`](Self::add_induction_lemma). Merely constructing
+    /// or registering a fact does not make a theorem authoritative.
+    pub fn induction_env(&self) -> &Acl2Env {
+        self.deep.env()
+    }
+
+    /// Add a caller-supplied derived fact as an induction/simplification hint
+    /// for the current deep-environment generation.
+    ///
+    /// Registration is untrusted. It first checks that the theorem is closed
+    /// and states this generation's exact `Derivable` target; the
+    /// simplifier's `add_lemma` path then replays every selected instance with
+    /// checked `INST`/`MP`. A stale-generation, forged, or mismatched [`Fact`]
+    /// therefore causes registration or proof failure, never theorem
+    /// production.
+    ///
+    /// Admitting another deep `defun` intentionally discards the hint along
+    /// with the rest of the per-generation cache. Facts contain derivations
+    /// for one exact `Acl2Env`; a reusable law pack must rebuild them against
+    /// [`induction_env`](Self::induction_env) after the definition world is
+    /// established.
+    pub fn add_induction_lemma(&self, lemma: Fact) -> Result<(), Acl2Error> {
+        let target =
+            ladder::derivable(self.deep.env(), &lemma.phi).map_err(|e| Acl2Error::Unprovable {
+                name: "<lemma-registration>".into(),
+                reason: format!("could not form the current generation's lemma target: {e}"),
+            })?;
+        if !lemma.thm.hyps().is_empty() || *lemma.thm.concl() != target {
+            return Err(Acl2Error::Unprovable {
+                name: "<lemma-registration>".into(),
+                reason: "lemma theorem is not a closed derivation in the current ACL2 generation"
+                    .into(),
+            });
+        }
+        let cache = self.deep_cache.lock().map_err(|_| Acl2Error::Unprovable {
+            name: "<lemma-registration>".into(),
+            reason: "kernel induction cache lock was poisoned".into(),
+        })?;
+        cache.add_lemma(lemma);
+        Ok(())
+    }
+
     /// Parse → dispatch (event or expression) → render, for one cell of
     /// source. `defun` / `defthm` events return their name on success (the
     /// ACL2 convention); an expression returns its value, read off the
@@ -490,8 +891,9 @@ impl Acl2Session {
         self.operational = HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize);
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
+            let cache = shadow_cache(&env).unwrap_or_default();
             self.deep = KernelAcl2Session::new(env);
-            self.deep_cache = Mutex::new(FactCache::default());
+            self.deep_cache = Mutex::new(cache);
         }
     }
 
@@ -520,7 +922,7 @@ impl Acl2Session {
     /// form, fuel-bounded, packaging the composite theorem.
     fn reduce_value(&self, form: &SExpr) -> Result<Acl2Outcome, Acl2Error> {
         let sem = LispSemantics::with_defs(self.defs.clone())?;
-        let core = Frontend::new(SurfaceDialect::Scheme)
+        let core = Frontend::new(SurfaceDialect::Acl2Core)
             .lower(form)
             .map_err(|error| Acl2Error::Malformed(error.to_string()))?;
         let term = sem.compile_core(&core)?;
@@ -717,8 +1119,9 @@ impl Acl2Session {
         {
             self.hol_definitions
                 .insert(definition.core.name.clone(), evidence.definition);
+            let cache = shadow_cache(&evidence.environment).unwrap_or_default();
             self.deep = KernelAcl2Session::new(evidence.environment);
-            self.deep_cache = Mutex::new(FactCache::default());
+            self.deep_cache = Mutex::new(cache);
         }
     }
 
@@ -1835,12 +2238,62 @@ fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String
                 .map(|a| deep_encode(tm, a, formals))
                 .collect::<Result<_, _>>()?;
             match head {
+                "and" => {
+                    let mut out = tm.quote(&tm.pr.t).map_err(|e| e.to_string())?;
+                    let nil = tm.quote(&tm.th.nil).map_err(|e| e.to_string())?;
+                    for arg in enc_args.iter().rev() {
+                        out = tm.mk_if(arg, &out, &nil).map_err(|e| e.to_string())?;
+                    }
+                    Ok(out)
+                }
+                "or" => {
+                    let mut out = tm.quote(&tm.th.nil).map_err(|e| e.to_string())?;
+                    for arg in enc_args.iter().rev() {
+                        out = tm.mk_if(arg, arg, &out).map_err(|e| e.to_string())?;
+                    }
+                    Ok(out)
+                }
+                "not" if enc_args.len() == 1 => tm
+                    .mk_if(
+                        &enc_args[0],
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string()),
                 "if" if enc_args.len() == 3 => tm
                     .mk_if(&enc_args[0], &enc_args[1], &enc_args[2])
                     .map_err(|e| e.to_string()),
                 "equal" | "=" if enc_args.len() == 2 => tm
                     .mk_equal(&enc_args[0], &enc_args[1])
                     .map_err(|e| e.to_string()),
+                "implies" if enc_args.len() == 2 => tm
+                    .mk_implies(&enc_args[0], &enc_args[1])
+                    .map_err(|e| e.to_string()),
+                ">" if enc_args.len() == 2 => tm
+                    .app(b"<", &[enc_args[1].clone(), enc_args[0].clone()])
+                    .map_err(|e| e.to_string()),
+                "<=" if enc_args.len() == 2 => {
+                    let lt = tm
+                        .app(b"<", &[enc_args[1].clone(), enc_args[0].clone()])
+                        .map_err(|e| e.to_string())?;
+                    tm.mk_if(
+                        &lt,
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())
+                }
+                ">=" if enc_args.len() == 2 => {
+                    let lt = tm
+                        .app(b"<", &[enc_args[0].clone(), enc_args[1].clone()])
+                        .map_err(|e| e.to_string())?;
+                    tm.mk_if(
+                        &lt,
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())
+                }
                 _ => {
                     let spelling = match head {
                         "car" => "CAR",

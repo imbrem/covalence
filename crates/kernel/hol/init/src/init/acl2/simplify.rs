@@ -44,7 +44,7 @@ use crate::init::acl2::derivable::{
     Acl2Env, AxiomRow, Discharge, derivable, derive_axiom, derive_comp, derive_comp_folded,
     derive_def, derive_ind, derive_ind_ord, derive_inst, finite_sigma, model_eq_target,
     model_implies_target, object_vars, parse_equal, strip_implies, subst_ground, sym_lit_of,
-    transport_equal, transport_equal_open, transport_implies_open, uncons,
+    transport_equal, transport_equal_open, transport_holds_open, transport_implies_open, uncons,
 };
 use crate::init::acl2::hilbert::{Fact, KCache, Script, cong_impl, equal_parts, mp};
 use crate::init::acl2::ordinal::ordinals;
@@ -236,6 +236,7 @@ pub struct FactCache {
     def_raw: RefCell<Vec<(SmolStr, Fact)>>,
     def_inst: RefCell<Vec<((SmolStr, Vec<(Vec<u8>, Term)>), Fact)>>,
     comp: RefCell<Vec<((usize, Vec<Term>), Option<Fact>)>>,
+    lemmas: RefCell<Vec<Fact>>,
 }
 
 /// INST a derived fact at a finite substitution, folding the image
@@ -262,6 +263,15 @@ fn sorted_key(name: &str, binds: &[(Vec<u8>, Term)]) -> (SmolStr, Vec<(Vec<u8>, 
 }
 
 impl FactCache {
+    /// Register a checked derived fact as a simplifier lemma.
+    ///
+    /// Registration itself is deliberately untrusted: every use is
+    /// replayed via INST/MP and validated by the proof script. A bogus
+    /// `Fact { phi, thm }` therefore fails closed at emission.
+    pub fn add_lemma(&self, lemma: Fact) {
+        self.lemmas.borrow_mut().push(lemma);
+    }
+
     fn axiom_raw(&self, env: &Acl2Env, name: &str) -> Result<Fact> {
         if let Some((_, f)) = self.ax_raw.borrow().iter().find(|(n, _)| n == name) {
             return Ok(f.clone());
@@ -603,6 +613,14 @@ enum Just {
         binds: Vec<(Vec<u8>, Term)>,
         conds: Vec<Holds>,
     },
+    /// A caller-supplied checked equality fact, instantiated and discharged
+    /// exactly like [`HJust::Lemma`].  This is the theorem-producing half of
+    /// untrusted lemma matching; emission replays INST + MP.
+    Lemma {
+        fact: Fact,
+        binds: Vec<(Vec<u8>, Term)>,
+        conds: Vec<Holds>,
+    },
 }
 
 impl Rw {
@@ -677,6 +695,15 @@ enum HJust {
     Ax {
         name: SmolStr,
         binds: Vec<(Vec<u8>, Term)>,
+    },
+    /// A caller-supplied, already checked derived fact, instantiated at
+    /// `binds` and applied to the recursively discharged antecedents.
+    /// The planner's match is untrusted: emission replays INST + MP and
+    /// the enclosing [`Script`] re-checks the resulting theorem.
+    Lemma {
+        fact: Fact,
+        binds: Vec<(Vec<u8>, Term)>,
+        conds: Vec<Holds>,
     },
     /// `equal-mp` transport: `chain : (EQUAL phi phi*)`, `inner : phi*`.
     Transport { chain: Box<Rw>, inner: Box<Holds> },
@@ -769,6 +796,7 @@ struct Planner<'e> {
     limits: Limits,
     rw: Vec<RwRule>,
     holds_ax: Vec<(SmolStr, Term)>,
+    lemmas: Vec<Fact>,
     has_cases: bool,
     has_equal_mp: bool,
     has_truth: bool,
@@ -779,7 +807,13 @@ struct Planner<'e> {
 }
 
 impl<'e> Planner<'e> {
-    fn new(env: &'e Acl2Env, cache: &'e FactCache, hyps: &[Term], limits: Limits) -> Planner<'e> {
+    fn new(
+        env: &'e Acl2Env,
+        cache: &'e FactCache,
+        hyps: &[Term],
+        lemmas: &'e [Fact],
+        limits: Limits,
+    ) -> Planner<'e> {
         Planner {
             env,
             cache,
@@ -787,6 +821,13 @@ impl<'e> Planner<'e> {
             limits,
             rw: rw_table(env),
             holds_ax: holds_table(env),
+            lemmas: cache
+                .lemmas
+                .borrow()
+                .iter()
+                .chain(lemmas)
+                .cloned()
+                .collect(),
             has_cases: env.axiom("cases").is_ok(),
             has_equal_mp: env.axiom("equal-mp").is_ok(),
             has_truth: env.axiom("truth").is_ok(),
@@ -852,9 +893,35 @@ impl<'e> Planner<'e> {
                 });
             }
             let (c, y, z) = (args[0].clone(), args[1].clone(), args[2].clone());
+            let qnil = tm.quote(&tm.th.nil).map_err(Stuck::from)?;
+            let direct_nil = tm.mk_equal(&c, &qnil).map_err(Stuck::from)?;
+            if let Some(i) = self.find_hyp(&direct_nil) {
+                let fire = Rw {
+                    from: t.clone(),
+                    to: z.clone(),
+                    just: Just::IfFalse {
+                        gnil: Box::new(Rw {
+                            from: c.clone(),
+                            to: qnil.clone(),
+                            just: Just::Hyp(i),
+                        }),
+                    },
+                };
+                let rest = self.norm(&z)?;
+                return seq(t, vec![fire, rest]);
+            }
+            if let Some(guard) = self.guard_holds(&c, &Rw::refl(&c))? {
+                let fire = Rw {
+                    from: t.clone(),
+                    to: y.clone(),
+                    just: Just::IfTrue { guard },
+                };
+                let rest = self.norm(&y)?;
+                return seq(t, vec![fire, rest]);
+            }
+            let guard_snap = self.stuck_guards.borrow().len();
             let c_rw = self.norm(&c)?;
             let c_star = c_rw.to.clone();
-            let qnil = tm.quote(&tm.th.nil).map_err(Stuck::from)?;
             // False?
             let gnil: Option<Rw> = if c_star == qnil {
                 Some(c_rw.clone())
@@ -896,6 +963,7 @@ impl<'e> Planner<'e> {
                 return seq(t, vec![fire, rest]);
             }
             // Stuck: record the guard, no descent into branches.
+            self.stuck_guards.borrow_mut().truncate(guard_snap);
             self.stuck_guards.borrow_mut().push(c_star);
             return Ok(Rw::refl(t));
         }
@@ -907,7 +975,17 @@ impl<'e> Planner<'e> {
                 why: format!("unknown head `{sym}`"),
             });
         }
+        // Caller lemmas get a head-first opportunity before R1.  This is
+        // essential for abstract facts such as a weak ACL2-COUNT bound:
+        // descending into ACL2-COUNT first exposes its CONSP guard and
+        // deliberately rolls back, even though the checked fact rewrites the
+        // complete outer `<` application without inspecting those arguments.
+        if let Some(head) = self.lemma_rewrite(t)? {
+            let rest = self.norm(&head.to)?;
+            return seq(t, vec![head, rest]);
+        }
         // R1 — congruence descent into the arguments.
+        let stuck_before_args = self.stuck_guards.borrow().len();
         let arg_rws: Vec<Rw> = args.iter().map(|a| self.norm(a)).collect::<SResult<_>>()?;
         let mut chain: Vec<Rw> = Vec::new();
         let mut cur = t.clone();
@@ -923,6 +1001,15 @@ impl<'e> Planner<'e> {
                 },
             });
             cur = new_t;
+        }
+        // An innermost user definition may have exposed an unresolved IF
+        // guard and deliberately rolled its unfold back.  Preserve that
+        // guard as the next case-split candidate instead of unfolding the
+        // enclosing recognizer and replacing it with a less useful guard
+        // from inside that recognizer (e.g. INTEGERP X while proving
+        // NATP(NFIX X), where the semantic split is NATP X).
+        if chain.is_empty() && self.stuck_guards.borrow().len() > stuck_before_args {
+            return Ok(Rw::refl(t));
         }
         // The head loop: R4 / R5 / R6 / R2, bounded.
         let mut unfolds_left = self.limits.unfolds_per_position;
@@ -970,6 +1057,17 @@ impl<'e> Planner<'e> {
             }
             // R6 — oriented axiom rewrite.
             let mut fired = false;
+            if let Some(lemma) = self.lemma_rewrite(&cur)? {
+                let to = lemma.to.clone();
+                chain.push(lemma);
+                let rest = self.norm(&to)?;
+                cur = rest.to.clone();
+                chain.push(rest);
+                fired = true;
+            }
+            if fired {
+                continue;
+            }
             for rule in &self.rw {
                 let mut sigma = Vec::new();
                 if !match_enc(tm, &rule.lhs, &cur, &mut sigma) {
@@ -1059,6 +1157,65 @@ impl<'e> Planner<'e> {
         seq(t, chain)
     }
 
+    /// Match a registered checked equality fact at one exact head.
+    ///
+    /// This is planning only. [`emit_rw`] reconstructs the selected instance
+    /// with checked INST/MP, and the shared node budget bounds cyclic or
+    /// otherwise badly oriented caller lemma sets.
+    fn lemma_rewrite(&self, cur: &Term) -> SResult<Option<Rw>> {
+        let tm = self.tm();
+        for fact in &self.lemmas {
+            let mut conds = Vec::new();
+            let mut conclusion = fact.phi.clone();
+            while let Some((p, q)) = strip_implies(tm, &conclusion) {
+                conds.push(p);
+                conclusion = q;
+            }
+            let Some((lhs, rhs)) = parse_equal(tm, &conclusion) else {
+                continue;
+            };
+            // As in ACL2 rewrite rules, a bare pattern variable is not a
+            // useful left-hand side: it would match every term and can invent
+            // unconstrained variables from the right-hand side.
+            if app_parts(tm, &lhs).is_none() {
+                continue;
+            }
+            let mut sigma = Vec::new();
+            if !match_enc(tm, &lhs, cur, &mut sigma) {
+                continue;
+            }
+            let mut conds_h = Vec::new();
+            let mut ok = true;
+            for cond_pat in &conds {
+                let cond = subst_pat(tm, cond_pat, &sigma)?;
+                match self.holds(&cond, self.limits.holds_depth) {
+                    Ok(h) => conds_h.push(h),
+                    Err(_) => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            let to = subst_pat(tm, &rhs, &sigma)?;
+            if to == *cur {
+                continue;
+            }
+            return Ok(Some(Rw {
+                from: cur.clone(),
+                to,
+                just: Just::Lemma {
+                    fact: fact.clone(),
+                    binds: sigma,
+                    conds: conds_h,
+                },
+            }));
+        }
+        Ok(None)
+    }
+
     /// R3-true guard evidence: the guard *as written* by a hypothesis or
     /// a primitive holds-match; across the simplified form only via
     /// `equal-mp` (pack envs — the design's P0 restriction falls out).
@@ -1072,6 +1229,9 @@ impl<'e> Planner<'e> {
         if let Some(h) = self.holds_primitive(c)? {
             return Ok(Some(h));
         }
+        if let Some(h) = self.holds_lemma(c, self.limits.holds_depth)? {
+            return Ok(Some(h));
+        }
         if !c_rw.is_refl() && self.has_equal_mp {
             let c_star = &c_rw.to;
             let inner = if let Some(i) = self.find_hyp(c_star) {
@@ -1079,8 +1239,10 @@ impl<'e> Planner<'e> {
                     phi: c_star.clone(),
                     just: HJust::Hyp(i),
                 })
+            } else if let Some(h) = self.holds_primitive(c_star)? {
+                Some(h)
             } else {
-                self.holds_primitive(c_star)?
+                self.holds_lemma(c_star, self.limits.holds_depth)?
             };
             if let Some(inner) = inner {
                 return Ok(Some(Holds {
@@ -1134,6 +1296,58 @@ impl<'e> Planner<'e> {
         Ok(None)
     }
 
+    /// Match and apply a caller-supplied checked fact.  Its outer
+    /// `IMPLIES` chain supplies premises; only the final consequent is
+    /// matched against `phi`.  Planning is syntactic, while emission
+    /// performs the authoritative INST/MP replay.
+    fn holds_lemma(&self, phi: &Term, depth: usize) -> SResult<Option<Holds>> {
+        if depth == 0 {
+            return Ok(None);
+        }
+        let tm = self.tm();
+        for fact in &self.lemmas {
+            let mut antecedents = Vec::new();
+            let mut conclusion = fact.phi.clone();
+            let binds = loop {
+                let mut candidate = Vec::new();
+                if match_enc(tm, &conclusion, phi, &mut candidate) {
+                    break candidate;
+                }
+                let Some((p, q)) = strip_implies(tm, &conclusion) else {
+                    break Vec::new();
+                };
+                antecedents.push(p);
+                conclusion = q;
+            };
+            if binds.is_empty() && conclusion != *phi {
+                continue;
+            }
+            let mut conds = Vec::new();
+            let mut ok = true;
+            for premise in antecedents {
+                let premise = subst_pat(tm, &premise, &binds)?;
+                match self.holds(&premise, depth - 1) {
+                    Ok(h) => conds.push(h),
+                    Err(_) => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                return Ok(Some(Holds {
+                    phi: phi.clone(),
+                    just: HJust::Lemma {
+                        fact: fact.clone(),
+                        binds,
+                        conds,
+                    },
+                }));
+            }
+        }
+        Ok(None)
+    }
+
     /// **The holds-prover** (design §5.5): `D ⌜phi⌝`-shaped goals under
     /// the context — hypothesis match, primitives, normalize + transport,
     /// then the classical cases split on a stuck guard.
@@ -1146,6 +1360,9 @@ impl<'e> Planner<'e> {
             });
         }
         if let Some(h) = self.holds_primitive(phi)? {
+            return Ok(h);
+        }
+        if let Some(h) = self.holds_lemma(phi, depth)? {
             return Ok(h);
         }
         let snap = self.stuck_guards.borrow().len();
@@ -1197,7 +1414,13 @@ impl<'e> Planner<'e> {
     }
 
     fn subholds(&self, hyp: &Term, phi: &Term, depth: usize) -> SResult<SubHolds> {
-        let sub = Planner::new(self.env, self.cache, std::slice::from_ref(hyp), self.limits);
+        let sub = Planner::new(
+            self.env,
+            self.cache,
+            std::slice::from_ref(hyp),
+            &[],
+            self.limits,
+        );
         let plan = sub.holds(phi, depth)?;
         Ok(SubHolds {
             hyp: hyp.clone(),
@@ -1383,6 +1606,14 @@ fn emit_rw(env: &Acl2Env, cache: &FactCache, sc: &mut Script, rw: &Rw) -> Result
             }
             acc
         }
+        Just::Lemma { fact, binds, conds } => {
+            let mut acc = L::F(inst_fact(env, fact, binds)?);
+            for cnd in conds {
+                let hc = emit_holds(env, cache, sc, cnd)?;
+                acc = l_mp(env, sc, acc, hc)?;
+            }
+            acc
+        }
     };
     let want = tm.mk_equal(&rw.from, &rw.to)?;
     let got = formula_of(sc, &out);
@@ -1410,6 +1641,14 @@ fn emit_holds(env: &Acl2Env, cache: &FactCache, sc: &mut Script, h: &Holds) -> R
     let out = match &h.just {
         HJust::Hyp(i) => L::Ln(sc.hyp(*i)?),
         HJust::Ax { name, binds } => L::F(cache.axiom_inst(env, name, binds)?),
+        HJust::Lemma { fact, binds, conds } => {
+            let mut acc = L::F(inst_fact(env, fact, binds)?);
+            for cond in conds {
+                let premise = emit_holds(env, cache, sc, cond)?;
+                acc = l_mp(env, sc, acc, premise)?;
+            }
+            acc
+        }
         HJust::Transport { chain, inner } => {
             let e = emit_rw(env, cache, sc, chain)?; // (EQUAL φ φ*)
             let se = l_symm(env, cache, sc, e)?; // (EQUAL φ* φ)
@@ -1474,7 +1713,7 @@ pub fn prove_under(
     limits: &Limits,
 ) -> SResult<Thm> {
     let tm = &*env.tm;
-    let p = Planner::new(env, cache, hyps, *limits);
+    let p = Planner::new(env, cache, hyps, &[], *limits);
     let mut sc = Script::new(env, hyps);
     let l = if parse_equal(tm, goal).is_some() {
         let (lc, rc) = p.close_equal(goal)?;
@@ -1855,12 +2094,6 @@ pub fn prove_by_induction(
             }));
         }
     };
-    if parse_equal(tm, phi).is_none() && strip_implies(tm, phi).is_none() {
-        return Err(fail1(Stuck::OutOfFragment {
-            term: phi.clone(),
-            why: "driver goals must be EQUAL- or IMPLIES-shaped".into(),
-        }));
-    }
     // Simplifier-only pass (closes goals needing only unfolding /
     // computation / R6 rules).
     // For a conditional theorem, expose its antecedent spine to the
@@ -1980,10 +2213,12 @@ fn finish(
         .collect();
     let transported = if strip_implies(&env.tm, phi).is_some() {
         transport_implies_open(env, &projected, &binds).map_err(Stuck::from)?
-    } else if vars.is_empty() {
+    } else if parse_equal(&env.tm, phi).is_some() && vars.is_empty() {
         transport_equal(env, &projected).map_err(Stuck::from)?
-    } else {
+    } else if parse_equal(&env.tm, phi).is_some() {
         transport_equal_open(env, &projected, &binds).map_err(Stuck::from)?
+    } else {
+        transport_holds_open(env, &projected, &binds).map_err(Stuck::from)?
     };
     if !transported.hyps().is_empty() {
         return Err(Stuck::Kernel {
@@ -2245,6 +2480,243 @@ mod tests {
             derive_under(env, std::slice::from_ref(&t.c), &b.st, &goal_s).unwrap()
         };
         assert_eq!(auto_s.concl(), hand_s.concl());
+    }
+
+    /// Caller-supplied derived lemmas are only planning hints: a
+    /// conditional lemma recursively discharges its premise, while a
+    /// forged formula/theorem pairing is rejected by checked replay.
+    #[test]
+    fn t_checked_conditional_lemma_replay_fails_closed() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let p = tm.app(b"CONSP", &[x.clone()]).unwrap();
+        let pair = tm.app(b"CONS", &[x.clone(), x]).unwrap();
+        let q = tm.app(b"CONSP", &[pair]).unwrap();
+
+        // First derive q normally, then K-weaken it under the checked
+        // `truth` fact to obtain truth => q.
+        let q_thm = prove_under(env, &base, &[], &q, &Limits::default()).unwrap();
+        let q_fact = Fact {
+            phi: q.clone(),
+            thm: q_thm,
+        };
+        let truth = tm.quote(&tm.pr.t).unwrap();
+        let mut sc = Script::new(env, std::slice::from_ref(&truth));
+        sc.fact(q_fact.clone());
+        let conditional = Fact {
+            phi: tm.mk_implies(&truth, &q).unwrap(),
+            thm: sc.close(&q, &base.kc).unwrap(),
+        };
+
+        let cache = FactCache::default();
+        cache.add_lemma(conditional);
+        let got = prove_under(env, &cache, &[], &q, &Limits::default()).unwrap();
+        check(&got, &derivable(env, &q).unwrap());
+
+        // Same syntactic lemma, wrong theorem: planning may select it,
+        // but INST/MP/Script validation must refuse to mint q.
+        let forged = Fact {
+            phi: p.clone(),
+            thm: base.axiom_raw(env, "equal-refl").unwrap().thm,
+        };
+        let bad_cache = FactCache::default();
+        bad_cache.add_lemma(forged);
+        assert!(
+            prove_under(env, &bad_cache, &[], &p, &Limits::default()).is_err(),
+            "a mismatched Fact phi/thm pair must fail closed"
+        );
+
+        // A conditional lemma with an unavailable antecedent is not a
+        // proof rule: recursive premise discharge rejects the plan.
+        let unavailable = Fact {
+            phi: tm.mk_implies(&p, &q).unwrap(),
+            thm: {
+                let mut sc = Script::new(env, std::slice::from_ref(&p));
+                sc.fact(q_fact);
+                sc.close(&q, &base.kc).unwrap()
+            },
+        };
+        let p0 = Planner::new(
+            env,
+            &base,
+            &[],
+            std::slice::from_ref(&unavailable),
+            Limits::default(),
+        );
+        assert!(p0.holds_lemma(&q, 1).unwrap().is_none());
+    }
+
+    /// Registered checked facts participate in the IF guards introduced by
+    /// ACL2 macro expansion (`and`, `not`, and weak inequalities), and
+    /// checked conditional equalities can rewrite a guard to `NIL`.
+    #[test]
+    fn t_checked_lemmas_drive_if_guards_and_conditional_rewrites() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let pair = tm.app(b"CONS", &[x.clone(), x.clone()]).unwrap();
+        let q = tm.app(b"CONSP", &[pair.clone()]).unwrap();
+        let q_fact = Fact {
+            phi: q.clone(),
+            thm: prove_under(env, &base, &[], &q, &Limits::default()).unwrap(),
+        };
+
+        // Force guard resolution to use only the registered fact, not the
+        // environment's ordinary CONSP-CONS primitive.
+        let cache = FactCache::default();
+        cache.add_lemma(q_fact.clone());
+        let mut planner = Planner::new(env, &cache, &[], &[], Limits::default());
+        planner.holds_ax.clear();
+        let qt = tm.quote(&tm.pr.t).unwrap();
+        let qnil = tm.quote(&tm.th.nil).unwrap();
+        let and_qq = tm
+            .mk_if(&q, &tm.mk_if(&q, &qt, &qnil).unwrap(), &qnil)
+            .unwrap();
+        let rw = planner.norm(&and_qq).unwrap();
+        assert_eq!(rw.to, qt);
+        let mut sc = Script::new(env, &[]);
+        let want = tm.mk_equal(&and_qq, &qt).unwrap();
+        let emitted = emit_rw(env, &cache, &mut sc, &rw).unwrap();
+        let theorem = match emitted {
+            L::F(f) => f.thm,
+            L::Ln(_) => sc.close(&want, &cache.kc).unwrap(),
+        };
+        check(&theorem, &derivable(env, &want).unwrap());
+
+        // A conditional checked equality is also a rewrite hint.  Remove the
+        // built-in CAR-CONS rewrite table so this path cannot pass by accident.
+        let car_pair = tm.app(b"CAR", std::slice::from_ref(&pair)).unwrap();
+        let car_cons = base.axiom_raw(env, "car-cons").unwrap();
+        let mut weaken = Script::new(env, std::slice::from_ref(&q));
+        weaken.fact(car_cons.clone());
+        let conditional = Fact {
+            phi: tm.mk_implies(&q, &car_cons.phi).unwrap(),
+            thm: weaken.close(&car_cons.phi, &base.kc).unwrap(),
+        };
+        let rewrite_cache = FactCache::default();
+        rewrite_cache.add_lemma(q_fact);
+        rewrite_cache.add_lemma(conditional);
+        let mut planner = Planner::new(env, &rewrite_cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&car_pair).unwrap();
+        assert_eq!(rw.to, x);
+        let mut sc = Script::new(env, &[]);
+        let want = tm.mk_equal(&car_pair, &x).unwrap();
+        let emitted = emit_rw(env, &rewrite_cache, &mut sc, &rw).unwrap();
+        let theorem = match emitted {
+            L::F(f) => f.thm,
+            L::Ln(_) => sc.close(&want, &rewrite_cache.kc).unwrap(),
+        };
+        check(&theorem, &derivable(env, &want).unwrap());
+
+        // Matching remains untrusted for equality lemmas too: a forged
+        // formula/theorem pair may be planned, but checked INST rejects it.
+        let forged_cache = FactCache::default();
+        forged_cache.add_lemma(Fact {
+            phi: car_cons.phi,
+            thm: base.axiom_raw(env, "equal-refl").unwrap().thm,
+        });
+        let mut planner = Planner::new(env, &forged_cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&car_pair).unwrap();
+        let mut sc = Script::new(env, &[]);
+        assert!(emit_rw(env, &forged_cache, &mut sc, &rw).is_err());
+    }
+
+    /// Two individually checked but oppositely oriented equality lemmas are
+    /// still only planning hints. A tiny shared node budget must stop their
+    /// rewrite cycle without recursive stack growth or proof emission.
+    #[test]
+    fn t_checked_equality_lemma_cycle_hits_node_budget() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let binds = vec![(b"Y".to_vec(), x.clone())];
+        let car = base.axiom_inst(env, "car-cons", &binds).unwrap();
+        let cdr = base.axiom_inst(env, "cdr-cons", &binds).unwrap();
+        let car_to_cdr = crate::init::acl2::hilbert::eq_trans(
+            env,
+            &car,
+            &crate::init::acl2::hilbert::eq_symm(env, &cdr).unwrap(),
+        )
+        .unwrap();
+        let cdr_to_car = crate::init::acl2::hilbert::eq_symm(env, &car_to_cdr).unwrap();
+
+        let cache = FactCache::default();
+        cache.add_lemma(car_to_cdr);
+        cache.add_lemma(cdr_to_car);
+        let start = tm
+            .app(b"CAR", &[tm.app(b"CONS", &[x.clone(), x]).unwrap()])
+            .unwrap();
+        let limits = Limits {
+            unfolds_per_position: 1,
+            head_steps: 1_000,
+            plan_nodes: 4,
+            holds_depth: 1,
+        };
+        let err = prove_under(
+            env,
+            &cache,
+            &[],
+            &tm.mk_equal(&start, &start).unwrap(),
+            &limits,
+        )
+        .expect_err("a checked rewrite cycle must exhaust the planner budget");
+        assert!(
+            err.to_string().contains("plan nodes"),
+            "cycle must fail specifically through the shared node budget: {err}"
+        );
+    }
+
+    /// `FactCache` is deliberately generation-unaware and accepts untrusted
+    /// hints, but using a genuinely checked fact after the environment grows
+    /// must fail when emission re-checks its old `Derivable` theorem.
+    #[test]
+    fn t_stale_generation_checked_lemma_fails_at_emission() {
+        let sess = s6_app_session();
+        let old = sess.env();
+        let tm = &*old.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let binds = vec![(b"Y".to_vec(), x.clone())];
+        let car = base.axiom_inst(old, "car-cons", &binds).unwrap();
+        let cdr = base.axiom_inst(old, "cdr-cons", &binds).unwrap();
+        let stale = crate::init::acl2::hilbert::eq_trans(
+            old,
+            &car,
+            &crate::init::acl2::hilbert::eq_symm(old, &cdr).unwrap(),
+        )
+        .unwrap();
+        let start = tm
+            .app(b"CAR", &[tm.app(b"CONS", &[x.clone(), x.clone()]).unwrap()])
+            .unwrap();
+
+        let id_spec = DefunSpec {
+            name: SmolStr::new("GENERATION-STEP"),
+            formals: vec![SmolStr::new("X")],
+            body: x,
+            rec_formal: None,
+        };
+        let next = crate::init::acl2::defun::admit_defun(old, &id_spec).unwrap();
+        let env = &next;
+        let cache = FactCache::default();
+        cache.add_lemma(stale);
+        let mut planner = Planner::new(env, &cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&start).unwrap();
+        assert!(!rw.is_refl(), "the stale hint must be selected in planning");
+        let mut script = Script::new(env, &[]);
+        assert!(
+            emit_rw(env, &cache, &mut script, &rw).is_err(),
+            "checked replay must reject a theorem from the previous generation"
+        );
     }
 
     /// **P0 gate №2:** `build_ind_premises` returns exactly the

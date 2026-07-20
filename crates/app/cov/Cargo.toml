@@ -8,7 +8,7 @@ name = "cov"
 path = "src/main.rs"
 
 [features]
-default = ["lsp", "cogit", "serve", "repl", "hol", "k", "data"]
+default = ["lsp", "cogit", "serve", "repl", "hol", "k", "data", "acl2"]
 lsp = ["dep:covalence-lsp"]
 cogit = ["dep:covalence-git"]
 serve = []
@@ -16,6 +16,7 @@ repl = ["dep:rustyline"]
 hol = ["dep:covalence-hol", "dep:covalence-opentheory"]
 k = ["dep:covalence-init"]
 data = ["covalence-repl/arrow", "covalence-repl/parquet"]
+acl2 = ["dep:covalence-lisp"]
 
 [dependencies]
 covalence-lsp = { path = "../../server/lsp", optional = true }
@@ -36,6 +37,7 @@ covalence-store = { path = "../../store/core", features = ["sqlite"] }
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
 covalence-git = { path = "../../lib/git", optional = true, features = ["clone"] }
 covalence-hol = { path = "../../kernel/hol/traits", optional = true }
+covalence-lisp = { path = "../../lang/lisp", optional = true, features = ["hol"] }
 covalence-init = { path = "../../kernel/hol/init", optional = true }
 covalence-opentheory = { path = "../../proof/opentheory", optional = true, features = [
     "native",

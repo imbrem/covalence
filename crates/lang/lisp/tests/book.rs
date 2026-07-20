@@ -18,9 +18,15 @@
 
 use std::path::{Path, PathBuf};
 
+use covalence_hash::sha256;
 use covalence_lisp::acl2::{Acl2Proof, Acl2Session};
 use covalence_lisp::book::{
-    BookConfig, BookReport, EventOutcome, ImportClass, Tally, run_book, run_book_with_config,
+    BookConfig, BookReport, CompletenessCount, CompletenessLevel, EventOutcome, EventRecord,
+    ImportClass, IncludeStatus, SourceClosureStatus, SourceRole, SourceStatus, Tally,
+    TheoremNeutralCapability, TheoremNeutralInterface, run_book, run_book_with_config,
+};
+use covalence_lisp::progress::{
+    NormalizedEventIdentity, NormalizedEventScope, PinnedNormalizedDenominator, ProgressMode,
 };
 use covalence_lisp::reader::read_book;
 use covalence_lisp::session::Session;
@@ -29,6 +35,15 @@ use covalence_lisp::world::Acl2World;
 /// The fixture root: `crates/lang/lisp/tests`.
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")
+}
+
+fn sha256_bytes(hex: &str) -> [u8; 32] {
+    assert_eq!(hex.len(), 64);
+    let mut out = [0; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("SHA-256 hex");
+    }
+    out
 }
 
 #[test]
@@ -355,7 +370,10 @@ fn session() -> Acl2Session {
 /// the generic induction premise builder).
 fn check_transported(sess: &Acl2Session, report: &BookReport) {
     for e in &report.events {
-        if e.outcome == EventOutcome::Transported {
+        if matches!(
+            e.outcome,
+            EventOutcome::Transported | EventOutcome::LocalTransported
+        ) {
             let entry = sess
                 .theorem_entry(&e.label)
                 .unwrap_or_else(|| panic!("transported `{}` must be stored", e.label));
@@ -407,6 +425,7 @@ fn app_basics_book_exact_tally() {
         report.tally(),
         Tally {
             transported: 4,
+            local_transported: 0,
             admitted: 6,
             skipped: 1,
             rejected: 0,
@@ -515,20 +534,22 @@ fn mixed_book_exact_tally() {
     let report = run_book(&mut s, &root(), "books/mixed").expect("book runs");
 
     // 13 own events + 11 nested (app-basics via include-book) = 24:
-    //  transported: three-with-hints + nested {four, car-app}          = 3
+    //  transported: three-with-hints, consp-implies
+    //               + nested {four, car-app}                           = 4
     //  admitted:    pair-up-a + nested {app, rev, len2, app-ab-c,
     //               rev-rev-ab, len2-abc}                              = 7
     //  skipped:     in-package ×2 (own + nested), include ×4 (satisfied,
     //               re-include, missing, :dir), local defun            = 7
-    //  rejected:    consp-implies, bogus, defmacro, encapsulate,
-    //               mutual-recursion + nested {app-assoc, len2-app}    = 7
+    //  rejected:    bogus, defmacro, encapsulate, mutual-recursion
+    //               + nested {app-assoc, len2-app}                     = 6
     assert_eq!(
         report.tally(),
         Tally {
-            transported: 3,
+            transported: 4,
+            local_transported: 0,
             admitted: 7,
             skipped: 7,
-            rejected: 7,
+            rejected: 6,
         },
         "tally mismatch:\n{report}"
     );
@@ -544,7 +565,9 @@ fn mixed_book_exact_tally() {
     let reasons: Vec<_> = includes
         .iter()
         .map(|e| match &e.outcome {
-            EventOutcome::Skipped { reason } => reason.as_str(),
+            EventOutcome::Skipped { reason } | EventOutcome::UnresolvedDependency { reason } => {
+                reason.as_str()
+            }
             other => panic!("include-book must be skipped, got {other:?}"),
         })
         .collect();
@@ -556,6 +579,44 @@ fn mixed_book_exact_tally() {
     );
     assert!(reasons[2].contains("not found"), "missing: {}", reasons[2]);
     assert!(reasons[3].contains(":dir"), "system dir: {}", reasons[3]);
+    assert_eq!(
+        report
+            .includes
+            .iter()
+            .map(|include| include.status)
+            .collect::<Vec<_>>(),
+        vec![
+            IncludeStatus::Replayed,
+            IncludeStatus::Idempotent,
+            IncludeStatus::Missing,
+            IncludeStatus::Unconfigured,
+        ]
+    );
+    assert_eq!(report.includes[0].encounter_ordinal, 0);
+    assert_eq!(report.includes[0].requested_by.root, None);
+    assert_eq!(report.includes[0].requested_by.path, "books/mixed.lisp");
+    assert_eq!(
+        report.includes[0]
+            .resolved
+            .as_ref()
+            .map(|identity| identity.path.as_str()),
+        Some("books/app-basics.lisp")
+    );
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| (source.role, source.status))
+            .collect::<Vec<_>>(),
+        vec![
+            (SourceRole::Target, SourceStatus::Replayed),
+            (SourceRole::Include, SourceStatus::Replayed),
+        ]
+    );
+    for (ordinal, source) in report.sources.iter().enumerate() {
+        assert_eq!(source.attempt_ordinal, ordinal);
+        assert!(source.sha256.is_some(), "exact-byte digest is retained");
+    }
 
     // Nested events carry the included book's path.
     let four = report.event("four").expect("nested four");
@@ -581,8 +642,16 @@ fn mixed_book_exact_tally() {
         vec![":hints ignored".to_string(), ":rule-classes ignored".into()]
     );
 
+    // The generic implication transport now closes this ordinary theorem.
+    assert_eq!(
+        *outcome(&report, "consp-implies"),
+        EventOutcome::Transported
+    );
+    assert!(
+        s.theorem("consp-implies")
+            .is_some_and(|theorem| theorem.hyps().is_empty())
+    );
     // Honest rejections, with reasons.
-    assert!(rejected_reason(&report, "consp-implies").contains("induction"));
     assert!(rejected_reason(&report, "bogus").contains("FALSE"));
     for class in ["defmacro", "encapsulate", "mutual-recursion"] {
         let rec = report
@@ -598,7 +667,7 @@ fn mixed_book_exact_tally() {
         }
     }
     // Nothing was stored for the rejected defthms.
-    for name in ["consp-implies", "bogus", "hidden"] {
+    for name in ["bogus", "hidden"] {
         assert!(s.theorem(name).is_none(), "`{name}` must not be stored");
     }
 }
@@ -612,6 +681,7 @@ fn empty_encapsulate_inline_defun_and_portcullis_events() {
         report.tally(),
         Tally {
             transported: 0,
+            local_transported: 0,
             admitted: 2,
             skipped: 7,
             rejected: 0,
@@ -641,6 +711,7 @@ fn safe_function_and_rule_event_aliases() {
         report.tally(),
         Tally {
             transported: 0,
+            local_transported: 0,
             admitted: 11,
             skipped: 2,
             rejected: 1,
@@ -705,11 +776,240 @@ fn inventory_manifest_is_deterministic_and_does_not_execute_logic() {
 }
 
 #[test]
+fn structured_completeness_distinguishes_inventory_from_a_green_island() {
+    let mut inventory_session = session();
+    let inventory = run_book_with_config(
+        &mut inventory_session,
+        &BookConfig::new(root()).inventory_only(),
+        "books/generic-rules",
+    )
+    .expect("inventory");
+    let inventory_progress = inventory.completeness();
+    assert_eq!(
+        inventory_progress.level,
+        CompletenessLevel::DefinitionsComplete
+    );
+    assert_eq!(
+        inventory_progress.closure.theorems,
+        CompletenessCount {
+            complete: 0,
+            total: 3
+        }
+    );
+    assert!(!inventory_progress.is_green_island());
+
+    let mut proving_session = session();
+    let proved = run_book(&mut proving_session, &root(), "books/generic-rules")
+        .expect("checked book import");
+    let progress = proved.completeness();
+    assert_eq!(progress.level, CompletenessLevel::TheoremsComplete);
+    assert_eq!(
+        progress.closure.theorems,
+        CompletenessCount {
+            complete: 3,
+            total: 3
+        }
+    );
+    assert!(progress.closure.events.is_complete());
+    assert!(progress.closure.definitions.is_complete());
+    assert_eq!(progress.target.theorems, progress.closure.theorems);
+    assert!(progress.is_green_island());
+}
+
+#[test]
+fn structured_completeness_fails_closed_on_an_unresolved_dependency() {
+    let mut s = session();
+    let report = run_book(&mut s, &root(), "books/linking").expect("book import");
+    let progress = report.completeness();
+
+    assert_eq!(progress.level, CompletenessLevel::Observed);
+    assert_eq!(progress.closure.unresolved_dependencies, 2);
+    assert!(!progress.closure.events.is_complete());
+    assert!(!progress.is_green_island());
+    assert_eq!(
+        report
+            .events
+            .iter()
+            .filter(|event| matches!(event.outcome, EventOutcome::UnresolvedDependency { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn structured_completeness_keeps_rejected_logic_in_the_denominator() {
+    let report = BookReport {
+        path: "target.lisp".into(),
+        dependency_interfaces: vec![],
+        sources: vec![],
+        includes: vec![],
+        events: vec![
+            EventRecord {
+                book: "target.lisp".into(),
+                kind: "defun".into(),
+                label: "bad-fn".into(),
+                outcome: EventOutcome::Rejected {
+                    reason: "unsupported".into(),
+                },
+                notes: vec![],
+            },
+            EventRecord {
+                book: "target.lisp".into(),
+                kind: "defthm".into(),
+                label: "bad-thm".into(),
+                outcome: EventOutcome::Rejected {
+                    reason: "unproved".into(),
+                },
+                notes: vec![],
+            },
+        ],
+    };
+    let progress = report.completeness();
+    assert_eq!(
+        progress.target.definitions,
+        CompletenessCount {
+            complete: 0,
+            total: 1
+        }
+    );
+    assert_eq!(
+        progress.target.theorems,
+        CompletenessCount {
+            complete: 0,
+            total: 1
+        }
+    );
+    assert!(!progress.is_green_island());
+}
+
+#[test]
+fn structured_completeness_never_greens_deferred_generated_logic() {
+    let report = BookReport {
+        path: "target.lisp".into(),
+        dependency_interfaces: vec![],
+        sources: vec![],
+        includes: vec![],
+        events: vec![EventRecord {
+            book: "target.lisp".into(),
+            kind: "fty::bitstruct-obligations".into(),
+            label: "flags".into(),
+            outcome: EventOutcome::DeferredLogical {
+                reason: "generated theorem family awaits replay".into(),
+            },
+            notes: vec![],
+        }],
+    };
+    let progress = report.completeness();
+    assert_eq!(progress.level, CompletenessLevel::Observed);
+    assert!(!progress.target.events.is_complete());
+    assert!(!progress.is_green_island());
+}
+
+#[test]
+fn theorem_neutral_include_interface_is_hash_bound_and_logical_only() {
+    let dependency = root().join("books/interface-dep.lisp");
+    let digest = sha256(&std::fs::read(&dependency).unwrap());
+    let interface = TheoremNeutralInterface::new(
+        digest,
+        TheoremNeutralCapability::TransparentDefsection,
+        "fixture target uses only transparent defsection",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", interface);
+    let mut s = session();
+    let report = run_book_with_config(&mut s, &config, "books/interface-target").unwrap();
+    let progress = report.completeness();
+
+    assert!(progress.is_logical_green_island(), "{report}");
+    assert!(!progress.is_green_island(), "{report}");
+    assert_eq!(progress.closure.dependency_interfaces, 1);
+    assert_eq!(
+        progress.source_closure,
+        SourceClosureStatus::Interfaced { verified: 1 }
+    );
+    assert_eq!(report.dependency_interfaces.len(), 1);
+    assert_eq!(report.includes.len(), 1);
+    assert_eq!(report.includes[0].status, IncludeStatus::Interface);
+    assert_eq!(report.sources.len(), 2);
+    assert_eq!(report.sources[1].role, SourceRole::Interface);
+    assert_eq!(report.sources[1].status, SourceStatus::Interface);
+    assert_eq!(report.sources[1].sha256, Some(digest));
+    assert!(matches!(
+        report.event("interface-dep").map(|event| &event.outcome),
+        Some(EventOutcome::DependencyInterface { .. })
+    ));
+    assert!(s.theorem("interface-target-theorem").is_some());
+}
+
+#[test]
+fn theorem_neutral_include_interface_hash_mismatch_fails_closed() {
+    let dependency = root().join("books/interface-dep.lisp");
+    let interface = TheoremNeutralInterface::new(
+        [0; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "deliberately forged fixture digest",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", interface);
+    let mut s = session();
+    let report = run_book_with_config(&mut s, &config, "books/interface-target").unwrap();
+    let progress = report.completeness();
+
+    assert!(!progress.is_logical_green_island());
+    assert!(!progress.is_green_island());
+    assert_eq!(progress.closure.unresolved_dependencies, 1);
+    assert!(report.dependency_interfaces.is_empty());
+    assert_eq!(report.includes[0].status, IncludeStatus::HashMismatch);
+    assert_eq!(report.sources[1].status, SourceStatus::HashMismatch);
+    assert_eq!(
+        report.sources[1].sha256,
+        Some(sha256(&std::fs::read(dependency).unwrap()))
+    );
+    assert!(matches!(
+        report.event("interface-dep").map(|event| &event.outcome),
+        Some(EventOutcome::UnresolvedDependency { reason })
+            if reason.contains("SHA-256 mismatch")
+    ));
+}
+
+#[test]
+fn conflicting_theorem_neutral_interfaces_are_rejected_before_loading() {
+    let first = TheoremNeutralInterface::new(
+        [1; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "first",
+    );
+    let second = TheoremNeutralInterface::new(
+        [2; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "second",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", first)
+        .with_theorem_neutral_interface("books/interface-dep.lisp", second);
+    let error = run_book_with_config(&mut session(), &config, "books/interface-target")
+        .expect_err("conflicting interface must fail before loading");
+    assert!(error.to_string().contains("conflicting theorem-neutral"));
+}
+
+#[test]
 fn certification_sidecar_establishes_the_initial_book_world() {
     let config = BookConfig::new(root()).inventory_only();
     let mut s = session();
     let report = run_book_with_config(&mut s, &config, "books/cert-prelude")
         .expect("certification prelude and source book load in order");
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| source.role)
+            .collect::<Vec<_>>(),
+        vec![SourceRole::Prelude, SourceRole::Target]
+    );
+    assert!(
+        report.includes.is_empty(),
+        "the sidecar is not a fake include"
+    );
 
     let prelude = report
         .event("*prelude-base*")
@@ -726,6 +1026,31 @@ fn certification_sidecar_establishes_the_initial_book_world() {
         report.manifest().unresolved.is_empty(),
         "the source defconst must see the sidecar world: {report}"
     );
+}
+
+#[test]
+fn local_generated_events_remain_local_in_the_manifest_stream() {
+    let mut s = session();
+    let report =
+        run_book(&mut s, &root(), "books/local-generated").expect("local generated book runs");
+
+    for name in ["local-generated-a", "local-generated-b"] {
+        let event = report.event(name).expect("generated theorem row");
+        assert!(
+            event.kind.starts_with("local "),
+            "generated local row lost scope: {event:?}"
+        );
+        assert_eq!(event.outcome, EventOutcome::LocalTransported);
+    }
+    let public = report.event("public-after-local").unwrap();
+    assert_eq!(public.outcome, EventOutcome::Transported);
+    assert!(!public.kind.starts_with("local "));
+
+    let mut progress = covalence_lisp::progress::CorpusProgress::new("fixture");
+    progress.record_report(&report);
+    let manifest = progress.to_manifest_tsv();
+    assert!(manifest.contains("\tlocal\tlocal defthm\tlocal-generated-a\tlocal-transported\t"));
+    assert!(manifest.contains("\tpublic\tdefthm\tpublic-after-local\ttransported\t"));
 }
 
 #[test]
@@ -1184,6 +1509,12 @@ fn event_wrappers_preserve_obligations_and_assertions_fail_closed() {
             report.events
         );
     }
+    assert_eq!(
+        report.event("local-supporter").unwrap().outcome,
+        EventOutcome::LocalTransported,
+        "a checked local theorem must remain distinguishable from an admitted or skipped event"
+    );
+    check_transported(&s, &report);
     let more_returns = report
         .events
         .iter()
@@ -1306,6 +1637,7 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         report.tally(),
         Tally {
             transported: 4,
+            local_transported: 0,
             admitted: 0,
             skipped: 5,
             rejected: 0,
@@ -1329,6 +1661,48 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         report.event("linked-system-leaf").unwrap().book,
         ":system/arithmetic/leaf.acl2"
     );
+    assert_eq!(report.sources.len(), 5);
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| (
+                source.identity.root.as_deref(),
+                source.identity.path.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (None, "books/linking.lisp"),
+            (None, "books/linked/relative.lsp"),
+            (Some("system"), "arithmetic/top.lisp"),
+            (Some("system"), "arithmetic/leaf.acl2"),
+            (None, "books/linked/explicit.acl2"),
+        ]
+    );
+    for source in &report.sources {
+        let source_root = source
+            .identity
+            .root
+            .as_deref()
+            .map(|_| root().join("system-books"))
+            .unwrap_or_else(root);
+        assert_eq!(
+            source.sha256,
+            Some(sha256(
+                &std::fs::read(source_root.join(&source.identity.path)).unwrap()
+            ))
+        );
+    }
+    let mut include_ordinals: Vec<_> = report
+        .includes
+        .iter()
+        .map(|include| include.encounter_ordinal)
+        .collect();
+    include_ordinals.sort_unstable();
+    assert_eq!(include_ordinals, (0..5).collect::<Vec<_>>());
+    assert!(report.includes.iter().any(|include| {
+        include.status == IncludeStatus::Unconfigured && include.root.as_deref() == Some("missing")
+    }));
 
     let missing = report
         .events
@@ -1337,7 +1711,7 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
             event.kind == "include-book"
                 && matches!(
                     &event.outcome,
-                    EventOutcome::Skipped { reason } if reason.contains(":missing")
+                    EventOutcome::UnresolvedDependency { reason } if reason.contains(":missing")
                 )
         })
         .expect("unconfigured :dir is recorded");
@@ -1361,6 +1735,35 @@ fn configurable_extensions_and_dir_roots_link_recursively() {
         unresolved_includes,
         vec!["arithmetic/top"],
         "missing includes are unresolved, while linked/already-linked includes are not"
+    );
+}
+
+#[test]
+fn include_cycle_has_unique_preorder_edges_and_idempotent_back_edge() {
+    let mut s = session();
+    let config = BookConfig::new(root()).inventory_only();
+    let report = run_book_with_config(&mut s, &config, "books/include-cycle-a")
+        .expect("include cycle terminates");
+
+    assert_eq!(report.sources.len(), 2);
+    assert_eq!(
+        report
+            .sources
+            .iter()
+            .map(|source| source.identity.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["books/include-cycle-a.lisp", "books/include-cycle-b.lisp"]
+    );
+    let mut by_encounter: Vec<_> = report.includes.iter().collect();
+    by_encounter.sort_by_key(|include| include.encounter_ordinal);
+    assert_eq!(by_encounter.len(), 2);
+    assert_eq!(by_encounter[0].encounter_ordinal, 0);
+    assert_eq!(by_encounter[0].status, IncludeStatus::Replayed);
+    assert_eq!(by_encounter[1].encounter_ordinal, 1);
+    assert_eq!(by_encounter[1].status, IncludeStatus::Idempotent);
+    assert_eq!(
+        by_encounter[1].resolved.as_ref(),
+        Some(&report.sources[0].identity)
     );
 }
 
@@ -1390,6 +1793,7 @@ fn relative_parent_include_may_cross_project_root_inside_system_root() {
         report.tally(),
         Tally {
             transported: 2,
+            local_transported: 0,
             admitted: 0,
             skipped: 2,
             rejected: 0,
@@ -1434,6 +1838,7 @@ fn common_book_containers_and_disabled_aliases_are_transparent() {
         report.tally(),
         Tally {
             transported: 1,
+            local_transported: 0,
             admitted: 2,
             skipped: 2,
             rejected: 0,
@@ -1476,6 +1881,291 @@ fn official_std_lists_append_imports_with_system_linking() {
             .any(|event| event.book.starts_with(":system/")),
         "expected at least one :dir :system dependency:\n{report}"
     );
+}
+
+/// Pinned target-local APPEND frontier. This deliberately does not gate the
+/// recursive `list-fix`/`abstract`/XDOC closure: it measures the first payoff
+/// from checked built-in APPEND without calling the whole book a green island.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_lists_append_transports_builtin_append_frontier() {
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    assert_eq!(
+        sha256(&std::fs::read(books.join("std/lists/append.lisp")).unwrap()),
+        sha256_bytes("240dde02cc141e1d55e3dd6845d1995777a3d6b782e0cf9d6f24abfdcef377da"),
+        "pinned std/lists/append target changed"
+    );
+    let mut s = session();
+    let report = run_book_with_config(
+        &mut s,
+        &BookConfig::new(&books).with_dir_root("system", &books),
+        "std/lists/append",
+    )
+    .expect("official std/lists/append book parses and links");
+
+    let target_sequence: Vec<_> = report
+        .events
+        .iter()
+        .filter(|event| event.book == report.path)
+        .map(|event| (event.kind.as_str(), event.label.as_str()))
+        .collect();
+    assert_eq!(
+        target_sequence,
+        [
+            ("in-package", "\"ACL2\""),
+            ("include-book", "list-fix"),
+            ("local include-book", "std/basic/inductions"),
+            ("local defthm", "len-when-consp"),
+            ("defthm", "append-when-not-consp"),
+            ("defthm", "append-of-cons"),
+            ("defthm", "true-listp-of-append"),
+            ("defthm", "consp-of-append"),
+            ("defthm", "append-under-iff"),
+            ("defthm", "len-of-append"),
+            ("defthm", "equal-when-append-same"),
+            ("local defthm", "append-nonempty-list"),
+            ("defthm", "equal-of-append-and-append-same-arg2"),
+            ("defthm", "append-of-nil"),
+            ("in-theory", "?"),
+            ("defthm", "list-fix-of-append"),
+            ("defthm", "car-of-append"),
+            ("defthmd", "car-of-append-when-consp"),
+            ("theory-invariant", "?"),
+            ("defthmd", "cdr-of-append"),
+            ("defthm", "cdr-of-append-when-consp"),
+            ("theory-invariant", "?"),
+            ("defthm", "associativity-of-append"),
+            (
+                "defcong",
+                "element-list-equiv-implies-element-list-equiv-append-1",
+            ),
+            ("table", "listfix-rules"),
+            (
+                "defcong",
+                "element-list-equiv-implies-element-list-equiv-append-2",
+            ),
+            ("table", "listfix-rules"),
+            ("defthm", "."),
+            ("table", "listp-rules"),
+            ("progn", "progn"),
+            ("def-generic-rule", "(def-generic-rule listp-rules . …)"),
+            (
+                "def-listp-rule",
+                "(def-listp-rule element-list-p-of-append-true-list (equal (element-list-p (append a b)) (and (element-list-p (list-fix a)) (element-list-p b))) …)",
+            ),
+            ("defsection", "std/lists/append"),
+        ],
+        "pinned target normalization changed"
+    );
+
+    for label in [
+        "append-when-not-consp",
+        "append-of-cons",
+        "consp-of-append",
+        "equal-when-append-same",
+        "append-nonempty-list",
+        "car-of-append",
+        "car-of-append-when-consp",
+        "cdr-of-append",
+        "cdr-of-append-when-consp",
+        "associativity-of-append",
+    ] {
+        let event = report
+            .events
+            .iter()
+            .find(|event| event.book == report.path && event.label == label)
+            .unwrap_or_else(|| panic!("missing pinned target event `{label}`"));
+        let expected = if label == "append-nonempty-list" {
+            EventOutcome::LocalTransported
+        } else {
+            EventOutcome::Transported
+        };
+        assert!(
+            event.outcome == expected,
+            "`{label}` did not cross the checked APPEND frontier:\n{event:?}"
+        );
+    }
+    let target_theorems = report.completeness().target.theorems;
+    assert_eq!(target_theorems.total, 18);
+    assert!(
+        target_theorems.complete >= 9,
+        "at least nine public theorems belong to the APPEND-only frontier"
+    );
+}
+
+/// First checked upstream logical-export gate.  The target exports are kept
+/// separate from the recursively included XDOC source closure: this test
+/// requires all four official fixer theorems to become closed NativeHol
+/// theorems, while the structured report continues to expose XDOC blockers.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_basic_fixers_transport_all_logical_exports() {
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    let constructors_sha =
+        sha256_bytes("c58a403e94ab4c86c0dfa0da2477b29189cfc49bb3b1a0ca2a6949a89a38b793");
+    assert_eq!(
+        sha256(&std::fs::read(books.join("xdoc/constructors.lisp")).unwrap()),
+        constructors_sha,
+        "pinned XDOC interface source changed"
+    );
+    let config = BookConfig::new(&books)
+        .with_dir_root("system", &books)
+        .with_dir_theorem_neutral_interface(
+            "system",
+            "xdoc/constructors.lisp",
+            TheoremNeutralInterface::new(
+                constructors_sha,
+                TheoremNeutralCapability::TransparentDefsection,
+                "target uses only built-in transparent defsection event semantics",
+            ),
+        );
+
+    for (book, source_sha, theorem_names) in [
+        (
+            "std/basic/nfix",
+            "79e853d1e85aa8539a57b50a50586bca53d094c73f40cfae3450d11427524310",
+            ["nfix-when-natp", "natp-of-nfix"],
+        ),
+        (
+            "std/basic/ifix",
+            "f9614f59dfd1857b45f1d5739bd81df56f5bd0f1b2ce03937379daed2a69fb49",
+            ["ifix-when-integerp", "integerp-of-ifix"],
+        ),
+    ] {
+        assert_eq!(
+            sha256(&std::fs::read(books.join(format!("{book}.lisp"))).unwrap()),
+            sha256_bytes(source_sha),
+            "pinned target source changed"
+        );
+        let mut s = session();
+        let report =
+            run_book_with_config(&mut s, &config, book).expect("official fixer book imports");
+        let progress = report.completeness();
+
+        assert_eq!(
+            progress.target.theorems,
+            CompletenessCount {
+                complete: 2,
+                total: 2
+            },
+            "target export gate failed:\n{report}"
+        );
+        for name in theorem_names {
+            assert_eq!(
+                report.event(name).map(|event| &event.outcome),
+                Some(&EventOutcome::Transported),
+                "`{name}` was not transported:\n{report}"
+            );
+            let theorem = s
+                .theorem(name)
+                .unwrap_or_else(|| panic!("missing stored theorem `{name}`"));
+            assert!(
+                theorem.hyps().is_empty(),
+                "`{name}` must be a closed NativeHol theorem"
+            );
+        }
+
+        assert!(
+            progress.is_logical_green_island(),
+            "content-verified logical boundary must be green:\n{report}"
+        );
+        assert_eq!(progress.closure.dependency_interfaces, 1);
+        assert_eq!(
+            progress.source_closure,
+            SourceClosureStatus::Interfaced { verified: 1 }
+        );
+        assert_eq!(report.dependency_interfaces.len(), 1);
+        assert_eq!(
+            report.dependency_interfaces[0].capability,
+            TheoremNeutralCapability::TransparentDefsection
+        );
+        assert!(
+            !progress.is_green_island(),
+            "the recursive XDOC source closure is not complete yet"
+        );
+    }
+}
+
+/// First strict upstream source-green candidate: this official book has no
+/// includes, so success requires all five exported theorems and every source
+/// event without any dependency interface.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_lists_acl2_count_is_source_green() {
+    const REVISION: &str = "2dbf2b63bb9a27070c8573d72c16c04a4809c8d1";
+    const BOOK: &str = "std/lists/acl2-count.lisp";
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    let source = books.join(BOOK);
+    let source_sha = sha256(&std::fs::read(&source).unwrap());
+    let pinned_sha =
+        sha256_bytes("952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1");
+    assert_eq!(source_sha, pinned_sha, "pinned ACL2-COUNT book changed");
+    let mut s = session();
+    let report = run_book_with_config(
+        &mut s,
+        &BookConfig::new(&books).with_dir_root("system", &books),
+        "std/lists/acl2-count",
+    )
+    .expect("official ACL2-COUNT book imports");
+    let progress = report.completeness();
+
+    assert_eq!(
+        progress.target.theorems,
+        CompletenessCount {
+            complete: 5,
+            total: 5
+        },
+        "five-theorem source-green gate failed:\n{report}"
+    );
+    assert_eq!(progress.source_closure, SourceClosureStatus::Recursive);
+    assert!(progress.is_green_island(), "{report}");
+
+    // This exact source contains no macros or generated events, so its six
+    // top-level forms are also the independently inspected normalized ACL2
+    // denominator. Observed source-green status alone is not enough: require
+    // exact revision, bytes, ordering, heads, labels, and public scope.
+    let event = |kind: &str, label: &str| NormalizedEventIdentity {
+        book: BOOK.into(),
+        kind: kind.into(),
+        label: label.into(),
+        scope: NormalizedEventScope::Public,
+    };
+    let denominator = PinnedNormalizedDenominator::new(
+        REVISION,
+        BOOK,
+        pinned_sha,
+        vec![
+            event("in-package", "\"ACL2\""),
+            event("defthmd", "acl2-count-of-car"),
+            event("defthmd", "acl2-count-of-cdr"),
+            event("defthm", "acl2-count-of-sum"),
+            event("defthm", "acl2-count-of-consp-positive"),
+            event("defthm", "acl2-count-of-cons-greater"),
+        ],
+    );
+    let upstream = denominator
+        .compare(&report, REVISION, source_sha, ProgressMode::Replay)
+        .expect("ACL2-COUNT must match its authoritative normalized denominator");
+    assert!(upstream.is_upstream_complete());
+
+    for name in [
+        "acl2-count-of-car",
+        "acl2-count-of-cdr",
+        "acl2-count-of-sum",
+        "acl2-count-of-consp-positive",
+        "acl2-count-of-cons-greater",
+    ] {
+        let theorem = s
+            .theorem(name)
+            .unwrap_or_else(|| panic!("missing stored theorem `{name}`"));
+        assert!(theorem.hyps().is_empty(), "`{name}` must be closed");
+    }
 }
 
 #[test]

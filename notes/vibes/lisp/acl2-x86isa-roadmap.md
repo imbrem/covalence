@@ -30,6 +30,12 @@ Conversely, `include-raw`, trust tags, execution attachments, XDOC, guards, and
 tables are not theorem axioms. They need faithful world/evaluation handling but
 must not be counted as transported theorems.
 
+The staged, measurable route into this north star is maintained in
+[`acl2-green-islands.md`](./acl2-green-islands.md).  Its first checked upstream
+island is `std/basic/{nfix,ifix}`; the next two (`acl2-count`, then `append`)
+exercise the termination and induction mechanisms needed by x86 dependencies
+without making the whole x86 tree the daily completeness denominator.
+
 There is no honest short cut from an ACL2 certified book to a Covalence
 theorem. ACL2 certificates and `@useless-runes` files do not contain
 foundational proof objects. Running ACL2 may be used as an **untrusted event

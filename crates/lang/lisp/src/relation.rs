@@ -42,22 +42,28 @@
 //! `notes/vibes/lisp/relational-recursion.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::mk_blob;
+use covalence_init::init::eq::{beta_nf_concl, beta_nf_expand};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
-use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
+use covalence_init::metalogic::binary::{
+    Premise, RuleSet2, derivable2, derive_mixed, rule_induction2,
+};
 use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
-    CheckedTrace, CoreExpr, Datum, DeterministicStep, MachineControl, MayEval, MayEvalReplay,
-    MayEvalTransport, StepRelation, TerminalValue, TraceReplay, TraceSoundness,
+    CheckedTrace, CoreExpr, Datum, DeterministicStep, EvaluationDeterminacy, MachineControl,
+    MayEval, MayEvalReplay, MayEvalTransport, StepRelation, TerminalValue, TraceReplay,
+    TraceSoundness,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 use std::sync::Arc;
 
+use covalence_core::subst;
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
-use crate::carrier::{CarvedCarrier, exact_datum_carved};
+use crate::carrier::{Acl2Carrier, CarvedCarrier, exact_datum_carved};
 use crate::frontend::{
     CoreAtom, FrontendConfiguration, FrontendExpr, FrontendValue, Primitive, SurfaceDialect,
 };
@@ -118,7 +124,7 @@ pub struct LispRel {
     cs: &'static CarvedSExpr,
     /// The shared abstract-sexpr adapter over `cs` (structural build/observe
     /// helpers — `as_scons`/`as_atom`/`is_snil`/`data` delegate here).
-    carrier: CarvedCarrier,
+    carrier: RelationCarrier,
     /// The sexpr `t` atom (`atom "t"`) — the truthy value predicates return.
     t: Term,
     /// The empty-list constructor — Lisp's canonical false / `nil` value.
@@ -143,6 +149,60 @@ pub struct LispRel {
     /// Boxed so the two variants share one field; drives both the extra `Step`
     /// clauses and the driver's integer-redex reduction.
     int_be: Option<Box<dyn IntBackend>>,
+}
+
+#[derive(Clone)]
+enum RelationCarrier {
+    Carved(CarvedCarrier),
+    Acl2(Acl2Carrier),
+}
+
+impl RelationCarrier {
+    fn atom(&self, payload: PayloadLit<'_>) -> Result<Term, HolError> {
+        match self {
+            Self::Carved(carrier) => carrier.atom(payload),
+            Self::Acl2(carrier) => carrier.atom(payload),
+        }
+    }
+
+    fn quote(&self, datum: &SExpr) -> Result<Term, HolError> {
+        match self {
+            Self::Carved(carrier) => carrier.quote(datum),
+            Self::Acl2(carrier) => carrier.quote(datum),
+        }
+    }
+
+    fn as_cons(&self, value: &Term) -> Option<(Term, Term)> {
+        match self {
+            Self::Carved(carrier) => carrier.as_cons(value),
+            Self::Acl2(carrier) => carrier.as_cons(value),
+        }
+    }
+
+    fn as_atom(&self, value: &Term) -> Option<PayloadOwned> {
+        match self {
+            Self::Carved(carrier) => carrier.as_atom(value),
+            Self::Acl2(carrier) => carrier.as_atom(value),
+        }
+    }
+
+    fn as_atom_term(&self, value: &Term) -> Option<Term> {
+        match self {
+            Self::Carved(carrier) => carrier.as_atom_term(value),
+            Self::Acl2(carrier) => carrier.as_aatom_term(value),
+        }
+    }
+
+    fn is_nil(&self, value: &Term) -> bool {
+        match self {
+            Self::Carved(carrier) => carrier.is_nil(value),
+            Self::Acl2(carrier) => carrier.is_nil(value),
+        }
+    }
+
+    fn is_acl2(&self) -> bool {
+        matches!(self, Self::Acl2(_))
+    }
 }
 
 /// A stable, sexpr-valued operator head named `name` with `arity` sexpr inputs.
@@ -187,17 +247,17 @@ impl LispRel {
         };
         let t = atom_c("t")?;
         let nil = cs.snil.clone();
-        let (carrier, int_be): (CarvedCarrier, Option<Box<dyn IntBackend>>) = match dialect {
-            Dialect::Sector => (CarvedCarrier::over(cs), None),
+        let (carrier, int_be): (RelationCarrier, Option<Box<dyn IntBackend>>) = match dialect {
+            Dialect::Sector => (RelationCarrier::Carved(CarvedCarrier::over(cs)), None),
             Dialect::SectorInt(IntFlavour::Int) => (
-                CarvedCarrier::over(cs),
+                RelationCarrier::Carved(CarvedCarrier::over(cs)),
                 Some(
                     Box::new(IntVariant::new(tau.clone(), t.clone(), nil.clone()))
                         as Box<dyn IntBackend>,
                 ),
             ),
             Dialect::SectorInt(IntFlavour::Nat) => (
-                CarvedCarrier::over(cs),
+                RelationCarrier::Carved(CarvedCarrier::over(cs)),
                 Some(
                     Box::new(NatVariant::new(tau.clone(), t.clone(), nil.clone()))
                         as Box<dyn IntBackend>,
@@ -211,7 +271,10 @@ impl LispRel {
                     nil.clone(),
                 );
                 (
-                    CarvedCarrier::int_or_symbol(cs, Arc::new(backend.clone()))?,
+                    RelationCarrier::Carved(CarvedCarrier::int_or_symbol(
+                        cs,
+                        Arc::new(backend.clone()),
+                    )?),
                     Some(Box::new(backend) as Box<dyn IntBackend>),
                 )
             }
@@ -233,6 +296,33 @@ impl LispRel {
         })
     }
 
+    /// Build the common relational Lisp semantics over ACL2's actual object
+    /// carrier rather than an isomorphic, separately carved datum type.
+    ///
+    /// This is the representation seam needed to compare checked finite
+    /// relational executions directly with conservative ACL2 definitions.
+    /// It does not by itself prove universal execution adequacy.
+    pub fn over_acl2_carrier() -> Result<Self, HolError> {
+        let carrier = Acl2Carrier::new()?;
+        let cs = carrier.theory().cs;
+        let tau = &cs.tau;
+        Ok(Self {
+            cs,
+            t: carrier.t(),
+            nil: carrier.nil(),
+            carrier: RelationCarrier::Acl2(carrier),
+            atom_p: op_head("lisp.rel.acl2.atom?", 1, tau),
+            consp: op_head("lisp.rel.acl2.consp", 1, tau),
+            null_p: op_head("lisp.rel.acl2.null?", 1, tau),
+            integer_p: op_head("lisp.rel.acl2.integer?", 1, tau),
+            eq_p: op_head("lisp.rel.acl2.eq?", 2, tau),
+            cond: op_head("lisp.rel.acl2.cond", 1, tau),
+            append: op_head("lisp.rel.acl2.append", 2, tau),
+            dialect: Dialect::ExactIntSymbol,
+            int_be: None,
+        })
+    }
+
     /// The active dialect.
     pub fn dialect(&self) -> Dialect {
         self.dialect
@@ -246,6 +336,9 @@ impl LispRel {
     /// Build the sexpr value `(int n)` via the active backend. Errors in
     /// `sector` (no integer backend) and — in the `nat` flavour — for `n < 0`.
     pub fn int_lit(&self, n: &Int) -> Result<Term, HolError> {
+        if self.carrier.is_acl2() {
+            return self.carrier.atom(PayloadLit::Int(n));
+        }
         self.int_be
             .as_ref()
             .ok_or_else(|| HolError::Theory("integer literals need the sector+int dialect".into()))?
@@ -841,6 +934,44 @@ impl LispRel {
         .map_err(kernel_err)
     }
 
+    /// `⊢ Step (append nil y) y`.
+    pub fn step_append_nil(&self, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(20, &[y.clone()])
+    }
+
+    /// `⊢ Step (append (atom payload) y) y`.
+    pub fn step_append_atom(&self, payload: &Term, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(21, &[payload.clone(), y.clone()])
+    }
+
+    /// `⊢ Step (append (scons h t) y) (scons h (append t y))`.
+    pub fn step_append_cons(&self, head: &Term, tail: &Term, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(22, &[head.clone(), tail.clone(), y.clone()])
+    }
+
+    /// Lift `⊢ Step from to` through an `scons head` tail context.
+    pub fn step_scons_tail(
+        &self,
+        head: &Term,
+        from: &Term,
+        to: &Term,
+        step: Thm,
+    ) -> Result<Thm, HolError> {
+        if step.concl() != &self.step_prop(from, to)? {
+            return Err(HolError::Stuck(
+                "scons step congruence received a theorem for a different step".into(),
+            ));
+        }
+        derive_mixed(
+            &self.step_rule_set(),
+            26,
+            self.step_n_clauses()?,
+            &[head.clone(), from.clone(), to.clone()],
+            vec![Premise::Derivation(step)],
+        )
+        .map_err(kernel_err)
+    }
+
     /// `Step from to` (the proposition).
     pub fn step_prop(&self, from: &Term, to: &Term) -> Result<Term, HolError> {
         derivable2(&self.step_rule_set(), from, to).map_err(kernel_err)
@@ -901,6 +1032,140 @@ impl LispRel {
             vec![Premise::Side(step), Premise::Derivation(rest)],
         )
         .map_err(kernel_err)
+    }
+
+    /// Lift a checked multi-step reduction through the tail of a structural
+    /// cons value.
+    ///
+    /// Given `⊢ Reduces from to`, derive
+    /// `⊢ Reduces (scons head from) (scons head to)` by induction over the
+    /// `Reduces` derivation. This is a reusable semantic congruence theorem,
+    /// not host rewriting: the step case uses the relation's checked scons
+    /// tail-congruence clause.
+    pub fn reduces_scons_tail(
+        &self,
+        head: &Term,
+        from: &Term,
+        to: &Term,
+        reduction: Thm,
+    ) -> Result<Thm, HolError> {
+        let tau = self.tau();
+        let n = Term::free("__scons_red_from", tau.clone());
+        let w = Term::free("__scons_red_to", tau.clone());
+        let body = self.reduces_prop(
+            &self.scons(head.clone(), n.clone())?,
+            &self.scons(head.clone(), w.clone())?,
+        )?;
+        let inner = Term::abs(tau.clone(), subst::close(&body, "__scons_red_to"));
+        let pred = Term::abs(tau.clone(), subst::close(&inner, "__scons_red_from"));
+
+        let cons_n = self.scons(head.clone(), n.clone())?;
+        let refl = self.reduces_refl(&cons_n)?;
+        let refl = beta_nf_expand(
+            pred.clone()
+                .apply(n.clone())
+                .map_err(kernel_err)?
+                .apply(n.clone())
+                .map_err(kernel_err)?,
+            refl,
+        )
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_from", tau.clone())
+        .map_err(kernel_err)?;
+
+        let a = Term::free("__scons_red_a", tau.clone());
+        let b = Term::free("__scons_red_b", tau.clone());
+        let c = Term::free("__scons_red_c", tau.clone());
+        let step_ab = self.step_prop(&a, &b)?;
+        let pred_bc = pred
+            .clone()
+            .apply(b.clone())
+            .map_err(kernel_err)?
+            .apply(c.clone())
+            .map_err(kernel_err)?;
+        let step_assumed = Thm::assume(step_ab.clone()).map_err(kernel_err)?;
+        let tail_step = self.step_scons_tail(head, &a, &b, step_assumed)?;
+        let pred_reduction =
+            beta_nf_concl(Thm::assume(pred_bc.clone()).map_err(kernel_err)?).map_err(kernel_err)?;
+        let cons_a = self.scons(head.clone(), a.clone())?;
+        let cons_b = self.scons(head.clone(), b.clone())?;
+        let cons_c = self.scons(head.clone(), c.clone())?;
+        let lifted = self.reduces_step(&cons_a, &cons_b, &cons_c, tail_step, pred_reduction)?;
+        let lifted = beta_nf_expand(
+            pred.clone()
+                .apply(a.clone())
+                .map_err(kernel_err)?
+                .apply(c.clone())
+                .map_err(kernel_err)?,
+            lifted,
+        )
+        .map_err(kernel_err)?
+        .imp_intro(&pred_bc)
+        .map_err(kernel_err)?
+        .imp_intro(&step_ab)
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_c", tau.clone())
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_b", tau.clone())
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_a", tau.clone())
+        .map_err(kernel_err)?;
+
+        let derivation = self.reduces_prop(&n, &w)?;
+        let congruence = rule_induction2(
+            &pred,
+            vec![refl, lifted],
+            &derivation,
+            "__scons_red_from",
+            tau.clone(),
+            "__scons_red_to",
+            tau,
+        )
+        .map_err(kernel_err)?;
+        if reduction.concl() != &self.reduces_prop(from, to)? {
+            return Err(HolError::Stuck(
+                "scons congruence received a theorem for a different reduction".into(),
+            ));
+        }
+        beta_nf_concl(
+            congruence
+                .all_elim(from.clone())
+                .map_err(kernel_err)?
+                .all_elim(to.clone())
+                .map_err(kernel_err)?
+                .imp_elim(reduction)
+                .map_err(kernel_err)?,
+        )
+        .map_err(kernel_err)
+    }
+
+    /// Change only the terminal target of a checked reduction using a checked
+    /// equality `old = new`.
+    pub fn retarget_reduces(
+        &self,
+        initial: &Term,
+        old: &Term,
+        new: &Term,
+        reduction: Thm,
+        equality: Thm,
+    ) -> Result<Thm, HolError> {
+        if reduction.concl() != &self.reduces_prop(initial, old)? {
+            return Err(HolError::Stuck(
+                "reduction retargeting received a theorem for a different endpoint".into(),
+            ));
+        }
+        if equality.concl().as_eq() != Some((old, new)) {
+            return Err(HolError::Stuck(
+                "reduction retargeting received an equality with different endpoints".into(),
+            ));
+        }
+        let value = Term::free("__retarget_reduces_value", self.tau());
+        let body = self.reduces_prop(initial, &value)?;
+        let predicate = Term::abs(self.tau(), subst::close(&body, "__retarget_reduces_value"));
+        beta_nf_concl(equality.cong_arg(predicate).map_err(kernel_err)?)
+            .map_err(kernel_err)?
+            .eq_mp(reduction)
+            .map_err(kernel_err)
     }
 
     // ------------------------------------------------------------------
@@ -1681,7 +1946,7 @@ impl LispRel {
         {
             return true;
         }
-        if self.is_snil(t) || self.as_atom(t).is_some() {
+        if self.is_snil(t) || self.carrier.as_atom(t).is_some() {
             return true;
         }
         if let Some((h, tl)) = self.as_scons(t) {
@@ -1787,6 +2052,19 @@ impl LispRel {
     }
 }
 
+/// Checked pointwise evidence that one relational Lisp input reaches one
+/// terminal value.
+///
+/// The reduction theorem is authoritative kernel evidence. `initial` and
+/// `value` are retained so determinacy replay can fail closed on evidence from
+/// different executions without inspecting theorem pretty-printing.
+#[derive(Clone)]
+pub struct LispMayEvalEvidence {
+    pub initial: Term,
+    pub value: Term,
+    pub reduction: Thm,
+}
+
 impl StepRelation for LispRel {
     type Configuration = Term;
     type Error = HolError;
@@ -1813,13 +2091,6 @@ impl TerminalValue for LispRel {
     }
 }
 
-/// A kernel theorem for one finite evaluation in the HOL Lisp relation.
-#[derive(Clone, Debug)]
-pub struct HolMayEvalEvidence {
-    pub value: Term,
-    pub reduces: Thm,
-}
-
 impl TraceReplay<LispRel> for LispRel {
     type Evidence = Thm;
     type Error = HolError;
@@ -1843,16 +2114,8 @@ impl TraceReplay<LispRel> for LispRel {
     }
 }
 
-impl TraceSoundness<LispRel> for LispRel {
-    type Theorem = Thm;
-
-    fn trace_implies_execution(&self, evidence: &Thm) -> Result<Thm, HolError> {
-        Ok(evidence.clone())
-    }
-}
-
 impl MayEvalReplay<LispRel> for LispRel {
-    type EvaluationEvidence = HolMayEvalEvidence;
+    type EvaluationEvidence = LispMayEvalEvidence;
 
     fn replay_may_eval(
         &self,
@@ -1860,15 +2123,54 @@ impl MayEvalReplay<LispRel> for LispRel {
         evaluation: &MayEval<Term, Term>,
         trace_evidence: &Thm,
     ) -> Result<Self::EvaluationEvidence, HolError> {
-        if evaluation.trace.end() != &evaluation.value || !self.is_value(&evaluation.value) {
+        let initial = evaluation.trace.start().clone();
+        let value = evaluation.value.clone();
+        if evaluation.trace.end() != &value || !self.is_value(&value) {
             return Err(HolError::Stuck(
-                "HOL Lisp MayEval witness names a nonterminal or mismatched value".into(),
+                "MayEval evidence does not end at the claimed Lisp value".into(),
             ));
         }
-        Ok(HolMayEvalEvidence {
-            value: evaluation.value.clone(),
-            reduces: trace_evidence.clone(),
+        let expected = self.reduces_prop(&initial, &value)?;
+        if !trace_evidence.hyps().is_empty() || trace_evidence.concl() != &expected {
+            return Err(HolError::Stuck(
+                "MayEval trace theorem does not prove the claimed closed reduction".into(),
+            ));
+        }
+        Ok(LispMayEvalEvidence {
+            initial,
+            value,
+            reduction: trace_evidence.clone(),
         })
+    }
+}
+
+impl EvaluationDeterminacy<LispRel> for LispRel {
+    type Theorem = Thm;
+
+    fn results_equal(
+        &self,
+        left: &LispMayEvalEvidence,
+        right: &LispMayEvalEvidence,
+    ) -> Result<Thm, HolError> {
+        if left.initial != right.initial {
+            return Err(HolError::Stuck(
+                "cannot compare evaluation results from different initial configurations".into(),
+            ));
+        }
+        if left.value != right.value {
+            return Err(HolError::Stuck(
+                "checked deterministic executions produced distinct values".into(),
+            ));
+        }
+        Thm::refl(left.value.clone()).map_err(kernel_err)
+    }
+}
+
+impl TraceSoundness<LispRel> for LispRel {
+    type Theorem = Thm;
+
+    fn trace_implies_execution(&self, evidence: &Thm) -> Result<Thm, HolError> {
+        Ok(evidence.clone())
     }
 }
 
@@ -1968,7 +2270,10 @@ fn to_core(e: HolError) -> covalence_core::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::{MayEvalTransport, TraceReplay, execute};
+    use covalence_kernel_lisp::{
+        Evaluation, EvaluationDeterminacy, MayEvalReplay, MayEvalTransport, TraceReplay, evaluate,
+        execute,
+    };
 
     use crate::frontend::{Frontend, HostSession};
 
@@ -2009,7 +2314,7 @@ mod tests {
             .replay_may_eval(&r, &evaluation, &theorem)
             .expect("terminal HOL replay");
         assert_eq!(evidence.value, head);
-        assert_eq!(evidence.reduces.concl(), theorem.concl());
+        assert_eq!(evidence.reduction.concl(), theorem.concl());
     }
 
     #[test]
@@ -2039,6 +2344,46 @@ mod tests {
             relation.transport_may_eval(&forged).is_err(),
             "transport must reject a source witness naming the wrong result"
         );
+    }
+
+    #[test]
+    fn acl2_carrier_replays_may_eval_and_rejects_forged_results() {
+        let r = LispRel::over_acl2_carrier().unwrap();
+        let a = r.sym("A");
+        let b = r.sym("B");
+        let c = r.sym("C");
+        let left = r
+            .scons(a.clone(), r.scons(b.clone(), r.nil()).unwrap())
+            .unwrap();
+        let right = r.scons(c.clone(), r.nil()).unwrap();
+        let input = r.append_of(left, right).unwrap();
+        let result = evaluate(&r, input, 16).unwrap();
+        let Evaluation::Value(evaluation) = result else {
+            panic!("ACL2 APPEND reaches a value: {result:?}")
+        };
+        let trace = r.replay(&r, &evaluation.trace).unwrap();
+        let evidence = r.replay_may_eval(&r, &evaluation, &trace).unwrap();
+        assert!(evidence.reduction.hyps().is_empty());
+        assert_eq!(
+            evidence.reduction.concl(),
+            &r.reduces_prop(&evidence.initial, &evidence.value).unwrap()
+        );
+        let equal = r.results_equal(&evidence, &evidence).unwrap();
+        assert!(equal.hyps().is_empty());
+        assert_eq!(
+            equal.concl().as_eq().unwrap(),
+            (&evidence.value, &evidence.value)
+        );
+
+        let forged = MayEval {
+            trace: evaluation.trace,
+            value: r.nil(),
+        };
+        assert!(r.replay_may_eval(&r, &forged, &trace).is_err());
+
+        let mut other_input = evidence.clone();
+        other_input.initial = r.nil();
+        assert!(r.results_equal(&evidence, &other_input).is_err());
     }
 
     /// A multi-step nested reduction:

@@ -29,6 +29,7 @@
     "build:graph": "bun scripts/build.mjs --list",
     "dev:web": "bun run --filter covalence-web dev",
     "dev:map": "bun run notes && bun run --filter covalence-map dev --open /",
+    "dev:history": "bun run notes && bun run --filter covalence-map dev --open /?view=history",
     "build:map": "bun run notes && bun run --filter covalence-map build",
     "serve": "bun scripts/build.mjs native && bun scripts/dev-serve.mjs",
     "serve:release": "bun scripts/build.mjs native-release && bun scripts/dev-serve.mjs --release",

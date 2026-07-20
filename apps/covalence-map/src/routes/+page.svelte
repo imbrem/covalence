@@ -2,7 +2,7 @@
 	import { KnowledgeGraphView } from 'covalence-ui';
 
 	type Kind = 'task' | 'todo' | 'term' | 'note' | 'file' | 'api' | 'implementation';
-	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms' | 'source' | 'apis';
+	type Mode = 'tasks' | 'neighborhood' | 'history' | 'notes' | 'terms' | 'source' | 'apis';
 	type MapNode = {
 		id: string;
 		kind: Kind;
@@ -45,7 +45,7 @@
 					.filter((node) =>
 						mode === 'tasks'
 							? node.kind === 'task'
-							: mode === 'notes'
+							: mode === 'notes' || mode === 'history'
 								? node.kind === 'note'
 							: mode === 'terms'
 									? node.kind === 'term'
@@ -61,7 +61,9 @@
 	const kinds: Kind[] = ['task', 'todo', 'term', 'api', 'implementation', 'note', 'file'];
 
 	let mode = $state<Mode>(
-		data.view === 'notes'
+		data.view === 'history'
+			? 'history'
+			: data.view === 'notes'
 			? 'notes'
 			: data.view === 'source'
 				? 'source'
@@ -94,6 +96,10 @@
 		} else if (mode === 'notes') {
 			for (const node of allNodes) {
 				if (node.kind === 'note' || node.kind === 'file') ids.add(node.id);
+			}
+		} else if (mode === 'history') {
+			for (const node of allNodes) {
+				if (node.kind === 'note' && node.path.startsWith('notes/history/')) ids.add(node.id);
 			}
 		} else if (mode === 'terms') {
 			for (const node of allNodes) if (node.kind === 'term') ids.add(node.id);
@@ -129,7 +135,7 @@
 		allEdges.filter((edge) => {
 			if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) return false;
 			if (mode === 'tasks') return ['depends-on', 'part-of'].includes(edge.predicate);
-			if (mode === 'notes') {
+			if (mode === 'notes' || mode === 'history') {
 				return ['links-to', 'documents', 'mentions'].includes(edge.predicate);
 			}
 			if (mode === 'terms') return ['defined-by', 'uses-term'].includes(edge.predicate);
@@ -145,6 +151,18 @@
 			: [],
 	);
 	let visibleNotes = $derived(visibleNodes.filter((node) => node.kind === 'note'));
+	let visibleHistory = $derived(
+		[...visibleNotes].sort((a, b) => {
+			if (a.path === 'notes/history/README.md') return -1;
+			if (b.path === 'notes/history/README.md') return 1;
+			const [aSnapshot, aFile] = a.path.slice('notes/history/'.length).split('/');
+			const [bSnapshot, bFile] = b.path.slice('notes/history/'.length).split('/');
+			if (aSnapshot !== bSnapshot) return bSnapshot.localeCompare(aSnapshot);
+			if (aFile === 'README.md') return -1;
+			if (bFile === 'README.md') return 1;
+			return aFile.localeCompare(bFile);
+		}),
+	);
 	let visibleFiles = $derived(visibleNodes.filter((node) => node.kind === 'file'));
 	let missingCount = $derived(visibleNodes.filter((node) => node.status === 'missing').length);
 
@@ -154,8 +172,10 @@
 		selectedId =
 			next === 'neighborhood'
 				? taskId
-				: next === 'notes'
-					? (allNodes.find((node) => node.kind === 'note')?.id ?? null)
+				: next === 'notes' || next === 'history'
+					? (allNodes.find((node) =>
+							next === 'history' ? node.path === 'notes/history/README.md' : node.kind === 'note',
+						)?.id ?? null)
 					: next === 'terms'
 						? (allNodes.find((node) => node.kind === 'term')?.id ?? null)
 						: next === 'apis'
@@ -174,7 +194,7 @@
 <svelte:head><title>Covalence map</title></svelte:head>
 
 <main>
-	<details class="toolbar" open={mode === 'notes' || mode === 'source'}>
+		<details class="toolbar" open={mode === 'history' || mode === 'notes' || mode === 'source'}>
 		<summary>
 			<span>{mode === 'tasks' ? 'task DAG' : mode}</span>
 			<em>{visibleNodes.length} nodes · {visibleEdges.length} edges</em>
@@ -233,21 +253,24 @@
 	</details>
 
 	<div class="workspace">
-		{#if mode === 'notes' || mode === 'source'}
-			<section class="note-list" aria-label={mode === 'notes' ? 'Notes' : 'Source files'}>
-				{#each mode === 'notes' ? visibleNotes : visibleFiles as note}
+		{#if mode === 'history' || mode === 'notes' || mode === 'source'}
+			<section class="note-list" aria-label={mode === 'history' ? 'History' : mode === 'notes' ? 'Notes' : 'Source files'}>
+				{#if mode === 'history' && visibleHistory.length === 0}
+					<p class="empty">No historical snapshots match this search.</p>
+				{/if}
+				{#each mode === 'history' ? visibleHistory : mode === 'notes' ? visibleNotes : visibleFiles as note}
 					<a
 						title={note.title}
-						href={mode === 'notes'
+						href={mode === 'notes' || mode === 'history'
 							? `/notes/${note.path.slice('notes/'.length)}`
 							: `/source?path=${encodeURIComponent(note.path)}`}
 					>
 						<strong>
-							{#if mode === 'notes'}<b>{noteStableIds.get(note.id)}</b>{/if}
+							{#if mode === 'notes' || mode === 'history'}<b>{noteStableIds.get(note.id)}</b>{/if}
 							{note.title}
 						</strong>
 						<span>{note.path}</span>
-						<em>{note.status ?? 'no status'} · {note.words} {mode === 'notes' ? 'words' : 'lines'}</em>
+						<em>{note.status ?? 'no status'} · {note.words} {mode === 'source' ? 'lines' : 'words'}</em>
 					</a>
 				{/each}
 			</section>
@@ -417,6 +440,7 @@
 		text-decoration: none;
 	}
 	.note-list > a:hover { border-color: var(--accent); }
+	.empty { max-width: 72rem; margin: 1rem auto; color: var(--muted); }
 	.note-list strong {
 		overflow: hidden;
 		text-overflow: ellipsis;

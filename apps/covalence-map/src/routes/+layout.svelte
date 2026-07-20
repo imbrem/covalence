@@ -6,6 +6,7 @@
 <nav>
 	<strong>covalence</strong>
 	<a href="/?view=map" data-sveltekit-reload>map</a>
+	<a href="/?view=history" data-sveltekit-reload>history</a>
 	<a href="/?view=notes" data-sveltekit-reload>notes</a>
 	<a href="/source" data-sveltekit-reload>source</a>
 	<a href="/?view=terms" data-sveltekit-reload>terms</a>

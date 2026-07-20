@@ -90,5 +90,5 @@ pub use stack_machine::{
 };
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
-    Parameter, Strategy, import_core,
+    Parameter, Strategy, export_core, import_core,
 };

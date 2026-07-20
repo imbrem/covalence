@@ -252,6 +252,104 @@ impl<S, D, P, E> CoreExprLayer<S, D, P, E> {
             Self::ApplyListProcedure => CoreExprLayer::ApplyListProcedure,
         }
     }
+
+    /// Fallible functorial action on recursive expression positions.
+    ///
+    /// This is the traversal needed by resource decoders and checked syntax
+    /// translations. Child positions are visited in source order and
+    /// traversal stops at the first error.
+    pub fn try_map_recursive<F, X>(
+        self,
+        mut map: impl FnMut(E) -> Result<F, X>,
+    ) -> Result<CoreExprLayer<S, D, P, F>, X> {
+        Ok(match self {
+            Self::Literal(datum) => CoreExprLayer::Literal(datum),
+            Self::Truth(value) => CoreExprLayer::Truth(value),
+            Self::Variable(symbol) => CoreExprLayer::Variable(symbol),
+            Self::Quote(datum) => CoreExprLayer::Quote(datum),
+            Self::If {
+                condition,
+                consequent,
+                alternative,
+            } => CoreExprLayer::If {
+                condition: map(condition)?,
+                consequent: map(consequent)?,
+                alternative: map(alternative)?,
+            },
+            Self::Cond { clauses } => CoreExprLayer::Cond {
+                clauses: clauses
+                    .into_iter()
+                    .map(|(condition, body)| Ok((map(condition)?, map(body)?)))
+                    .collect::<Result<Vec<_>, X>>()?,
+            },
+            Self::Sequence { first, rest } => CoreExprLayer::Sequence {
+                first: map(first)?,
+                rest: rest
+                    .into_iter()
+                    .map(&mut map)
+                    .collect::<Result<Vec<_>, X>>()?,
+            },
+            Self::Lambda {
+                name,
+                parameters,
+                rest,
+                body,
+            } => CoreExprLayer::Lambda {
+                name,
+                parameters,
+                rest,
+                body: map(body)?,
+            },
+            Self::Apply {
+                operator,
+                arguments,
+            } => CoreExprLayer::Apply {
+                operator: map(operator)?,
+                arguments: arguments
+                    .into_iter()
+                    .map(&mut map)
+                    .collect::<Result<Vec<_>, X>>()?,
+            },
+            Self::ApplyList {
+                operator,
+                arguments,
+                tail,
+            } => CoreExprLayer::ApplyList {
+                operator: map(operator)?,
+                arguments: arguments
+                    .into_iter()
+                    .map(&mut map)
+                    .collect::<Result<Vec<_>, X>>()?,
+                tail: map(tail)?,
+            },
+            Self::Let { bindings, body } => CoreExprLayer::Let {
+                bindings: bindings
+                    .into_iter()
+                    .map(|binding| Ok(Binding::new(binding.name, map(binding.value)?)))
+                    .collect::<Result<Vec<_>, X>>()?,
+                body: map(body)?,
+            },
+            Self::LetRec { bindings, body } => CoreExprLayer::LetRec {
+                bindings: bindings
+                    .into_iter()
+                    .map(|binding| Ok(Binding::new(binding.name, map(binding.value)?)))
+                    .collect::<Result<Vec<_>, X>>()?,
+                body: map(body)?,
+            },
+            Self::Primitive {
+                operator,
+                arguments,
+            } => CoreExprLayer::Primitive {
+                operator,
+                arguments: arguments
+                    .into_iter()
+                    .map(&mut map)
+                    .collect::<Result<Vec<_>, X>>()?,
+            },
+            Self::PrimitiveValue(primitive) => CoreExprLayer::PrimitiveValue(primitive),
+            Self::ApplyListProcedure => CoreExprLayer::ApplyListProcedure,
+        })
+    }
 }
 
 impl<S, D, P> CoreExpr<S, D, P> {
@@ -570,6 +668,25 @@ where
         CoreExpr::PrimitiveValue(operator) => syntax.primitive_value(operator.clone()),
         CoreExpr::ApplyListProcedure => syntax.apply_list_procedure(),
     }
+}
+
+/// Project an arbitrary syntax backend into the neutral direct core tree.
+///
+/// This is the inverse-shaped operation to [`import_core`]. It observes one
+/// functor layer at a time, so invalid or foreign resource handles fail through
+/// the backend's ordinary error channel rather than being trusted or decoded
+/// by representation-specific frontend code.
+pub fn export_core<S>(
+    syntax: &S,
+    expression: &S::Expr,
+) -> Result<CoreExpr<S::Symbol, S::Datum, S::Primitive>, S::Error>
+where
+    S: LispExpression,
+{
+    let layer = syntax
+        .view(expression)?
+        .try_map_recursive(|child| export_core(syntax, &child))?;
+    Ok(CoreExpr::from_layer(layer))
 }
 
 /// Policy supplied by a concrete Lisp frontend.

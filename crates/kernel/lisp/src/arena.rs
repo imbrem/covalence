@@ -662,7 +662,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreExpr, LispRuntime, LispRuntimeSnapshot, import_core};
+    use crate::{CoreExpr, LispRuntime, LispRuntimeSnapshot, export_core, import_core};
 
     type TestRuntime = ArenaRuntime<&'static str, &'static str, &'static str>;
 
@@ -683,6 +683,10 @@ mod tests {
             runtime.expressions().view(&handle).unwrap(),
             CoreExprLayer::Apply { arguments, .. } if arguments.len() == 1
         ));
+        assert_eq!(
+            export_core(runtime.expressions(), &handle).unwrap(),
+            expression
+        );
 
         let snapshot = runtime.replay_snapshot();
         assert!(matches!(

@@ -9358,7 +9358,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 700,
+      "words": 701,
       "updated": 0
     },
     {
@@ -9457,7 +9457,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 653,
+      "words": 770,
       "updated": 0
     },
     {
@@ -15779,6 +15779,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/chats/",
+      "kind": "file",
+      "title": "notes/chats/",
+      "status": "missing",
+      "path": "notes/chats/",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:notes/design/",
       "kind": "file",
       "title": "notes/design/",
@@ -18225,6 +18234,15 @@
       "path": "notes/vibes/handoff/defs-out-of-core.md",
       "words": 780,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "kind": "note",
+      "title": "Lisp foundation refactor handoff",
+      "status": "draft",
+      "path": "notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "words": 595,
+      "updated": 1784578646
     },
     {
       "id": "note:notes/vibes/k/README.md",
@@ -28426,6 +28444,18 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "predicate": "documents",
+      "target": "file:notes/chats/",
+      "detail": "missing"
+    },
+    {
       "source": "note:notes/vibes/k/README.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -33616,6 +33646,12 @@
       "stableId": "N0046",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "stableId": "N0047",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -34126,6 +34162,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/lisp-foundation-refactor-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-20T21:16:52+01:00",
+      "source": "lisp-foundation-refactor-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {

@@ -4009,6 +4009,51 @@ mod tests {
     }
 
     #[test]
+    fn final_dec_opacity_sites_pin_their_exact_source_capabilities() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let find = |name: &str| {
+            collect_decs(&defs)
+                .into_iter()
+                .find(|def| dec_parts(def).is_some_and(|(x, _, _)| x == name))
+                .unwrap_or_else(|| panic!("bundled {name} Dec"))
+        };
+
+        let (_, _, vcvtop) = dec_parts(find("vcvtop__")).unwrap();
+        assert_eq!(vcvtop.len(), 3);
+        for (index, clause) in vcvtop.iter().enumerate() {
+            let SpecTecClause::Clause { prs, .. } = clause;
+            assert_eq!(prs.len(), 4, "vcvtop__ clause {index} applicability");
+            assert!(
+                prs.iter()
+                    .all(|prem| matches!(prem, SpecTecPrem::If { .. })),
+                "vcvtop__ clause {index} keeps its four source applicability equations"
+            );
+        }
+        // The final clause can overlap each earlier clause and therefore
+        // needs the complement of their existentially witnessed
+        // applicability, not merely a flipped arithmetic guard.
+        let (_, _, not_immut) = dec_parts(find("NotImmutReachable")).unwrap();
+        assert_eq!(not_immut.len(), 2);
+        let SpecTecClause::Clause {
+            e: first_rhs,
+            prs: first_prems,
+            ..
+        } = &not_immut[0];
+        assert!(matches!(first_rhs, SpecTecExp::Bool { b: false }));
+        assert!(matches!(
+            first_prems.as_slice(),
+            [SpecTecPrem::Rule { x, .. }] if x == "ImmutReachable"
+        ));
+        let SpecTecClause::Clause {
+            e: fallback_rhs,
+            prs: fallback_prems,
+            ..
+        } = &not_immut[1];
+        assert!(matches!(fallback_rhs, SpecTecExp::Bool { b: true }));
+        assert!(matches!(fallback_prems.as_slice(), [SpecTecPrem::Else]));
+    }
+
+    #[test]
     fn whole_spec_census() {
         use super::super::flatten::Flattener;
         let defs = crate::wasm::spec::wasm_spec();

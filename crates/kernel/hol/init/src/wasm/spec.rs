@@ -194,6 +194,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn remaining_type_rendering_frontier_is_explicit() {
+        let defs = wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let failures = typ_defs(&defs)
+            .into_iter()
+            .filter_map(|def| {
+                if syntax::resolve_def(def, &ctx).is_ok()
+                    || instantiates_with_declared_params(def, &ctx)
+                {
+                    return None;
+                }
+                let SpecTecDef::Typ { x, .. } = def else {
+                    unreachable!()
+                };
+                Some((
+                    x.clone(),
+                    syntax::resolve_def(def, &ctx).unwrap_err().to_string(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        eprintln!("remaining type rendering frontier: {failures:#?}");
+        assert_eq!(
+            failures
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["num_", "lane_", "lit_"]
+        );
+        assert!(failures.iter().all(|(_, error)| {
+            error.contains("parametric type") && error.contains("used without arguments")
+        }));
+    }
+
     /// The live **coverage** metric, v2 (the total-load combined set): every
     /// rule and every `Dec` clause of the whole spec loads; the combined
     /// clause list is built and kernel-checked; residue is censused exactly.
@@ -248,7 +282,7 @@ mod tests {
                 report.neq_pairs
             );
             println!(
-                "integer builtins:   {} defining clauses over {} ops ({} of {} zero-clause tags filled; frontier {})",
+                "exact builtins:     {} defining clauses over {} ops ({} of {} zero-clause tags filled; frontier {})",
                 report.builtins.clauses,
                 report.builtins.ops,
                 report.builtins.zero_clause_ops,
@@ -284,6 +318,16 @@ mod tests {
             );
             for (k, c) in &report.opaque_tags {
                 println!("  {c:>4}  {k}");
+            }
+            for site in &report.opaque_sites {
+                println!(
+                    "         clause {} premise {}  {}/{}  {}",
+                    site.clause_index,
+                    site.premise_index,
+                    site.relation,
+                    site.rule_name,
+                    site.reason
+                );
             }
             println!("lowering: {lowered_in:?}; kernel layout of {n} clauses: {kernel_in:?}");
             println!("types rendered to HOL standalone (leg B, strict): {typ_ok} / {typ_total}");
@@ -332,28 +376,78 @@ mod tests {
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 3766,
+                report.total_clauses >= 18722,
                 "combined clauses = {}",
                 report.total_clauses
             );
-            // The integer-builtin leg is live (Waves F2/Y/Z/AA/AB): defining
-            // clauses for 35 integer ops, incl. first clauses for 24 of the
-            // 91 zero-clause tags (shift/count, exact bit structure,
-            // serialization, integer SIMD lanes, and integer conversions).
+            // The exact-host-builtin leg is live (Waves F2/Y/Z/AA/AB/AC/AE):
+            // defining clauses for 87 operations, incl. first clauses for 76
+            // of the 91 zero-clause tags (integer operations, structural
+            // rational rounding, typed byte front doors, structural IEEE
+            // representation/sign operations, and inverse sequence graphs).
             assert!(
-                report.n_builtin_clauses >= 304,
+                report.n_builtin_clauses >= 15246,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 35, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 87, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 24,
+                report.builtins.zero_clause_ops, 76,
                 "zero-clause builtin tags filled"
             );
             assert!(
                 report.opaque_total() <= 7,
                 "opaque premises regressed: {}",
                 report.opaque_total()
+            );
+            assert_eq!(
+                report.opaque_sites.len(),
+                report.opaque_total(),
+                "opaque site inventory is exact"
+            );
+            let opaque_sites: Vec<_> = report
+                .opaque_sites
+                .iter()
+                .map(|site| {
+                    (
+                        site.clause_index,
+                        site.premise_index,
+                        site.relation.as_str(),
+                        site.rule_name.as_str(),
+                        site.reason.as_str(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                opaque_sites,
+                [
+                    (366, 0, "Step_read", "br_on_cast-fail", "else"),
+                    (368, 0, "Step_read", "br_on_cast_fail-fail", "else"),
+                    (431, 0, "Step_read", "ref.test-false", "else"),
+                    (433, 0, "Step_read", "ref.cast-fail", "else"),
+                    (466, 0, "Step_read", "array.init_data-zero", "else"),
+                    (1773, 11, "fn.vcvtop__", "", "dec.order"),
+                    (1996, 0, "fn.NotImmutReachable", "", "dec.else-nonif-guard",),
+                ],
+                "opaque source addresses or clause order changed"
+            );
+            use crate::wasm::lower::total::OpaqueCapability as C;
+            assert_eq!(
+                report
+                    .opaque_sites
+                    .iter()
+                    .map(|site| site.required_capability.clone())
+                    .collect::<Vec<_>>(),
+                [
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ArrayDataOutOfBoundsApplicability,
+                    C::VcvtopExistentialPredecessors,
+                    C::ImmutReachableNegation,
+                ],
+                "opaque proof-capability classification changed"
             );
             // The write families are live (measured: 54 clauses / 27 path
             // families incl. `ev.upd.root.dot.LOCALS.idx` and the

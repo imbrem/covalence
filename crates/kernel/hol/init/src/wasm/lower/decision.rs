@@ -34,7 +34,7 @@
 //! derive the positive relation is not a negative certificate.
 
 use covalence_core::{Error, Result, Term};
-use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::{EvalThm as Thm, derived::DerivedRules};
 
 use super::super::encode::{app, con, tag};
 use super::{Clause, LowerPrem, opaque, rule_set_of};
@@ -141,13 +141,17 @@ impl DecisionRequest {
     }
 
     fn consequence(&self, source: &RuleSet<'_>) -> Result<Term> {
-        let positive = match &self.subject {
-            DecisionSubject::RelationJudgement => derivable(source, self.query())?,
-            DecisionSubject::CompositeApplicability(applicability) => applicability.clone(),
-        };
+        let positive = self.positive(source)?;
         match self.expected {
             DecisionAnswer::Yes => Ok(positive),
             DecisionAnswer::No => positive.not(),
+        }
+    }
+
+    fn positive(&self, source: &RuleSet<'_>) -> Result<Term> {
+        match &self.subject {
+            DecisionSubject::RelationJudgement => derivable(source, self.query()),
+            DecisionSubject::CompositeApplicability(applicability) => Ok(applicability.clone()),
         }
     }
 }
@@ -168,7 +172,6 @@ pub trait DecisionLowerer {
 /// proof boundary: a later quantified-family constructor can manufacture
 /// these cases by specialization, while callers can already install finite
 /// certified frontiers without gaining authority over unproved queries.
-// TODO(cov:wasm.spectec.decision-family-universal, major): Specialize closed quantified adequacy, totality, and determinacy theorems into ground cases.
 ///
 /// The two theorem obligations are:
 ///
@@ -186,6 +189,40 @@ pub struct CertifiedDecisionCase {
     request: DecisionRequest,
     totality: Thm,
     adequacy: Thm,
+}
+
+/// Closed quantified totality and adequacy theorems awaiting specialization.
+///
+/// This package is deliberately inert: constructing it only checks that the
+/// theorems have no assumptions.  It does not authorize a decision request
+/// until [`CertifiedDecisionFamily::certify_specializations`] instantiates
+/// both theorems through HOL `∀` elimination and checks the resulting
+/// propositions against the exact decision clauses, source rule set, query,
+/// subject, and answer.
+#[derive(Clone)]
+pub struct CertifiedDecisionSchema {
+    totality: Thm,
+    adequacy: Thm,
+}
+
+impl std::fmt::Debug for CertifiedDecisionSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CertifiedDecisionSchema")
+            .finish_non_exhaustive()
+    }
+}
+
+impl CertifiedDecisionSchema {
+    /// Package two closed quantified theorems for later exact
+    /// specialization.
+    pub fn new(totality: Thm, adequacy: Thm) -> Result<Self> {
+        if !totality.hyps().is_empty() || !adequacy.hyps().is_empty() {
+            return Err(certification_error(
+                "quantified schema certificates have hypotheses",
+            ));
+        }
+        Ok(Self { totality, adequacy })
+    }
 }
 
 impl std::fmt::Debug for CertifiedDecisionCase {
@@ -278,6 +315,42 @@ impl CertifiedDecisionFamily {
         })
     }
 
+    /// Certify exact instances by specializing a closed quantified schema.
+    ///
+    /// Every entry is `(request, witnesses)`, with the witnesses ordered
+    /// outermost binder first and applied identically to the totality and
+    /// adequacy theorems.  At least one witness is required; already-ground
+    /// certificates belong in [`Self::certify`].
+    ///
+    /// Specialization itself uses only Native HOL derived rules.  Afterwards
+    /// [`Self::certify`] reconstructs and compares both required
+    /// propositions, so an untrusted caller may choose requests and witnesses
+    /// freely but cannot authorize a mismatched instance.
+    pub fn certify_specializations(
+        relation: impl Into<String>,
+        clauses: Vec<Clause>,
+        source: &RuleSet<'_>,
+        schema: &CertifiedDecisionSchema,
+        instances: Vec<(DecisionRequest, Vec<Term>)>,
+    ) -> Result<Self> {
+        let mut certificates = Vec::with_capacity(instances.len());
+        for (request, witnesses) in instances {
+            if witnesses.is_empty() {
+                return Err(certification_error(
+                    "quantified specialization requires at least one witness",
+                ));
+            }
+            let mut totality = schema.totality.clone();
+            let mut adequacy = schema.adequacy.clone();
+            for witness in witnesses {
+                totality = totality.all_elim(witness.clone())?;
+                adequacy = adequacy.all_elim(witness)?;
+            }
+            certificates.push((request, totality, adequacy));
+        }
+        Self::certify(relation, clauses, source, certificates)
+    }
+
     /// Relation family authorized by this package.
     pub fn relation(&self) -> &str {
         &self.relation
@@ -292,6 +365,91 @@ impl CertifiedDecisionFamily {
     /// The exact query certificates carried by this family.
     pub fn cases(&self) -> &[CertifiedDecisionCase] {
         &self.cases
+    }
+
+    /// Certify one exact conjunction decision from already-certified cases.
+    ///
+    /// This is the reusable composition step needed by ordered SpecTec rules
+    /// whose earlier sibling is applicable exactly when two judgements (or
+    /// other certified propositions) both hold. A `Yes` result requires
+    /// positive certificates for both conjuncts. A `No` result needs a
+    /// negative certificate for either conjunct; the other case is retained
+    /// solely to identify the exact conjunction.
+    ///
+    /// The returned graph has one query-specific positive clause. Its
+    /// authority does not come from that clause: the adequacy theorem is
+    /// derived from the supplied component certificates and then checked by
+    /// [`Self::certify`] against `Derivable(source)` (or the exact composite
+    /// propositions) reconstructed from `source`. No host predicate, failed
+    /// search, assumption, or theorem mint site participates.
+    pub fn certify_conjunction(
+        relation: impl Into<String>,
+        query: Term,
+        source: &RuleSet<'_>,
+        left: &CertifiedDecisionCase,
+        right: &CertifiedDecisionCase,
+        expected: DecisionAnswer,
+    ) -> Result<Self> {
+        let relation = relation.into();
+        let left_positive = left.request.positive(source)?;
+        let right_positive = right.request.positive(source)?;
+        let applicability = left_positive.clone().and(right_positive.clone())?;
+        let request =
+            DecisionRequest::composite(&relation, query, applicability.clone(), expected)?;
+
+        let graph_judgement = request.judgement()?;
+        let clauses = vec![Clause {
+            metavars: Vec::new(),
+            prems: Vec::new(),
+            concl: graph_judgement,
+        }];
+        let decision = rule_set_of(clauses.clone());
+        let totality = crate::metalogic::derive_mixed(&decision, 0, 1, &[], Vec::new())?;
+        let graph = totality.concl().clone();
+
+        let fact =
+            |case: &CertifiedDecisionCase| case.adequacy.clone().imp_elim(case.totality.clone());
+        let consequence = match expected {
+            DecisionAnswer::Yes => {
+                if left.request.expected != DecisionAnswer::Yes
+                    || right.request.expected != DecisionAnswer::Yes
+                {
+                    return Err(certification_error(
+                        "conjunction Yes requires two Yes component cases",
+                    ));
+                }
+                fact(left)?.and_intro(fact(right)?)?
+            }
+            DecisionAnswer::No => {
+                let (negative, conjunction_side) = if left.request.expected == DecisionAnswer::No {
+                    (fact(left)?, true)
+                } else if right.request.expected == DecisionAnswer::No {
+                    (fact(right)?, false)
+                } else {
+                    return Err(certification_error(
+                        "conjunction No requires a No component case",
+                    ));
+                };
+                let assumed = Thm::assume(applicability.clone())?;
+                let positive = if conjunction_side {
+                    assumed.and_elim_l()?
+                } else {
+                    assumed.and_elim_r()?
+                };
+                negative
+                    .not_elim(positive)?
+                    .imp_intro(&applicability)?
+                    .not_intro()?
+            }
+        };
+        let adequacy = consequence.imp_intro(&graph)?;
+
+        Self::certify(
+            relation,
+            clauses,
+            source,
+            vec![(request, totality, adequacy)],
+        )
     }
 }
 
@@ -445,6 +603,111 @@ mod tests {
         (family, request, source)
     }
 
+    fn certified_false_composite(source: &RuleSet<'_>) -> CertifiedDecisionFamily {
+        let false_prop = covalence_hol_eval::defs::fal();
+        let request = DecisionRequest::composite(
+            "FalseComponent",
+            con("false.component.key"),
+            false_prop.clone(),
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        let clauses = vec![Clause {
+            metavars: vec![],
+            prems: vec![],
+            concl: request.judgement().unwrap(),
+        }];
+        let decision = rule_set_of(clauses.clone());
+        let totality = metalogic::derive_mixed(&decision, 0, 1, &[], vec![]).unwrap();
+        let not_false = Thm::assume(false_prop.clone())
+            .unwrap()
+            .imp_intro(&false_prop)
+            .unwrap()
+            .not_intro()
+            .unwrap();
+        let adequacy = not_false.imp_intro(totality.concl()).unwrap();
+        CertifiedDecisionFamily::certify(
+            "FalseComponent",
+            clauses,
+            source,
+            vec![(request, totality, adequacy)],
+        )
+        .unwrap()
+    }
+
+    fn certified_universal_toy() -> (CertifiedDecisionSchema, Vec<Clause>, RuleSet<'static>) {
+        let clause_query = crate::wasm::encode::metavar("q");
+        let source = rule_set_of(vec![Clause {
+            metavars: vec!["q".into()],
+            prems: vec![],
+            concl: clause_query.clone(),
+        }]);
+        let request =
+            DecisionRequest::new("UniversalToy", clause_query.clone(), DecisionAnswer::Yes);
+        let clauses = vec![Clause {
+            metavars: vec!["q".into()],
+            prems: vec![],
+            concl: request.judgement().unwrap(),
+        }];
+        let decision = rule_set_of(clauses.clone());
+
+        // Build the schema at an arbitrary free point, then quantify it. The
+        // decision/source rule sets remain fixed: only their metavariable
+        // clauses are instantiated.
+        let x = Term::free("schema$x", crate::wasm::encode::phi());
+        let graph_at_x = metalogic::derive_mixed(&decision, 0, 1, &[x.clone()], vec![]).unwrap();
+        let source_at_x = metalogic::derive_mixed(&source, 0, 1, &[x.clone()], vec![]).unwrap();
+        let adequacy_at_x = source_at_x.imp_intro(graph_at_x.concl()).unwrap();
+        let totality = graph_at_x
+            .all_intro("schema$x", crate::wasm::encode::phi())
+            .unwrap();
+        let adequacy = adequacy_at_x
+            .all_intro("schema$x", crate::wasm::encode::phi())
+            .unwrap();
+        (
+            CertifiedDecisionSchema::new(totality, adequacy).unwrap(),
+            clauses,
+            source,
+        )
+    }
+
+    fn certified_universal_false_composite() -> (CertifiedDecisionSchema, Vec<Clause>) {
+        let q = crate::wasm::encode::metavar("q");
+        let false_prop = covalence_hol_eval::defs::fal();
+        let request = DecisionRequest::composite(
+            "UniversalFalse",
+            q.clone(),
+            false_prop.clone(),
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        let clauses = vec![Clause {
+            metavars: vec!["q".into()],
+            prems: vec![],
+            concl: request.judgement().unwrap(),
+        }];
+        let decision = rule_set_of(clauses.clone());
+        let x = Term::free("schema$false$x", crate::wasm::encode::phi());
+        let graph_at_x = metalogic::derive_mixed(&decision, 0, 1, &[x], vec![]).unwrap();
+        let not_false = Thm::assume(false_prop.clone())
+            .unwrap()
+            .imp_intro(&false_prop)
+            .unwrap()
+            .not_intro()
+            .unwrap();
+        let adequacy_at_x = not_false.imp_intro(graph_at_x.concl()).unwrap();
+        let totality = graph_at_x
+            .all_intro("schema$false$x", crate::wasm::encode::phi())
+            .unwrap();
+        let adequacy = adequacy_at_x
+            .all_intro("schema$false$x", crate::wasm::encode::phi())
+            .unwrap();
+        (
+            CertifiedDecisionSchema::new(totality, adequacy).unwrap(),
+            clauses,
+        )
+    }
+
     #[test]
     fn certified_toy_family_exposes_only_the_proved_positive_graph() {
         let (mut family, request, _) = certified_yes_toy();
@@ -576,6 +839,162 @@ mod tests {
         assert!(
             wrong.is_err(),
             "adequacy for one conjunction cannot certify another"
+        );
+    }
+
+    #[test]
+    fn certified_conjunction_composes_yes_and_short_circuits_no_exactly() {
+        let (left, _, source) = certified_yes_toy();
+
+        let yes = CertifiedDecisionFamily::certify_conjunction(
+            "ToyAndToy",
+            con("toy.and.toy"),
+            &source,
+            &left.cases()[0],
+            &left.cases()[0],
+            DecisionAnswer::Yes,
+        )
+        .unwrap();
+        assert_eq!(yes.cases().len(), 1);
+        assert!(yes.cases()[0].totality().hyps().is_empty());
+        assert!(yes.cases()[0].adequacy().hyps().is_empty());
+
+        let false_component = certified_false_composite(&source);
+        let no = CertifiedDecisionFamily::certify_conjunction(
+            "FalseAndToy",
+            con("false.and.toy"),
+            &source,
+            &false_component.cases()[0],
+            &left.cases()[0],
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        assert!(no.cases()[0].totality().hyps().is_empty());
+        assert!(no.cases()[0].adequacy().hyps().is_empty());
+
+        assert!(
+            CertifiedDecisionFamily::certify_conjunction(
+                "BadNo",
+                con("bad.no"),
+                &source,
+                &left.cases()[0],
+                &left.cases()[0],
+                DecisionAnswer::No,
+            )
+            .is_err(),
+            "two positive cases cannot authorize a negative conjunction answer"
+        );
+        assert!(
+            CertifiedDecisionFamily::certify_conjunction(
+                "BadYes",
+                con("bad.yes"),
+                &source,
+                &false_component.cases()[0],
+                &left.cases()[0],
+                DecisionAnswer::Yes,
+            )
+            .is_err(),
+            "a negative case cannot authorize a positive conjunction answer"
+        );
+    }
+
+    #[test]
+    fn closed_universal_schema_specializes_to_exact_checked_cases() {
+        let (schema, clauses, source) = certified_universal_toy();
+        let a = con("universal.a");
+        let b = con("universal.b");
+        let request_a = DecisionRequest::new("UniversalToy", a.clone(), DecisionAnswer::Yes);
+        let request_b = DecisionRequest::new("UniversalToy", b.clone(), DecisionAnswer::Yes);
+        let family = CertifiedDecisionFamily::certify_specializations(
+            "UniversalToy",
+            clauses.clone(),
+            &source,
+            &schema,
+            vec![(request_a.clone(), vec![a]), (request_b.clone(), vec![b])],
+        )
+        .unwrap();
+        assert_eq!(family.cases().len(), 2);
+        assert!(
+            family
+                .cases()
+                .iter()
+                .all(|case| case.totality().hyps().is_empty() && case.adequacy().hyps().is_empty())
+        );
+
+        // The same schema composes with the conjunction boundary used by the
+        // four reference-instruction Else sites.
+        let both = CertifiedDecisionFamily::certify_conjunction(
+            "UniversalToyAndToy",
+            con("universal.a-and-b"),
+            &source,
+            &family.cases()[0],
+            &family.cases()[1],
+            DecisionAnswer::Yes,
+        )
+        .unwrap();
+        assert!(both.cases()[0].adequacy().hyps().is_empty());
+
+        // Negative schemas specialize too, which is the direction needed by
+        // an `otherwise` complement. One negative component then proves the
+        // exact conjunction false without deciding the other component.
+        let (negative_schema, negative_clauses) = certified_universal_false_composite();
+        let false_key = con("universal.false");
+        let false_prop = covalence_hol_eval::defs::fal();
+        let false_request = DecisionRequest::composite(
+            "UniversalFalse",
+            false_key.clone(),
+            false_prop,
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        let negative = CertifiedDecisionFamily::certify_specializations(
+            "UniversalFalse",
+            negative_clauses,
+            &source,
+            &negative_schema,
+            vec![(false_request, vec![false_key])],
+        )
+        .unwrap();
+        let no = CertifiedDecisionFamily::certify_conjunction(
+            "UniversalFalseAndToy",
+            con("universal.false-and-a"),
+            &source,
+            &negative.cases()[0],
+            &family.cases()[0],
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        assert!(no.cases()[0].adequacy().hyps().is_empty());
+
+        // An untrusted witness/request mismatch is rejected after
+        // specialization rather than authorizing the requested graph.
+        let mismatched = CertifiedDecisionFamily::certify_specializations(
+            "UniversalToy",
+            clauses,
+            &source,
+            &schema,
+            vec![(request_a, vec![con("different.witness")])],
+        );
+        assert!(mismatched.is_err());
+    }
+
+    #[test]
+    fn universal_schema_refuses_assumptions_and_ground_shortcuts() {
+        let (schema, clauses, source) = certified_universal_toy();
+        let open = Thm::assume(schema.totality.concl().clone()).unwrap();
+        assert!(CertifiedDecisionSchema::new(open, schema.adequacy.clone()).is_err());
+
+        let request =
+            DecisionRequest::new("UniversalToy", con("universal.ground"), DecisionAnswer::Yes);
+        assert!(
+            CertifiedDecisionFamily::certify_specializations(
+                "UniversalToy",
+                clauses,
+                &source,
+                &schema,
+                vec![(request, vec![])],
+            )
+            .is_err()
         );
     }
 }

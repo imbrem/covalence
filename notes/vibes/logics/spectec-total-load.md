@@ -28,7 +28,9 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3766 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **18722 combined clauses** (2026-07-20, including exact scalar `fmul_` and
+  `fdiv_`;
+  post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +38,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 304 integer-builtin
-  clauses over 35 operations + 1462
+  expanded Dec-star sites / 12 defining clauses) + 15246 exact builtin
+  clauses over 87 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -45,7 +47,27 @@ API. `wasm::spec::coverage_report` pins:
 - **7 opaque premises** total, censused by tag (`dec.order` 1,
   rule-`else` 5, and one
   `dec.else-nonif-guard`). Exact per-tag counts are pinned in
-  `coverage_report`.
+  `coverage_report`. `TotalReport::opaque_sites` also pins their exact
+  combined-set addresses: `Step_read/{br_on_cast-fail,
+  br_on_cast_fail-fail,ref.test-false,ref.cast-fail,array.init_data-zero}`,
+  `fn.vcvtop__`, and `fn.NotImmutReachable`. The first five require open
+  composite applicability decisions, `vcvtop__` requires the complement of
+  existential partial computations, and `NotImmutReachable` is the source
+  specification's explicit emulation of relation negation. None is silently
+  approximated.
+
+  The five rule-level obligations are narrower than “unsupported Else”.
+  `br_on_cast-fail`, `br_on_cast_fail-fail`, `ref.test-false`, and
+  `ref.cast-fail` each require the exact complement
+  `not (Ref_ok(...) and Reftype_sub(...))`; neither judgement alone is the
+  predecessor's applicability. `array.init_data-zero`, under its own `n = 0`
+  guard, requires both the complement of the `oob1` arithmetic guard and the
+  complement of `Expand(...) and oob2_guard`. The bundled-AST regression
+  `remaining_real_else_sites_are_exact_composite_decision_obligations` pins
+  these premise shapes and their fail-closed census reasons. The next sound
+  implementation boundary is therefore a certified composite-decision family
+  (totality plus yes/no adequacy replayed in NativeHol), not another syntactic
+  `Else` rewrite or a single-relation negation.
 - **Wave G — encoded integer ordering.** `ev.int.lt`/`ev.int.le` compare the
   canonical sign/magnitude integer encoding and reduce same-sign magnitudes to
   real HOL-natural side conditions; exact Nat→Int conversion in condition
@@ -574,6 +596,373 @@ zero-clause tags and leaving a frontier of **68**.
 integer lane widths, I8 and I16. The builtin leg is **304 clauses over 35 ops**,
 filling **24 of 91** zero-clause tags and leaving a frontier of **67**.
 
+## Landed (Wave AB — exact signed Q15 multiplication and frontier audit)
+
+`lower/builtins.rs` now defines the instruction-reachable
+`iq15mulr_sat_(16,S,...)` graph by five disjoint natural-arithmetic clauses.
+They cover all four input sign classes and the unique saturating
+`INT16_MIN × INT16_MIN` point. Oracle tests cross the rounding half-way
+boundaries, sign classes, extrema, saturation, perturbed results, invented
+widths/signs, and erased-carrier junk. The builtin leg is therefore **309
+clauses over 36 ops**, filling **25 of 91** zero-clause declarations and
+leaving **66 declarations**.
+
+The remaining frontier is not honestly “all floats”. Its 61 distinct names
+(five names have multiple source declarations) split as follows:
+
+- **42 float-dependent names**: scalar float arithmetic/comparison,
+  float bits/bytes and inverses, float/int conversions, reinterpretation, and
+  the float-related relaxed choice relations;
+- **7 explicitly relaxed/nondeterministic names**: `ND`, `R_idot`,
+  `R_iq15mulr`, `R_laneselect`, `R_swizzle`,
+  `irelaxed_q15mulr_`, and `irelaxed_laneselect_`;
+- **10 representation/generic sequence names**: the composite
+  `nbytes_`/`vbytes_`/`zbytes_`/`cbytes_` families and inverses plus
+  `inv_concat_`/`inv_concatn_`;
+- **2 exact-rational host primitives**, `truncz` and `ceilz`.
+
+## Landed (Wave AC — exact structural-rational rounding)
+
+`lower/builtins.rs` now gives `truncz` and `ceilz` twelve exact clauses over the
+structural nonnegative-rational fragment produced by SpecTec's `nat -> rat`
+conversion and division nodes, including unary-negative inputs and both direct
+natural operands and the exact carrier-projection shape used by the corpus'
+unsigned `idiv_`/`irem_` clauses. Denominators are explicitly positive;
+negative results split around zero so the integer encoding never admits
+negative zero. Opaque rational literals and unrelated rational expression
+shapes remain fail-closed rather than being identified with this
+representation. The builtin leg is therefore **321 clauses over 38
+ops**, filling **27 of 91** zero-clause declarations and leaving **64
+declarations**.
+
+The relaxed declarations deliberately remain clause-less: replacing their
+specified result sets by one deterministic answer would be a coverage score
+improvement but a semantic regression. The generic representation and rational
+families are separately actionable; they are no longer mislabeled as floats.
+
+## Landed (Wave AD — typed composite byte representation)
+
+The integer/vector branches of `nbytes_`/`vbytes_`/`zbytes_`/`cbytes_` and
+their inverses now have **22 exact clauses**. They preserve each source type
+tag and use the same fixed-length, little-endian natural arithmetic as the
+primitive `ibytes_` isomorphism: I32/I64 for numeric bytes, V128 for vector
+bytes, I8/I16/I32/I64/V128 for storage bytes, and I32/I64/V128 for constant
+bytes. Float tags, cross-family tags, malformed lengths, byte overflow, and
+out-of-carrier values remain underivable rather than being reinterpreted.
+
+The builtin leg is now **349 clauses over 48 operations**, filling **37 of
+91** formerly empty declarations and leaving **54 declarations**. This wave
+closes the two genuinely sequence-valued inverses
+`inv_concat_`/`inv_concatn_`; the remaining frontier is float-dependent or
+relaxed/nondeterministic.
+Repeated source declarations account for the difference between names and
+declaration count.
+
+## Landed (Wave AE — exact structural IEEE representation)
+
+The float frontier now has a representation-preserving first leg for F32 and
+F64. Natural-arithmetic clauses map SpecTec's explicit `POS`/`NEG`,
+`SUBNORM`/`NORM`/`INF` constructors to IEEE bit payloads, little-endian bytes,
+and back; the same equations drive the float branches of the typed
+`nbytes_`/`zbytes_`/`cbytes_` front doors and exact same-width
+`reinterpret__` in both directions. `fabs_` and `fneg_` are exact structural
+sign transformations. This uses no host floating-point arithmetic.
+
+The leg covers every finite value, both infinities, and every exact NaN payload
+at both widths, with
+canonical exponent and significand bounds pinned by kernel natural
+inequalities. Malformed constructors and NaN payloads, negative-zero integer
+exponents, out-of-range exponents/significands, cross-width reinterpretations,
+and wrong bit/byte results remain underivable. This does not choose NaN results
+for arithmetic builtins: it only preserves an already-present payload.
+
+The builtin leg is now **629 clauses over 55 operations**, filling **44 of
+91** formerly empty declarations and leaving **47 declarations**. A structural
+oracle checks signed zeros, least subnormals, normal exponent boundaries,
+infinities, bytes/bits, all typed byte fronts, reinterpretation in both
+directions, sign operations, perturbed results, malformed shapes, exact NaNs,
+and invalid-NaN refusal.
+
+The residual census is **42 distinct names / 47 source declarations** (five
+names are redeclared). Twenty-five deterministic names remain: 20 scalar float
+arithmetic/comparison/sign operations and five float conversions. The other 17
+are explicitly choice-valued or relaxed: `ND`, the nine `R_*` relations, two
+integer relaxed operations, four float relaxed operations, and
+`relaxed_trunc__`. No bit, byte, typed-byte, or reinterpretation primitive
+remains in the frontier.
+
+## Landed (Wave AF — exact IEEE comparisons and sign copy)
+
+All six scalar comparison builtins and `fcopysign_` now cover the complete
+F32/F64 structural carrier. A natural-valued monotone key reverses negative
+IEEE payload order and shifts positive payloads above it. Explicit branches
+identify positive and negative zero, while NaN branches implement unordered
+comparison exactly: equality and all four ordered predicates are false, and
+inequality is true. `fcopysign_` replaces only the outer sign constructor and
+therefore preserves every finite, infinity, and NaN payload.
+
+The construction is entirely structural and uses only kernel-computable
+natural equality/order; it has no host float operation, opaque premise, or
+choice refinement. Cross-products of the ten validated sign/magnitude shapes
+make malformed values fail closed. The builtin leg is now **3917 clauses over
+64 operations**, filling **53 of 91** declarations and leaving **38**. The
+residual deterministic set no longer contains representation, comparison, or
+sign-copy operations.
+
+## Landed (Wave AG — deterministic pseudo-min/max)
+
+`fpmin_` and `fpmax_` are now exact over the complete F32/F64 carrier. Unlike
+regular `fmin_`/`fmax_`, these operations are deterministic even at NaNs: each
+selects the second operand only when the corresponding strict comparison is
+true, and otherwise preserves the first operand. Consequently NaNs and equal
+or opposite-signed zeroes preserve the left operand exactly. The same natural
+IEEE order key and explicit double-zero cases used by the comparison leg prove
+the selection without host floating point or opacity.
+
+The requested regular min/max and four rounding operations remain explicit:
+their result type is a sequence because every NaN input maps through the
+specification's `nans_N` choice set. Adding only their ordinary-number cases
+would improve fireability but would not close those declarations, while
+choosing one NaN would be a semantic regression.
+
+## Landed (Wave AH — relational profile-choice parameters)
+
+The ten zero-clause implementation/profile parameters now have exact finite
+graphs rather than deterministic defaults: `ND` derives precisely both
+booleans; each `relaxed2` `R_*` parameter derives precisely 0 and 1; each
+`relaxed4` parameter derives precisely 0 through 3. Out-of-range numerals and
+cross-carrier booleans/naturals remain underivable.
+
+This is intentionally relational choice infrastructure. It exposes every
+source-permitted profile setting to proof search without reading a host-global
+flag or selecting a preferred implementation. The builtin leg is now **3943
+clauses over 74 operations**, filling **63 of 91** declarations and leaving
+**28**.
+
+Regular NaN-producing operations are not yet counted as closed. Their
+`nans_N` result is a genuine set: canonical inputs permit both signs of the
+canonical payload, while arithmetic NaN inputs permit both signs across the
+entire arithmetic-payload range. A future relational result-set layer must
+encode that quantified family without enumerating `2^23`/`2^52` payloads or
+collapsing it to a single representative.
+
+## Landed (Wave AI — exact trapping/saturating float-to-integer conversion)
+
+`trunc__` and `trunc_sat__` now cover every F32/F64 source, I32/I64 target,
+and unsigned/signed interpretation. Normal magnitudes are computed exactly as
+`(2^M + m) · 2^(e-M)`, split at `e=M` so every premise stays in natural
+arithmetic. Subnormals and negative exponents truncate to zero.
+
+Trapping conversion returns `opt.none` exactly for NaNs, infinities, negative
+unsigned integers, and target overflow. Saturating conversion maps NaNs to
+zero and clamps both infinities and finite overflow to the exact unsigned or
+two's-complement signed endpoint. The signed negative boundary admits
+`-2^(N-1)` and rejects the next magnitude. All result payloads are pinned by
+kernel-computable equations; no host float, opaque premise, or ordinary-only
+partial closure is involved.
+
+The builtin leg is now **15246 clauses over 87 operations**, filling **76 of
+91** declarations and leaving **15**.
+
+### Exact integer-to-float conversion
+
+`convert__` now covers every I32/I64 source, F32/F64 target, and unsigned/signed
+interpretation. The relation partitions nonzero source magnitudes by their
+unique top bit, forms the target significand with exact natural division and
+remainder, and implements round-to-nearest, ties-to-even by explicit
+below/above-half and quotient-parity cases. Sign is applied only after rounding,
+and significand carry advances the exponent exactly. Zero, signed minima,
+precision-boundary ties, and U64's carry to `2^64` are checked alongside wrong
+result and out-of-carrier refusals. No host float or approximation is used.
+
+`promote__` is now complete, including its nondeterministic NaN branches. A
+reusable quantified result relation derives both signs of the target canonical
+payload for canonical inputs, and both signs of every payload in the target
+arithmetic range for noncanonical arithmetic inputs. Thus no representative is
+selected and no exponential payload enumeration is needed. Finite promotion is
+also exact: normal significands shift by 29 bits, nonzero F32 subnormals
+normalize by their unique top bit, and signed zero and infinities are preserved.
+
+`demote__` is now complete. Its normal-target corridor discards exactly 29
+significand bits and applies the same four-way ties-to-even partition as
+integer conversion. Its exponent-indexed subnormal corridor rounds in units of
+`2^-149`; explicit carries reach the minimum normal or infinity, while values
+strictly below the half-minimum-subnormal threshold become signed zero.
+Infinities and signs are preserved, and canonical/noncanonical NaNs reuse the
+full quantified result-set relation. Boundary tests cover both tie parities,
+subnormal entry and exit, underflow, maximum finite, overflow midpoint,
+infinities, and the complete permitted NaN classes without host floats.
+
+### Exact regular minimum and maximum
+
+`fmin_` and `fmax_` now cover the complete F32/F64 cross-product. Finite values
+and infinities reuse the proven structural IEEE order key. Opposite signed
+zeroes have explicit branches selecting negative zero for minimum and positive
+zero for maximum; equal-sign zeroes remain exact.
+
+NaN inputs use a binary quantified `nans_N` relation. If every NaN operand is
+canonical, both result signs of exactly the canonical payload are admitted.
+If any NaN payload is noncanonical—whether below or above the quiet/canonical
+bit—the result ranges over both signs and every arithmetic target payload.
+The noncanonical cases are disjointly partitioned, so no allowed result is
+chosen, dropped, or duplicated through overlapping clauses.
+
+### Exact integral float rounding
+
+`fceil_`, `ffloor_`, `ftrunc_`, and `fnearest_` now cover the complete F32/F64
+carrier. For nonnegative exponents below the significand width, the relation
+divides the structural significand by the exact fractional unit and pins the
+integral result with quotient/remainder equations. Directed rounding selects
+magnitude-up or magnitude-down according to the operand sign; nearest uses
+explicit below-half, above-half, even-tie, and odd-tie branches. Significand
+carry advances the exponent exactly.
+
+Negative exponents distinguish the exact half point from values above and
+below it. Subnormals, signed zeroes, already-integral values, and infinities
+have explicit complete branches. NaNs reuse the quantified unary `nans_N`
+relation, including signaling payloads on both sides of the canonical bit.
+Focused replay covers directed sign behavior, signed zero, both tie parities,
+carry, already-integral preservation, wrong-result refusal, infinities, and
+canonical/arithmetic NaN families without host floating point.
+
+### Exact scalar float multiplication
+
+`fmul_` now covers the complete F32/F64 structural carrier without host
+floating point. Twenty compact `fmul_.factor` clauses expose exact finite
+significands, signed power-of-two scales, normalized bins, and the unique
+highest-set-bit witness for nonzero subnormals. A 432-clause
+`fmul_.product` relation consumes two checked factor facts and exposes the
+wide exact product once. The 824 final finite clauses select the normal,
+subnormal, or overflow quantum and perform a single quotient/remainder
+round-to-nearest, ties-to-even step. Another 584 disjoint clauses cover NaNs,
+infinity-times-zero, signed infinities, and signed zero products.
+
+This staging generates 1,860 clauses in roughly 75 ms in the focused debug
+test. The rejected direct enumeration produced 1,195,024 F32 clauses alone in
+24.9 seconds, demonstrating why the conclusion-pinned factor and product
+relations are semantic interfaces rather than a mere optimization. Unified
+NativeHol replay derives `1.5 * 2 = 3` through factor, product, quantum, and
+rounding facts and refuses a wrong result. No helper theorem crosses a
+RuleSet boundary, no trusted rule is added, and `fmul_` raises the builtin
+frontier by exactly one.
+
+### Exact scalar float division
+
+`fdiv_` reuses the checked finite-factor and target-quantum interfaces.
+Its 1,464-clause `fdiv_.ratio` relation forms the exact quotient
+`(a_sig * b_den) / (b_sig * a_den)` and subtracts signed binary scales.
+Normalized significands are compared by cross-scaling with their
+conclusion-pinned top-bit witnesses; the quotient bin is the operand-bin
+difference or exactly one lower. The 824 shared-shape final clauses round the
+original ratio once using `2r` versus the arbitrary denominator, so odd
+denominators are not approximated. Six hundred disjoint exceptional clauses
+cover operand NaNs, canonical invalid results for zero/zero and
+infinity/infinity, signed finite-or-infinite division by zero, signed zero
+division, and finite division by infinity.
+
+The complete detached division expansion is 2,888 clauses and generates in
+roughly 78 ms in the focused debug test. Unified NativeHol replay proves both
+`3 / 2 = 1.5` and the odd-denominator rounding fact
+`1 / 3 = 0x3eaaaaab`, while refusing a wrong result. No host float, theorem
+mint site, or cross-RuleSet helper theorem is involved.
+
+### Design: the remaining exact arithmetic layer
+
+The 15-tag frontier is not one homogeneous float backlog. Its exact census is:
+
+- strict IEEE arithmetic: `fsqrt_`, `fadd_`, `fsub_`;
+- relaxed float operations: `frelaxed_min_`, `frelaxed_max_`,
+  `frelaxed_madd_`, `frelaxed_nmadd_`;
+- relaxed conversion/integer operations: `relaxed_trunc__`,
+  `irelaxed_q15mulr_`, `irelaxed_laneselect_`;
+- SpecTec/environment scaffolding: `allocX`, `dots`, `ieee_`, `instrdots`,
+  `s33_to_u32`.
+
+The last five need their own source-level classification and must not be
+reported as missing IEEE arithmetic. Several relaxed tags can compose exact
+relations and profile parameters already present; they do not justify a new
+numeric oracle.
+
+Finite strict arithmetic should use an
+`ExactRatio(sign, numerator, denominator, exp2)` denoting
+`(-1)^sign · numerator/denominator · 2^exp2`, with positive numerator and
+denominator and the existing signed-natural exponent encoding. It need not be
+gcd-reduced: all proof obligations use cross multiplication, quotient, and
+remainder, so canonical reduction would add work without authority.
+
+A witnessed `NormalizedRatio` adds the unique binary exponent `e` satisfying
+`2^e <= |x| < 2^(e+1)`. Signed-exponent cases split before powers are formed,
+keeping every premise in kernel-computable natural arithmetic. The emitter
+then selects the final target quantum before rounding: `2^(e-p)` in a normal
+bin, or the fixed `2^(emin-p)` throughout the subnormal corridor. It scales the
+*original* exact ratio once to `A/B`, defines `q = A div B` and `r = A mod B`,
+and compares `2r` with `B`, using `q mod 2` at equality. This is the complete
+nearest/ties-to-even partition even for odd `B`.
+
+Rounding a normalized significand first and then converting that rounded value
+to a subnormal would be an unsound double-rounding path. Consequently the
+implementable pipeline needs a `QuantumCase` between normalization and result
+emission. Existing carry, signed-zero, overflow, and quantified-NaN emitters
+consume the one rounded candidate.
+
+The implementable Rust boundary is an untrusted `ExactFloatOp` emitter:
+
+```text
+exceptional_clauses(width) -> clauses
+finite_ratio_cases(width) -> RatioCase[]
+emit_normalized_ratio(RatioCase) -> NormalizedCase[]
+select_target_quantum(NormalizedCase, width) -> QuantumCase[]
+emit_round_ratio(QuantumCase, width) -> clauses
+```
+
+`RatioCase` carries metavariable names, side premises, the input spine, sign,
+numerator, denominator, and binary exponent. `NormalizedCase` additionally
+carries the witnessed bin. `QuantumCase` records the normal, subnormal, or
+overflow partition and the exact scaling direction for `A/B`. None contains a
+theorem or mints a trusted rule; only NativeHol replay of resulting clauses has
+theorem authority.
+
+The smallest exact end-to-end milestone is `fmul_`. Its finite ratio has a wide
+significand product, denominator one, and an exponent sum, exercising
+normalization, rounding, carry, subnormals, and overflow without addition's
+cancellation or division's odd denominator. `fdiv_` now validates the general
+`2r` versus `B` comparison; `fadd_`/`fsub_` next add exponent alignment and
+cancellation. `fsqrt_` is not rational and requires a separate integer-square
+lower/upper-bound witness.
+
+The first substrate checkpoint is now concrete in `lower/builtins.rs`.
+`signed_bin_add_cases` gives a disjoint, canonical signed-magnitude sum for two
+bin exponents plus a normalization/rounding carry, including mixed signs,
+negative-plus-negative, cancellation to positive zero, and negative-zero
+refusal. `scale_ratio_to_quantum` subtracts a signed target-quantum exponent
+and multiplies exactly one side of the original ratio by the resulting power
+of two. A positive zero quantum is explicitly canonicalized during negation.
+
+Focused ground-oracle tests cover every exponent-sign combination, carry
+cancellation, normal numerator scaling, subnormal denominator scaling, Side
+discharge, bounded clause generation, exceptional routing, and unified
+factor/product/result replay. These helpers are now connected to `fmul_`
+through checked judgement premises in the same RuleSet.
+
+### Exact unbounded inverse sequence concatenation
+
+The two sequence builtins are deterministic in SpecTec's reference interpreter:
+
+- `inv_concat_` consumes adjacent pairs, returning `[[x0,x1], [x2,x3], …]`,
+  and is undefined for odd-length inputs;
+- `inv_concatn_(n, xs)` consumes adjacent blocks of exactly `n` elements and
+  is defined only for positive `n` dividing `|xs|`.
+
+They now use six ordinary rule-set clauses over the arbitrary-arity reified
+`st$app : nat -> nat -> nat` snoc spine. `inv_concat_` has an empty base and a
+two-cell recursive step. `inv_concatn_.split` is a zero/successor-indexed exact
+suffix view returning `(prefix, block)`; the positive-width chunk graph applies
+that view recursively. Appending each peeled element while the split proof
+unwinds preserves source order. Zero widths, odd pair lists, short final
+blocks, and nonmultiples have no derivation. The regression replays two blocks
+through NativeHol and exhaustively checks those ground refusal boundaries; no
+arity census, assumption, or theorem mint site is involved.
+
 - The result is the WebAssembly unsigned rounded average
   `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before
   returning to the lane carrier, so the intermediate sum does not wrap.
@@ -614,12 +1003,37 @@ The high-level surface now separates claims that used to be easy to conflate:
   deliberately reports `SortInvariant::Unresolved`; carrier renderability is
   not mislabeled as faithful type semantics. The
   `RefinementAwareTypeResolver` now certifies the exact refinement-free
-  dependency closure as `Unconstrained`, while every closure reaching one of
-  the 56 retained refinements stays unresolved pending predicate lowering.
+  dependency closure as `Unconstrained`. Its
+  `SingletonValueRefinementLowerer` additionally turns the retained, ordered
+  `If` premises for `bit`, `byte`, `char`, and `dim` into kernel-typechecked
+  carrier predicates. It accepts only a nullary, one-instance,
+  one-constructor, one-value-payload shape; dependent, parametric, multi-case,
+  field, and non-`If` refinements remain explicitly unresolved rather than
+  being replaced by truth.
 - `VariantTheory` / `VariantTheoryBackend` expose theorem-bearing constructors
   for currently nonrecursive coproduct variants: carrier, source-name lookup,
   constructor terms, injectivity, and pairwise distinctness derived through
   existing kernel laws. Recursive self placeholders still refuse.
+- `SemanticRelation` / `HolRelationPredicate` turn the exact existing-carrier
+  SpecTec fragment into ordinary typed HOL predicates and replay introduction
+  rules through the generic NativeHol-checked closure engine. Refined carriers
+  and binders contribute real membership antecedents. Closed external
+  dependencies are exact side predicates, making the three bundled notation
+  relations (`NotationTypingPremise`, `NotationTypingPremisedots`, and
+  `NotationTypingScheme`) the first **3/125** live declarations. The remaining
+  65 relation carriers retain unresolved nested refinements; the smallest are
+  `Defaultable` and `Nondefaultable` over `valtype`, whose dependency closure
+  reaches only the already-exact `list` and `uN` predicates but still needs
+  structural invariant composition. The other 57 reach ground
+  `fNmag(32|64)` through the legacy whole-carrier renderer before its new exact
+  case predicate can be applied. Both `fNmag` and `ishape` are now exact at
+  direct resolution sites; recursive structural lifting is the shared blocker
+  for all 122 remaining relation carriers. Nonempty
+  cross-relation SCCs still require simultaneous closure. A typed natural
+  relation pins predicate construction, β-normalized application,
+  side-condition preservation, and hypothesis-free rule replay, while the
+  bundled notation scheme replays its real rule against four checked external
+  predicate assumptions.
 - `DecisionLowerer` represents negative rule applicability only through a
   positive decision graph with an adequacy/totality certification contract.
   `CertifiedDecisionFamily` checks exact closed ground totality and adequacy
@@ -747,11 +1161,22 @@ over left-nested snoc spines (`⌜[e₀…eₙ]⌝ = app(⌜[e₀…eₙ₋₁]�
 
 - **Types:** a *total* reified case catalogue (case tags + payload shapes,
   keyed `(type, case)`, no HOL rendering) feeds the evaluator clauses and
-  ground gating; multi-instance dispatch in `resolve_parametric` (+19 HOL
-  renders); single-inst parametric counted honestly (+17 metric). The 9-type
-  mutual SCC (blocks 53 HOL renders incl. `instr`/`module`) stays open — the
-  mutual→single tagged-carrier reduction over the carved/impredicative
-  backends is the plan, off the critical path.
+  ground gating; multi-instance dispatch and single-instance parametric
+  application are counted separately. The nine-type mutual SCC now renders
+  through a simultaneous Church signature: structural aliases are normalized,
+  the eight generative members retain distinct result carriers, and every
+  cross-member payload edge remains visible. Strict coverage is **144/207**
+  and use-site renderability is **170/207**. `MutualChurchSignature` now also
+  exposes all **41** source-ordered handler-injection constructor terms and
+  hypothesis-free, kernel-checked β computation laws. Boolean tag observations
+  prove all **183** same-owner constructor pairs distinct, and projection
+  observations prove **31** non-recursive payload constructors injective. These
+  are explicitly observation-instance theorems: the signature separately
+  retains **41** exact-carrier injectivity and **183** exact-carrier
+  distinctness obligations. The remaining ten payloads contain recursive
+  result carriers and hit the rank-1 reconstruction wall. No source-datatype
+  freeness is claimed until a closed recursive carrier backend discharges the
+  obligations.
 - **Grammars:** whole-corpus `GrammarEnv` (all 231, both modes) + left-recursion
   guard (T* has a `Thexnum` cycle) + honest per-NT coverage class. Residuals:
   grammar-valued param monomorphisation, non-`If` premises, 2 bridge

@@ -61,6 +61,73 @@ pub struct ClauseMeta {
     pub metavars: Vec<String>,
 }
 
+/// Exact address of one explicitly opaque premise in the combined set.
+///
+/// This turns the opacity bound into an auditable source-facing inventory:
+/// consumers need not reverse-engineer clause terms or rely on aggregate tags
+/// to learn which rule remains blocked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpaquePremiseSite {
+    /// Combined-set clause index (the authoritative ordering contract).
+    pub clause_index: usize,
+    /// Premise index within [`Clause::prems`].
+    pub premise_index: usize,
+    /// Conclusion relation identity from the parallel [`ClauseMeta`].
+    pub relation: String,
+    /// Source rule name when this is a rule clause.
+    pub rule_name: String,
+    /// Opaque reason tag, without the `opaque.` relation prefix.
+    pub reason: String,
+    /// Exact positive proof capability required to remove this opacity.
+    pub required_capability: OpaqueCapability,
+}
+
+/// Proof boundary behind one intentionally opaque source premise.
+///
+/// These classes are not guesses about failed search. They identify the exact
+/// closed certificate shape that must be installed before the premise may be
+/// replaced. The coverage tests separately re-read the source AST and pin the
+/// corresponding applicability structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpaqueCapability {
+    /// A certified `No` answer for `Ref_ok(args) ∧ Reftype_sub(args)`.
+    ReferenceCastApplicability,
+    /// A certified `No` answer for the disjunction of the two preceding
+    /// array-data out-of-bounds branches.
+    ArrayDataOutOfBoundsApplicability,
+    /// A universally adequate positive graph deciding the existential
+    /// applicability of earlier `vcvtop__` clauses.
+    VcvtopExistentialPredecessors,
+    /// A universally adequate positive graph deciding `ImmutReachable`, whose
+    /// `false` result entails the explicit source relation negation.
+    ImmutReachableNegation,
+}
+
+// TODO(cov:kernel.hol.init.src.wasm.opaque-composite-decision-schemas, severe): Install closed totality/adequacy schemas for reference-cast and array-data composite applicability, then remove their five opaque premises.
+// TODO(cov:kernel.hol.init.src.wasm.opaque-vcvtop-existential-decision, severe): Decide the existential applicability of preceding vcvtop__ clauses with a closed positive graph schema.
+// TODO(cov:kernel.hol.init.src.wasm.opaque-immut-reachable-decision, severe): Decide ImmutReachable universally and use its certified false graph for NotImmutReachable.
+
+fn opaque_capability(meta: &ClauseMeta, reason: &str) -> Result<OpaqueCapability> {
+    match (meta.relation.as_str(), meta.name.as_str(), reason) {
+        (
+            "Step_read",
+            "br_on_cast-fail" | "br_on_cast_fail-fail" | "ref.test-false" | "ref.cast-fail",
+            "else",
+        ) => Ok(OpaqueCapability::ReferenceCastApplicability),
+        ("Step_read", "array.init_data-zero", "else") => {
+            Ok(OpaqueCapability::ArrayDataOutOfBoundsApplicability)
+        }
+        ("fn.vcvtop__", "", "dec.order") => Ok(OpaqueCapability::VcvtopExistentialPredecessors),
+        ("fn.NotImmutReachable", "", "dec.else-nonif-guard") => {
+            Ok(OpaqueCapability::ImmutReachableNegation)
+        }
+        _ => Err(covalence_core::Error::ConnectiveRule(format!(
+            "unclassified SpecTec opaque premise: {}/{}/{}",
+            meta.relation, meta.name, reason
+        ))),
+    }
+}
+
 /// The one report for the combined set (headline numbers first; the per-leg
 /// censuses ride along in full).
 #[derive(Debug, Clone)]
@@ -88,6 +155,8 @@ pub struct TotalReport {
     /// Opaque premises actually present in the combined clause list, by
     /// reason tag with counts — the exact honest-residue census.
     pub opaque_tags: BTreeMap<String, usize>,
+    /// Every opaque premise at its exact combined-set/source address.
+    pub opaque_sites: Vec<OpaquePremiseSite>,
     /// Per-clause addressing metadata, in clause order.
     pub metas: Vec<ClauseMeta>,
 }
@@ -148,7 +217,8 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
     // Leg 2: Dec graph relations, same flattener (shared ev pool → `ev.cat`
     // etc. are emitted at most once across both legs).
     let (dec_clauses, dec_census) = spec_fn_clauses(defs, &mut fl)?;
-    // Leg 3: the integer-builtin defining clauses (Side-only, no ev deps).
+    // Leg 3: builtin defining clauses (exact arithmetic Sides plus the
+    // recursive inverse-sequence Judgement graphs; no ev deps).
     let (builtin, builtin_report) = builtin_clauses()?;
     // Leg 4: the evaluator pool, drained once.
     let ev_clauses = fl.drain_ev_clauses();
@@ -204,12 +274,22 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
 
     // The honest-residue census: every opaque premise in the final list.
     let mut opaque_tags = BTreeMap::new();
-    for c in &clauses {
-        for p in &c.prems {
+    let mut opaque_sites = Vec::new();
+    for (clause_index, c) in clauses.iter().enumerate() {
+        for (premise_index, p) in c.prems.iter().enumerate() {
             if let LowerPrem::Judgement(j) = p
                 && let Some(reason) = opaque_reason(j)
             {
-                *opaque_tags.entry(reason).or_default() += 1;
+                *opaque_tags.entry(reason.clone()).or_default() += 1;
+                let meta = &metas[clause_index];
+                opaque_sites.push(OpaquePremiseSite {
+                    clause_index,
+                    premise_index,
+                    relation: meta.relation.clone(),
+                    rule_name: meta.name.clone(),
+                    required_capability: opaque_capability(meta, &reason)?,
+                    reason,
+                });
             }
         }
     }
@@ -226,6 +306,7 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
         neq_pairs,
         total_clauses: clauses.len(),
         opaque_tags,
+        opaque_sites,
         metas,
     };
     Ok((clauses, report))
@@ -241,16 +322,15 @@ pub fn total_rule_set(defs: &[SpecTecDef]) -> Result<(RuleSet<'static>, TotalRep
 /// Run `f` on a thread with a 64 MiB stack and propagate its result (and
 /// panics).
 ///
-/// The combined set's `Closed_L` is a right-nested conjunction of ~2500
-/// clauses and kernel term operations recurse structurally, so laying it out
-/// or deriving against it needs ~16 MiB of stack in debug builds — more than
-/// default test-thread stacks. Drive whole-spec work through this until the
-/// kernel walks go iterative (the known term-arena / verified-WASM
-/// construction direction; see the design note's scale risk).
+/// The combined set's `Closed_L` is a right-nested conjunction of more than
+/// 9,000 clauses and kernel term operations recurse structurally. Laying it
+/// out or deriving against it therefore exceeds default test-thread stacks.
+/// Drive whole-spec work through this until the kernel walks become iterative
+/// (the known term-arena / verified-WASM construction direction).
 pub fn with_total_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     let handle = std::thread::Builder::new()
         .name("wasm-total-load".into())
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(512 * 1024 * 1024)
         .spawn(f)
         .expect("spawn total-load thread");
     match handle.join() {

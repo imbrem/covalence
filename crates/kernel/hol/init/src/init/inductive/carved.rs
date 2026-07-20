@@ -64,8 +64,8 @@ use std::sync::{LazyLock, OnceLock};
 
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
-use covalence_hol_eval::TypeDefExt;
 use covalence_hol_eval::derived::DerivedRules;
+use covalence_hol_eval::{EvalTypeDef as TypeDef, TypeDefExt};
 use covalence_inductive::{
     ArgSort, BackendCaps, IndResult, InductiveBackend, InductiveError, InductiveFacts,
     InductiveSpec, InductiveTheory,
@@ -87,6 +87,25 @@ use crate::init::logic::truth;
 use crate::init::option::some_inj;
 
 use covalence_hol_eval::defs::{cond, inl, inr, some, unit_nil};
+
+/// The single reviewed conservative-extension seam used by carved backends.
+///
+/// Callers must derive a hypothesis-free witness theorem `⊢ P witness`.
+/// Keeping the kernel rule invocation here lets new carved representations
+/// reuse typedef sealing without creating additional theorem/type mint sites.
+pub fn seal_witnessed_predicate(
+    type_name: &str,
+    abs_name: &str,
+    rep_name: &str,
+    witness: Thm,
+) -> Result<TypeDef> {
+    if !witness.hyps().is_empty() {
+        return Err(Error::ConnectiveRule(
+            "carved typedef witness has hypotheses".into(),
+        ));
+    }
+    Thm::new_type_definition(type_name, abs_name, rep_name, witness)
+}
 
 // ============================================================================
 // Types + label terms
@@ -466,7 +485,7 @@ impl CarvedSExpr {
         };
 
         // ---- carve the subtype ----
-        let td = Thm::new_type_definition(prefix, name("abs"), name("rep"), wf_nil.clone())?;
+        let td = seal_witnessed_predicate(prefix, &name("abs"), &name("rep"), wf_nil.clone())?;
         let tau = td.tau.clone();
         let abs = td.abs.clone();
         let rep = td.rep.clone();

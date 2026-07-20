@@ -506,6 +506,7 @@ struct ExactRatioTerms {
 enum QuantumClass {
     Normal,
     Subnormal,
+    Overflow,
 }
 
 #[derive(Clone)]
@@ -516,6 +517,298 @@ struct QuantumCase {
     numerator: Term,
     denominator: Term,
     class: QuantumClass,
+    result_bin: Option<SignedNatTerm>,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct FiniteFactor {
+    sign: u64,
+    significand: Term,
+    denominator: Term,
+    exp2: SignedNatTerm,
+    bin_exp: SignedNatTerm,
+    top_bit: Term,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct NormalizedProductCase {
+    sides: Vec<Term>,
+    ratio: ExactRatioTerms,
+    bin_exp: SignedNatTerm,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct FiniteFactorCase {
+    sides: Vec<Term>,
+    factor: FiniteFactor,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn finite_factor_witness(factor: &FiniteFactor) -> Result<Term> {
+    let fields = [
+        mk_nat(factor.sign),
+        factor.significand.clone(),
+        factor.denominator.clone(),
+        mk_nat(u64::from(factor.exp2.negative)),
+        factor.exp2.magnitude.clone(),
+        mk_nat(u64::from(factor.bin_exp.negative)),
+        factor.bin_exp.magnitude.clone(),
+        factor.top_bit.clone(),
+    ];
+    fields
+        .into_iter()
+        .try_fold(con("list"), |xs, field| app(xs, wrap_nat(field)?))
+}
+
+/// Exact, compact factor/bin witnesses for finite floats. The subnormal
+/// highest-bit index is a conclusion field, so later replay can bind it from a
+/// checked helper fact instead of multiplying 23/52 host-enumerated cases
+/// through every downstream rounding branch.
+#[cfg_attr(not(test), allow(dead_code))]
+fn finite_factor_relation_clauses() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        let (p, min_normal_mag): (u64, u64) = if w == 32 { (23, 126) } else { (52, 1022) };
+        for sign in [0, 1] {
+            for exp_sign in [0, 1] {
+                let (_, _, _, _, value, _) =
+                    float_case_named(w, sign, "normal", Some(exp_sign), "src_")?;
+                for case in finite_factor_cases(w, sign, "normal", Some(exp_sign), "src_")? {
+                    let mut sides = case.sides;
+                    sides.push(mv("factor_e").equals(case.factor.exp2.magnitude.clone())?);
+                    let mut factor = case.factor;
+                    factor.exp2.magnitude = mv("factor_e");
+                    out.push(clause(
+                        &["src_m", "src_e", "factor_e"],
+                        sides,
+                        fn_graph(
+                            "fmul_.factor",
+                            &[w_lit(w)?, value.clone()],
+                            &finite_factor_witness(&factor)?,
+                        )?,
+                    ));
+                }
+            }
+
+            let (names, mut sides, _, _, value, _) =
+                float_case_named(w, sign, "subnormal", None, "src_")?;
+            sides.push(lt(mk_nat(0u64), mv("src_m"))?);
+            sides.push(lt(mv("top"), mk_nat(p))?);
+            sides.push(le(pow2(mv("top"))?, mv("src_m"))?);
+            sides.push(lt(mv("src_m"), pow2(add(mv("top"), mk_nat(1u64))?)?)?);
+            sides.push(mv("bin_e").equals(sub(mk_nat(min_normal_mag + p), mv("top"))?)?);
+            let factor = FiniteFactor {
+                sign,
+                significand: mv("src_m"),
+                denominator: mk_nat(1u64),
+                exp2: SignedNatTerm {
+                    negative: true,
+                    magnitude: mk_nat(min_normal_mag + p),
+                },
+                bin_exp: SignedNatTerm {
+                    negative: true,
+                    magnitude: mv("bin_e"),
+                },
+                top_bit: mv("top"),
+            };
+            let mut names = names;
+            names.extend(["top".into(), "bin_e".into()]);
+            let refs = names.iter().map(String::as_str).collect::<Vec<_>>();
+            out.push(clause(
+                &refs,
+                sides,
+                fn_graph(
+                    "fmul_.factor",
+                    &[w_lit(w)?, value],
+                    &finite_factor_witness(&factor)?,
+                )?,
+            ));
+        }
+    }
+    Ok(out)
+}
+
+/// Partition one nonzero finite structural float into an exact integer factor
+/// and a witnessed binary bin. Normal exponents are converted from `E` to the
+/// exact scale `E-p` with signed arithmetic; subnormals are partitioned by
+/// their unique highest set bit.
+#[cfg_attr(not(test), allow(dead_code))]
+fn finite_factor_cases(
+    w: u64,
+    sign: u64,
+    kind: &str,
+    exp_sign: Option<u64>,
+    prefix: &str,
+) -> Result<Vec<FiniteFactorCase>> {
+    let (p, min_normal_mag) = match w {
+        32 => (23u64, 126u64),
+        64 => (52, 1022),
+        _ => unreachable!("only scalar float widths"),
+    };
+    let (_, sides, _, _, _, _) = float_case_named(w, sign, kind, exp_sign, prefix)?;
+    let mantissa_name = format!("{prefix}m");
+    let exponent_name = format!("{prefix}e");
+    let mantissa = mv(&mantissa_name);
+    match kind {
+        "normal" => {
+            let exponent = SignedNatTerm {
+                negative: exp_sign == Some(1),
+                magnitude: mv(&exponent_name),
+            };
+            let mut out = Vec::new();
+            for scale in signed_bin_add_cases(
+                &sides,
+                exponent.clone(),
+                SignedNatTerm {
+                    negative: true,
+                    magnitude: mk_nat(p),
+                },
+                0,
+            )? {
+                out.push(FiniteFactorCase {
+                    sides: scale.sides,
+                    factor: FiniteFactor {
+                        sign,
+                        significand: add(p2(p)?, mantissa.clone())?,
+                        denominator: mk_nat(1u64),
+                        exp2: scale.value,
+                        bin_exp: exponent.clone(),
+                        top_bit: mk_nat(p),
+                    },
+                });
+            }
+            Ok(out)
+        }
+        "subnormal" => {
+            let mut out = Vec::new();
+            for top_bit in 0..p {
+                let mut partition = sides.clone();
+                partition.push(le(p2(top_bit)?, mantissa.clone())?);
+                partition.push(lt(mantissa.clone(), p2(top_bit + 1)?)?);
+                out.push(FiniteFactorCase {
+                    sides: partition,
+                    factor: FiniteFactor {
+                        sign,
+                        significand: mantissa.clone(),
+                        denominator: mk_nat(1u64),
+                        exp2: SignedNatTerm {
+                            negative: true,
+                            magnitude: mk_nat(min_normal_mag + p),
+                        },
+                        bin_exp: SignedNatTerm {
+                            negative: true,
+                            magnitude: mk_nat(min_normal_mag + p - top_bit),
+                        },
+                        top_bit: mk_nat(top_bit),
+                    },
+                });
+            }
+            Ok(out)
+        }
+        _ => unreachable!("finite factors are normal or subnormal"),
+    }
+}
+
+/// Construct the exact finite product and its witnessed normalized bin.
+///
+/// The product of factors with highest set bits `l` and `r` has highest set
+/// bit exactly `l+r` or `l+r+1`. The strict complementary guards below select
+/// those cases, so normalization has neither overlap nor a gap. No target
+/// rounding occurs here.
+#[cfg_attr(not(test), allow(dead_code))]
+fn finite_product_cases(
+    base: &[Term],
+    left: FiniteFactor,
+    right: FiniteFactor,
+) -> Result<Vec<NormalizedProductCase>> {
+    let exp_cases = signed_bin_add_cases(base, left.exp2.clone(), right.exp2.clone(), 0)?;
+    let mut out = Vec::new();
+    let product = mul(left.significand.clone(), right.significand.clone())?;
+    let boundary = pow2(add(
+        add(left.top_bit.clone(), right.top_bit.clone())?,
+        mk_nat(1u64),
+    )?)?;
+    for (normalization_carry, guard) in [
+        (0, lt(product.clone(), boundary.clone())?),
+        (1, le(boundary, product.clone())?),
+    ] {
+        let mut guarded = base.to_vec();
+        guarded.push(guard);
+        let bin_cases = signed_bin_add_cases(
+            &guarded,
+            left.bin_exp.clone(),
+            right.bin_exp.clone(),
+            normalization_carry,
+        )?;
+        for exp in &exp_cases {
+            for bin in &bin_cases {
+                let mut sides = exp.sides.clone();
+                sides.extend(bin.sides.clone());
+                sides.push(lt(mk_nat(0u64), left.significand.clone())?);
+                sides.push(lt(mk_nat(0u64), right.significand.clone())?);
+                sides.push(lt(mk_nat(0u64), left.denominator.clone())?);
+                sides.push(lt(mk_nat(0u64), right.denominator.clone())?);
+                out.push(NormalizedProductCase {
+                    sides,
+                    ratio: ExactRatioTerms {
+                        sign: left.sign ^ right.sign,
+                        numerator: product.clone(),
+                        denominator: mul(left.denominator.clone(), right.denominator.clone())?,
+                        exp2: exp.value.clone(),
+                    },
+                    bin_exp: bin.value.clone(),
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct RatioRoundCase {
+    sides: Vec<Term>,
+    rounded: Term,
+}
+
+/// Round a quantum-scaled exact ratio once, nearest with ties to even.
+#[cfg_attr(not(test), allow(dead_code))]
+fn round_quantum_case(case: &QuantumCase) -> Result<Vec<RatioRoundCase>> {
+    let q = div(case.numerator.clone(), case.denominator.clone())?;
+    let r = md(case.numerator.clone(), case.denominator.clone())?;
+    let twice_r = mul(mk_nat(2u64), r.clone())?;
+    let mut below = case.sides.clone();
+    below.push(lt(twice_r.clone(), case.denominator.clone())?);
+    let mut above = case.sides.clone();
+    above.push(lt(case.denominator.clone(), twice_r.clone())?);
+    let mut even = case.sides.clone();
+    even.push(twice_r.clone().equals(case.denominator.clone())?);
+    even.push(md(q.clone(), mk_nat(2u64))?.equals(mk_nat(0u64))?);
+    let mut odd = case.sides.clone();
+    odd.push(twice_r.equals(case.denominator.clone())?);
+    odd.push(md(q.clone(), mk_nat(2u64))?.equals(mk_nat(1u64))?);
+    let up = add(q.clone(), mk_nat(1u64))?;
+    Ok(vec![
+        RatioRoundCase {
+            sides: below,
+            rounded: q.clone(),
+        },
+        RatioRoundCase {
+            sides: even,
+            rounded: q,
+        },
+        RatioRoundCase {
+            sides: above,
+            rounded: up.clone(),
+        },
+        RatioRoundCase {
+            sides: odd,
+            rounded: up,
+        },
+    ])
 }
 
 /// Scale an exact ratio by the reciprocal of a target quantum.
@@ -531,6 +824,7 @@ fn scale_ratio_to_quantum(
     ratio: ExactRatioTerms,
     quantum_exp: SignedNatTerm,
     class: QuantumClass,
+    result_bin: Option<SignedNatTerm>,
 ) -> Result<Vec<QuantumCase>> {
     let negated_quantums = if quantum_exp.negative {
         vec![(
@@ -588,7 +882,270 @@ fn scale_ratio_to_quantum(
                 numerator,
                 denominator,
                 class: class.clone(),
+                result_bin: result_bin.clone(),
             });
+        }
+    }
+    Ok(out)
+}
+
+/// Select the final target quantum from a witnessed normalized binary bin.
+///
+/// Bins inside the normal exponent range use `2^(e-p)`. Every lower bin uses
+/// the single fixed subnormal quantum `2^(emin-p)`, including values that will
+/// eventually round to zero. Bins above `emax` are classified as immediate
+/// overflow; the `emax` bin itself still goes through rounding because its
+/// significand decides maximum-finite versus infinity.
+#[cfg_attr(not(test), allow(dead_code))]
+fn select_float_target_quantum(
+    base: &[Term],
+    ratio: ExactRatioTerms,
+    bin_exp: SignedNatTerm,
+    w: u64,
+) -> Result<Vec<QuantumCase>> {
+    let (p, min_normal_mag, max_normal): (u64, u64, u64) = match w {
+        32 => (23, 126, 127),
+        64 => (52, 1022, 1023),
+        _ => unreachable!("only scalar float widths"),
+    };
+    let mut out = Vec::new();
+    if bin_exp.negative {
+        let mut normal = base.to_vec();
+        normal.push(le(bin_exp.magnitude.clone(), mk_nat(min_normal_mag))?);
+        out.extend(scale_ratio_to_quantum(
+            &normal,
+            ratio.clone(),
+            SignedNatTerm {
+                negative: true,
+                magnitude: add(bin_exp.magnitude.clone(), mk_nat(p))?,
+            },
+            QuantumClass::Normal,
+            Some(bin_exp.clone()),
+        )?);
+
+        let mut subnormal = base.to_vec();
+        subnormal.push(lt(mk_nat(min_normal_mag), bin_exp.magnitude)?);
+        out.extend(scale_ratio_to_quantum(
+            &subnormal,
+            ratio,
+            SignedNatTerm {
+                negative: true,
+                magnitude: mk_nat(min_normal_mag + p),
+            },
+            QuantumClass::Subnormal,
+            None,
+        )?);
+    } else {
+        let mut normal = base.to_vec();
+        normal.push(le(bin_exp.magnitude.clone(), mk_nat(max_normal))?);
+        let quantum_cases = signed_bin_add_cases(
+            &normal,
+            bin_exp.clone(),
+            SignedNatTerm {
+                negative: true,
+                magnitude: mk_nat(p),
+            },
+            0,
+        )?;
+        for quantum in quantum_cases {
+            out.extend(scale_ratio_to_quantum(
+                &quantum.sides,
+                ratio.clone(),
+                quantum.value,
+                QuantumClass::Normal,
+                Some(bin_exp.clone()),
+            )?);
+        }
+
+        let mut overflow = base.to_vec();
+        overflow.push(lt(mk_nat(max_normal), bin_exp.magnitude)?);
+        overflow.push(lt(mk_nat(0u64), ratio.numerator.clone())?);
+        overflow.push(lt(mk_nat(0u64), ratio.denominator.clone())?);
+        out.push(QuantumCase {
+            sides: overflow,
+            sign: ratio.sign,
+            numerator: ratio.numerator,
+            denominator: ratio.denominator,
+            class: QuantumClass::Overflow,
+            result_bin: None,
+        });
+    }
+    Ok(out)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn emit_fmul_quantum_result(
+    names: &[String],
+    case: &QuantumCase,
+    w: u64,
+    left: Term,
+    right: Term,
+) -> Result<Vec<Clause>> {
+    let (p, min_normal_mag, max_normal) = match w {
+        32 => (23u64, 126u64, 127u64),
+        64 => (52, 1022, 1023),
+        _ => unreachable!(),
+    };
+    let mut out = Vec::new();
+    if matches!(case.class, QuantumClass::Overflow) {
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        out.push(clause(
+            &refs,
+            case.sides.clone(),
+            float_selection_concl(
+                "fmul_",
+                w,
+                left,
+                right,
+                structural_float(case.sign, app(con("case.INF"), con("tup"))?)?,
+            )?,
+        ));
+        return Ok(out);
+    }
+    for rounded in round_quantum_case(case)? {
+        match case.class {
+            QuantumClass::Subnormal => {
+                let mut zero = rounded.sides.clone();
+                zero.push(rounded.rounded.clone().equals(mk_nat(0u64))?);
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                out.push(clause(
+                    &refs,
+                    zero,
+                    float_selection_concl(
+                        "fmul_",
+                        w,
+                        left.clone(),
+                        right.clone(),
+                        signed_zero(case.sign)?,
+                    )?,
+                ));
+                let mut payload = rounded.sides.clone();
+                payload.push(lt(mk_nat(0u64), rounded.rounded.clone())?);
+                payload.push(lt(rounded.rounded.clone(), p2(p)?)?);
+                payload.push(mv("dst_m").equals(rounded.rounded.clone())?);
+                let mut ns = names.to_vec();
+                ns.push("dst_m".into());
+                let refs: Vec<&str> = ns.iter().map(String::as_str).collect();
+                out.push(clause(
+                    &refs,
+                    payload,
+                    float_selection_concl(
+                        "fmul_",
+                        w,
+                        left.clone(),
+                        right.clone(),
+                        structural_float(
+                            case.sign,
+                            app(
+                                con("case.SUBNORM"),
+                                app(con("tup"), wrap_nat(mv("dst_m"))?)?,
+                            )?,
+                        )?,
+                    )?,
+                ));
+                let mut carry = rounded.sides;
+                carry.push(rounded.rounded.equals(p2(p)?)?);
+                out.push(clause(
+                    &names.iter().map(String::as_str).collect::<Vec<_>>(),
+                    carry,
+                    float_selection_concl(
+                        "fmul_",
+                        w,
+                        left.clone(),
+                        right.clone(),
+                        structural_normal(case.sign, mk_nat(0u64), 1, mk_nat(min_normal_mag))?,
+                    )?,
+                ));
+            }
+            QuantumClass::Normal => {
+                let bin = case.result_bin.clone().expect("normal bin witness");
+                let mut ordinary = rounded.sides.clone();
+                ordinary.push(le(p2(p)?, rounded.rounded.clone())?);
+                ordinary.push(lt(rounded.rounded.clone(), p2(p + 1)?)?);
+                ordinary.push(mv("dst_m").equals(sub(rounded.rounded.clone(), p2(p)?)?)?);
+                ordinary.push(mv("dst_e").equals(bin.magnitude.clone())?);
+                let mut ns = names.to_vec();
+                ns.extend(["dst_m".into(), "dst_e".into()]);
+                let refs: Vec<&str> = ns.iter().map(String::as_str).collect();
+                out.push(clause(
+                    &refs,
+                    ordinary,
+                    float_selection_concl(
+                        "fmul_",
+                        w,
+                        left.clone(),
+                        right.clone(),
+                        structural_normal(
+                            case.sign,
+                            mv("dst_m"),
+                            u64::from(bin.negative),
+                            mv("dst_e"),
+                        )?,
+                    )?,
+                ));
+                let mut carry = rounded.sides;
+                carry.push(rounded.rounded.equals(p2(p + 1)?)?);
+                for exponent in signed_bin_add_cases(
+                    &carry,
+                    bin.clone(),
+                    SignedNatTerm {
+                        negative: false,
+                        magnitude: mk_nat(1u64),
+                    },
+                    0,
+                )? {
+                    if exponent.value.negative {
+                        let mut sides = exponent.sides;
+                        sides.push(mv("dst_e").equals(exponent.value.magnitude.clone())?);
+                        let mut ns = names.to_vec();
+                        ns.push("dst_e".into());
+                        let refs: Vec<&str> = ns.iter().map(String::as_str).collect();
+                        out.push(clause(
+                            &refs,
+                            sides,
+                            float_selection_concl(
+                                "fmul_",
+                                w,
+                                left.clone(),
+                                right.clone(),
+                                structural_normal(case.sign, mk_nat(0u64), 1, mv("dst_e"))?,
+                            )?,
+                        ));
+                    } else {
+                        let mut finite = exponent.sides.clone();
+                        finite.push(le(exponent.value.magnitude.clone(), mk_nat(max_normal))?);
+                        finite.push(mv("dst_e").equals(exponent.value.magnitude.clone())?);
+                        let mut ns = names.to_vec();
+                        ns.push("dst_e".into());
+                        let refs: Vec<&str> = ns.iter().map(String::as_str).collect();
+                        out.push(clause(
+                            &refs,
+                            finite,
+                            float_selection_concl(
+                                "fmul_",
+                                w,
+                                left.clone(),
+                                right.clone(),
+                                structural_normal(case.sign, mk_nat(0u64), 0, mv("dst_e"))?,
+                            )?,
+                        ));
+                        let mut overflow = exponent.sides;
+                        overflow.push(lt(mk_nat(max_normal), exponent.value.magnitude)?);
+                        out.push(clause(
+                            &names.iter().map(String::as_str).collect::<Vec<_>>(),
+                            overflow,
+                            float_selection_concl(
+                                "fmul_",
+                                w,
+                                left.clone(),
+                                right.clone(),
+                                structural_float(case.sign, app(con("case.INF"), con("tup"))?)?,
+                            )?,
+                        ));
+                    }
+                }
+            }
+            QuantumClass::Overflow => unreachable!(),
         }
     }
     Ok(out)
@@ -1795,6 +2352,7 @@ fn push_float_selection(
 
 fn push_binary_nan_result_set(
     out: &mut Vec<Clause>,
+    ops: &[&str],
     names: &[String],
     base: &[Term],
     w: u64,
@@ -1837,7 +2395,7 @@ fn push_binary_nan_result_set(
         }
     }
 
-    for op in ["fmin_", "fmax_"] {
+    for &op in ops {
         for output_sign in [0, 1] {
             let mut sides = canonical.clone();
             sides.push(mv("dst_m").equals(canon.clone())?);
@@ -1874,6 +2432,135 @@ fn push_binary_nan_result_set(
         }
     }
     Ok(())
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn float_mul_exceptional_clauses() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        let p = if w == 32 { 23 } else { 52 };
+        for left_sign in [0, 1] {
+            for (left_kind, left_exp) in FLOAT_SHAPES {
+                let (left_names, left_sides, _, _, left, _) =
+                    float_case_named(w, left_sign, left_kind, left_exp, "a_")?;
+                for right_sign in [0, 1] {
+                    for (right_kind, right_exp) in FLOAT_SHAPES {
+                        let (right_names, right_sides, _, _, right, _) =
+                            float_case_named(w, right_sign, right_kind, right_exp, "b_")?;
+                        let mut names = left_names.clone();
+                        names.extend(right_names);
+                        let mut base = left_sides.clone();
+                        base.extend(right_sides);
+                        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                        if left_kind == "nan" || right_kind == "nan" {
+                            push_binary_nan_result_set(
+                                &mut out,
+                                &["fmul_"],
+                                &names,
+                                &base,
+                                w,
+                                &left,
+                                &right,
+                                left_kind == "nan",
+                                right_kind == "nan",
+                            )?;
+                            continue;
+                        }
+                        let left_zero = left_kind == "subnormal";
+                        let right_zero = right_kind == "subnormal";
+                        if (left_kind == "infinity" && right_zero)
+                            || (right_kind == "infinity" && left_zero)
+                        {
+                            let mut invalid = base.clone();
+                            invalid.push(
+                                mv(if left_zero { "a_m" } else { "b_m" }).equals(mk_nat(0u64))?,
+                            );
+                            for result_sign in [0, 1] {
+                                let mut sides = invalid.clone();
+                                sides.push(mv("dst_m").equals(p2(p - 1)?)?);
+                                let mut ns = names.clone();
+                                ns.push("dst_m".to_owned());
+                                let rs: Vec<&str> = ns.iter().map(String::as_str).collect();
+                                out.push(clause(
+                                    &rs,
+                                    sides,
+                                    float_selection_concl(
+                                        "fmul_",
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        structural_nan(result_sign, mv("dst_m"))?,
+                                    )?,
+                                ));
+                            }
+                            continue;
+                        }
+                        if left_kind == "infinity" || right_kind == "infinity" {
+                            let mut sides = base.clone();
+                            if left_zero || right_zero {
+                                sides.push(lt(
+                                    mk_nat(0u64),
+                                    mv(if left_zero { "a_m" } else { "b_m" }),
+                                )?);
+                            }
+                            out.push(clause(
+                                &refs,
+                                sides,
+                                float_selection_concl(
+                                    "fmul_",
+                                    w,
+                                    left.clone(),
+                                    right.clone(),
+                                    structural_float(
+                                        left_sign ^ right_sign,
+                                        app(con("case.INF"), con("tup"))?,
+                                    )?,
+                                )?,
+                            ));
+                            continue;
+                        }
+                        if left_zero || right_zero {
+                            // Make the double-subnormal partition disjoint:
+                            // the left-zero branch owns the double-zero point,
+                            // while the right-zero branch requires left
+                            // nonzero. This prevents duplicate clauses without
+                            // erasing either signed-zero case.
+                            let zero_branches = if left_zero && right_zero {
+                                vec![
+                                    vec![mv("a_m").equals(mk_nat(0u64))?],
+                                    vec![
+                                        lt(mk_nat(0u64), mv("a_m"))?,
+                                        mv("b_m").equals(mk_nat(0u64))?,
+                                    ],
+                                ]
+                            } else {
+                                vec![vec![
+                                    mv(if left_zero { "a_m" } else { "b_m" })
+                                        .equals(mk_nat(0u64))?,
+                                ]]
+                            };
+                            for zero_guards in zero_branches {
+                                let mut sides = base.clone();
+                                sides.extend(zero_guards);
+                                out.push(clause(
+                                    &refs,
+                                    sides,
+                                    float_selection_concl(
+                                        "fmul_",
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        signed_zero(left_sign ^ right_sign)?,
+                                    )?,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Exact IEEE comparisons and `copysign` over the complete structural
@@ -1953,6 +2640,7 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                             }
                             push_binary_nan_result_set(
                                 &mut out,
+                                &["fmin_", "fmax_"],
                                 &names,
                                 &base,
                                 w,
@@ -3916,6 +4604,7 @@ mod tests {
                 magnitude: nat(2),
             },
             QuantumClass::Normal,
+            None,
         )
         .unwrap();
         assert!(normal.iter().any(|case| {
@@ -3943,6 +4632,7 @@ mod tests {
                 magnitude: nat(0),
             },
             QuantumClass::Subnormal,
+            None,
         )
         .unwrap();
         assert!(subnormal.iter().any(|case| {
@@ -3952,6 +4642,260 @@ mod tests {
                 && prove_side(&case.denominator.clone().equals(nat(40)).unwrap()).is_ok()
                 && case.sides.iter().all(|side| prove_side(side).is_ok())
         }));
+
+        for (numerator, denominator, expected) in [(5, 2, 2), (7, 2, 4), (8, 3, 3)] {
+            let quantum = QuantumCase {
+                sides: vec![],
+                sign: 0,
+                numerator: nat(numerator),
+                denominator: nat(denominator),
+                class: QuantumClass::Normal,
+                result_bin: None,
+            };
+            let rounded = round_quantum_case(&quantum).unwrap();
+            assert!(rounded.iter().any(|case| {
+                prove_side(&case.rounded.clone().equals(nat(expected)).unwrap()).is_ok()
+                    && case.sides.iter().all(|side| prove_side(side).is_ok())
+            }));
+        }
+
+        for (negative, magnitude, class, scaled_n, scaled_d) in [
+            (true, 126, QuantumClass::Normal, 1 << 23, 1),
+            (true, 127, QuantumClass::Subnormal, 1 << 22, 1),
+            (true, 150, QuantumClass::Subnormal, 1, 2),
+            (false, 127, QuantumClass::Normal, 1 << 23, 1),
+            (false, 128, QuantumClass::Overflow, 1, 1),
+        ] {
+            let cases = select_float_target_quantum(
+                &[],
+                ExactRatioTerms {
+                    sign: 0,
+                    numerator: nat(1),
+                    denominator: nat(1),
+                    exp2: SignedNatTerm {
+                        negative,
+                        magnitude: nat(magnitude),
+                    },
+                },
+                SignedNatTerm {
+                    negative,
+                    magnitude: nat(magnitude),
+                },
+                32,
+            )
+            .unwrap();
+            assert!(cases.iter().any(|case| {
+                std::mem::discriminant(&case.class) == std::mem::discriminant(&class)
+                    && prove_side(&case.numerator.clone().equals(nat(scaled_n)).unwrap()).is_ok()
+                    && prove_side(&case.denominator.clone().equals(nat(scaled_d)).unwrap()).is_ok()
+                    && case.sides.iter().all(|side| prove_side(side).is_ok())
+            }));
+        }
+
+        let products = finite_product_cases(
+            &[],
+            FiniteFactor {
+                sign: 1,
+                significand: nat(3),
+                denominator: nat(5),
+                exp2: SignedNatTerm {
+                    negative: true,
+                    magnitude: nat(4),
+                },
+                bin_exp: SignedNatTerm {
+                    negative: true,
+                    magnitude: nat(2),
+                },
+                top_bit: nat(1),
+            },
+            FiniteFactor {
+                sign: 1,
+                significand: nat(7),
+                denominator: nat(11),
+                exp2: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(6),
+                },
+                bin_exp: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(3),
+                },
+                top_bit: nat(2),
+            },
+        )
+        .unwrap();
+        assert!(products.iter().any(|product| {
+            product.ratio.sign == 0
+                && prove_side(&product.ratio.numerator.clone().equals(nat(21)).unwrap()).is_ok()
+                && prove_side(&product.ratio.denominator.clone().equals(nat(55)).unwrap()).is_ok()
+                && !product.ratio.exp2.negative
+                && prove_side(&product.ratio.exp2.magnitude.clone().equals(nat(2)).unwrap()).is_ok()
+                && !product.bin_exp.negative
+                && prove_side(&product.bin_exp.magnitude.clone().equals(nat(2)).unwrap()).is_ok()
+                && product.sides.iter().all(|side| prove_side(side).is_ok())
+        }));
+    }
+
+    #[test]
+    fn finite_float_factors_have_exact_scales_and_unique_subnormal_bins() {
+        fn ground(term: &Term, bindings: &[(&str, u64)]) -> Term {
+            bindings.iter().fold(term.clone(), |term, (name, value)| {
+                subst_free(&term, &Var::new(metavar_name(name), phi()), &mk_nat(*value))
+            })
+        }
+
+        let normals = finite_factor_cases(32, 0, "normal", Some(0), "src_").unwrap();
+        assert!(normals.iter().any(|case| {
+            let bindings = [("src_m", 0), ("src_e", 5)];
+            case.sides
+                .iter()
+                .all(|side| prove_side(&ground(side, &bindings)).is_ok())
+                && prove_side(
+                    &ground(&case.factor.significand, &bindings)
+                        .equals(nat(1 << 23))
+                        .unwrap(),
+                )
+                .is_ok()
+                && case.factor.exp2.negative
+                && prove_side(
+                    &ground(&case.factor.exp2.magnitude, &bindings)
+                        .equals(nat(18))
+                        .unwrap(),
+                )
+                .is_ok()
+                && !case.factor.bin_exp.negative
+                && prove_side(
+                    &ground(&case.factor.bin_exp.magnitude, &bindings)
+                        .equals(nat(5))
+                        .unwrap(),
+                )
+                .is_ok()
+        }));
+
+        let subnormals = finite_factor_cases(32, 1, "subnormal", None, "src_").unwrap();
+        let matching = subnormals
+            .iter()
+            .filter(|case| {
+                case.sides
+                    .iter()
+                    .all(|side| prove_side(&ground(side, &[("src_m", 5)])).is_ok())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matching.len(),
+            1,
+            "highest-set-bit partition must be unique"
+        );
+        let factor = &matching[0].factor;
+        assert!(prove_side(&factor.top_bit.clone().equals(nat(2)).unwrap()).is_ok());
+        assert!(factor.exp2.negative);
+        assert!(prove_side(&factor.exp2.magnitude.clone().equals(nat(149)).unwrap()).is_ok());
+        assert!(factor.bin_exp.negative);
+        assert!(prove_side(&factor.bin_exp.magnitude.clone().equals(nat(147)).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn finite_product_normalization_guards_are_disjoint() {
+        let factor = |significand, top_bit| FiniteFactor {
+            sign: 0,
+            significand: nat(significand),
+            denominator: nat(1),
+            exp2: SignedNatTerm {
+                negative: false,
+                magnitude: nat(0),
+            },
+            bin_exp: SignedNatTerm {
+                negative: false,
+                magnitude: nat(top_bit),
+            },
+            top_bit: nat(top_bit),
+        };
+        for (left, right, expected_bin) in [(2, 2, 2), (3, 3, 3)] {
+            let products = finite_product_cases(&[], factor(left, 1), factor(right, 1)).unwrap();
+            let live = products
+                .iter()
+                .filter(|case| case.sides.iter().all(|side| prove_side(side).is_ok()))
+                .collect::<Vec<_>>();
+            assert_eq!(live.len(), 1, "exactly one carry guard must hold");
+            assert!(!live[0].bin_exp.negative);
+            assert!(
+                prove_side(
+                    &live[0]
+                        .bin_exp
+                        .magnitude
+                        .clone()
+                        .equals(nat(expected_bin))
+                        .unwrap()
+                )
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn compact_finite_factor_relation_pins_subnormal_top_bit() {
+        let start = std::time::Instant::now();
+        let clauses = finite_factor_relation_clauses().unwrap();
+        assert_eq!(clauses.len(), 20);
+        assert!(start.elapsed().as_secs_f32() < 1.0);
+        let input = structural_float(
+            0,
+            app(
+                con("case.SUBNORM"),
+                app(con("tup"), wrap_nat(nat(5)).unwrap()).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let factor = FiniteFactor {
+            sign: 0,
+            significand: nat(5),
+            denominator: nat(1),
+            exp2: SignedNatTerm {
+                negative: true,
+                magnitude: nat(149),
+            },
+            bin_exp: SignedNatTerm {
+                negative: true,
+                magnitude: nat(147),
+            },
+            top_bit: nat(2),
+        };
+        let target = fn_graph(
+            "fmul_.factor",
+            &[w_lit(32).unwrap(), input],
+            &finite_factor_witness(&factor).unwrap(),
+        )
+        .unwrap();
+        assert!(derivable_at(&clauses, &target));
+    }
+
+    #[test]
+    fn fmul_normal_rounding_carry_pins_the_destination_exponent() {
+        let left = con("left");
+        let right = con("right");
+        let case = QuantumCase {
+            sides: vec![],
+            sign: 0,
+            numerator: nat(1 << 24),
+            denominator: nat(1),
+            class: QuantumClass::Normal,
+            result_bin: Some(SignedNatTerm {
+                negative: true,
+                magnitude: nat(1),
+            }),
+        };
+        let clauses =
+            emit_fmul_quantum_result(&[], &case, 32, left.clone(), right.clone()).unwrap();
+        let target = float_selection_concl(
+            "fmul_",
+            32,
+            left,
+            right,
+            structural_normal(0, nat(0), 0, nat(0)).unwrap(),
+        )
+        .unwrap();
+        assert!(derivable_at(&clauses, &target));
     }
 
     fn spine(xs: &[Term]) -> Term {

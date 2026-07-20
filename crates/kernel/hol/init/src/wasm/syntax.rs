@@ -1081,13 +1081,81 @@ impl MutualChurchSignature {
         if payload.type_of()? != expected {
             return Err(syntax_err("wrong U-level routing payload"));
         }
+        if constructor == 1 {
+            if recursive_slot != 0 {
+                return Err(syntax_err("recursive slot index out of range"));
+            }
+            if list_index.is_some() {
+                return Err(syntax_err(
+                    "direct recursive slot does not take a list index",
+                ));
+            }
+            if expected != universal {
+                return Err(syntax_err("constructor 1 child is not direct U"));
+            }
+            return covalence_hol_eval::defs::some(universal).apply(payload);
+        }
+        if matches!(constructor, 3 | 18 | 26 | 32 | 39) {
+            if recursive_slot != 0 {
+                return Err(syntax_err("recursive slot index out of range"));
+            }
+            if list_index.is_some() {
+                return Err(syntax_err(
+                    "direct recursive slot does not take a list index",
+                ));
+            }
+            let covalence_core::TypeKind::Spec(_, arguments) = expected.kind() else {
+                return Err(syntax_err("constructor 3 payload is not a product"));
+            };
+            if arguments.len() != 2 {
+                return Err(syntax_err("constructor 3 payload is not binary"));
+            }
+            let child = if matches!(constructor, 18 | 32) {
+                covalence_hol_eval::defs::fst(arguments[0].clone(), arguments[1].clone())
+                    .apply(payload)?
+            } else {
+                covalence_hol_eval::defs::snd(arguments[0].clone(), arguments[1].clone())
+                    .apply(payload)?
+            };
+            if child.type_of()? != universal {
+                return Err(syntax_err("constructor 3 child is not direct U"));
+            }
+            return covalence_hol_eval::defs::some(universal).apply(child);
+        }
+        if constructor == 30 && recursive_slot == 1 {
+            if list_index.is_some() {
+                return Err(syntax_err(
+                    "direct recursive slot does not take a list index",
+                ));
+            }
+            let covalence_core::TypeKind::Spec(_, outer) = expected.kind() else {
+                return Err(syntax_err("constructor 30 payload is not a product"));
+            };
+            if outer.len() != 2 {
+                return Err(syntax_err("constructor 30 outer payload is not binary"));
+            }
+            let tail =
+                covalence_hol_eval::defs::snd(outer[0].clone(), outer[1].clone()).apply(payload)?;
+            let covalence_core::TypeKind::Spec(_, inner) = outer[1].kind() else {
+                return Err(syntax_err("constructor 30 tail is not a product"));
+            };
+            if inner.len() != 2 {
+                return Err(syntax_err("constructor 30 tail is not binary"));
+            }
+            let child =
+                covalence_hol_eval::defs::snd(inner[0].clone(), inner[1].clone()).apply(tail)?;
+            if child.type_of()? != universal {
+                return Err(syntax_err("constructor 30 direct child is not U"));
+            }
+            return covalence_hol_eval::defs::some(universal).apply(child);
+        }
         let index =
             list_index.ok_or_else(|| syntax_err("list-valued recursive slot needs an index"))?;
         if index.type_of()? != Type::nat() {
             return Err(syntax_err("recursive list index is not nat"));
         }
         let children = match constructor {
-            0 if recursive_slot == 0 => payload,
+            0 | 20 if recursive_slot == 0 => payload,
             2 if recursive_slot < 2 => {
                 let covalence_core::TypeKind::Spec(_, arguments) = expected.kind() else {
                     return Err(syntax_err("two-slot payload is not a product"));
@@ -1103,7 +1171,23 @@ impl MutualChurchSignature {
                         .apply(payload)?
                 }
             }
-            0 | 2 => return Err(syntax_err("recursive slot index out of range")),
+            30 if recursive_slot == 0 => {
+                let covalence_core::TypeKind::Spec(_, outer) = expected.kind() else {
+                    return Err(syntax_err("constructor 30 payload is not a product"));
+                };
+                if outer.len() != 2 {
+                    return Err(syntax_err("constructor 30 outer payload is not binary"));
+                }
+                let tail = covalence_hol_eval::defs::snd(outer[0].clone(), outer[1].clone())
+                    .apply(payload)?;
+                let covalence_core::TypeKind::Spec(_, inner) = outer[1].kind() else {
+                    return Err(syntax_err("constructor 30 tail is not a product"));
+                };
+                covalence_hol_eval::defs::fst(inner[0].clone(), inner[1].clone()).apply(tail)?
+            }
+            0 | 2 | 20 | 30 => {
+                return Err(syntax_err("recursive slot index out of range"));
+            }
             _ => {
                 return Err(syntax_err(
                     "constructor is outside the exact routed fragment",
@@ -1113,6 +1197,11 @@ impl MutualChurchSignature {
         covalence_hol_eval::defs::list_index(universal)
             .apply(index)?
             .apply(children)
+    }
+
+    /// Source-order recursive constructors whose payload router is complete.
+    pub fn carved_routed_recursive_constructors(&self) -> &'static [usize] {
+        &[0, 1, 2, 3, 18, 20, 26, 30, 32, 39]
     }
 
     /// First simultaneous Wf closure clause: every in-bounds child of
@@ -1148,6 +1237,29 @@ impl MutualChurchSignature {
             .apply(index.clone())?
             .apply(length)?;
         in_bounds.imp(routed_wf)?.forall(index_name, Type::nat())
+    }
+
+    /// Wf closure for constructor 1's direct recursive child.
+    pub fn carved_ctor1_wf_clause(
+        &self,
+        child_wf: covalence_core::Term,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        if child_wf.type_of()? != Type::fun(universal.clone(), Type::bool()) {
+            return Err(syntax_err("child Wf predicate has the wrong carrier"));
+        }
+        if payload.type_of()? != universal {
+            return Err(syntax_err("constructor 1 Wf payload has wrong carrier"));
+        }
+        let route = self.carved_route_child(1, payload, 0, None)?;
+        let routed_wf = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(child_wf)?
+            .apply(route)?;
+        Ok(routed_wf)
     }
 
     /// Simultaneous Wf closure for constructor 2's two independent `list U`
@@ -1202,6 +1314,418 @@ impl MutualChurchSignature {
             clauses.push(in_bounds.imp(routed_wf)?.forall(&index_name, Type::nat())?);
         }
         clauses[0].clone().and(clauses[1].clone())
+    }
+
+    /// Wf closure for constructor 3's direct recursive child.
+    pub fn carved_ctor3_wf_clause(
+        &self,
+        child_wf: covalence_core::Term,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        if child_wf.type_of()? != Type::fun(universal.clone(), Type::bool()) {
+            return Err(syntax_err(
+                "constructor 3 child Wf predicate has wrong carrier",
+            ));
+        }
+        if payload.type_of()? != self.carved_universal_payload(3)? {
+            return Err(syntax_err("constructor 3 Wf payload has wrong carrier"));
+        }
+        let child = self.carved_route_child(3, payload, 0, None)?;
+        covalence_hol_eval::defs::option_case(universal, Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(child_wf)?
+            .apply(child)
+    }
+
+    /// Wf closure for the direct-child binary-product cluster.
+    pub fn carved_direct_product_wf_clause(
+        &self,
+        constructor: usize,
+        child_wf: covalence_core::Term,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        if !matches!(constructor, 18 | 26 | 32 | 39) {
+            return Err(syntax_err(
+                "constructor is outside direct-product Wf cluster",
+            ));
+        }
+        let universal = self.carved_universal_domain_carrier()?;
+        if child_wf.type_of()? != Type::fun(universal.clone(), Type::bool()) {
+            return Err(syntax_err(
+                "direct-product child Wf predicate has wrong carrier",
+            ));
+        }
+        if payload.type_of()? != self.carved_universal_payload(constructor)? {
+            return Err(syntax_err("direct-product Wf payload has wrong carrier"));
+        }
+        let child = self.carved_route_child(constructor, payload, 0, None)?;
+        covalence_hol_eval::defs::option_case(universal, Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(child_wf)?
+            .apply(child)
+    }
+
+    /// Wf closure for constructor 20's `list U` payload.
+    pub fn carved_ctor20_wf_clause(
+        &self,
+        child_wf: covalence_core::Term,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        if child_wf.type_of()? != Type::fun(universal.clone(), Type::bool()) {
+            return Err(syntax_err(
+                "constructor 20 child Wf predicate has wrong carrier",
+            ));
+        }
+        if payload.type_of()? != crate::init::list::list(universal.clone()) {
+            return Err(syntax_err("constructor 20 Wf payload is not list U"));
+        }
+        let index_name = "cov$mutual$wf$index$20";
+        let index = covalence_core::Term::free(index_name, Type::nat());
+        let route = self.carved_route_child(20, payload.clone(), 0, Some(index.clone()))?;
+        let routed_wf = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(child_wf)?
+            .apply(route)?;
+        let length = covalence_hol_eval::defs::list_length(universal).apply(payload)?;
+        let in_bounds = crate::init::nat::nat_lt()
+            .apply(index.clone())?
+            .apply(length)?;
+        in_bounds.imp(routed_wf)?.forall(index_name, Type::nat())
+    }
+
+    /// Wf closure for constructor 30's indexed list child and direct child.
+    pub fn carved_ctor30_wf_clause(
+        &self,
+        list_wf: covalence_core::Term,
+        direct_wf: covalence_core::Term,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        let predicate_ty = Type::fun(universal.clone(), Type::bool());
+        if list_wf.type_of()? != predicate_ty || direct_wf.type_of()? != predicate_ty {
+            return Err(syntax_err(
+                "constructor 30 child Wf predicate has wrong carrier",
+            ));
+        }
+        let expected = self.carved_universal_payload(30)?;
+        if payload.type_of()? != expected {
+            return Err(syntax_err("constructor 30 Wf payload has wrong carrier"));
+        }
+        let covalence_core::TypeKind::Spec(_, outer) = expected.kind() else {
+            return Err(syntax_err("constructor 30 payload is not a product"));
+        };
+        let tail = covalence_hol_eval::defs::snd(outer[0].clone(), outer[1].clone())
+            .apply(payload.clone())?;
+        let covalence_core::TypeKind::Spec(_, inner) = outer[1].kind() else {
+            return Err(syntax_err("constructor 30 tail is not a product"));
+        };
+        let children =
+            covalence_hol_eval::defs::fst(inner[0].clone(), inner[1].clone()).apply(tail)?;
+        let index_name = "cov$mutual$wf$index$30";
+        let index = covalence_core::Term::free(index_name, Type::nat());
+        let list_route = self.carved_route_child(30, payload.clone(), 0, Some(index.clone()))?;
+        let routed_list_wf = covalence_hol_eval::defs::option_case(universal.clone(), Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(list_wf)?
+            .apply(list_route)?;
+        let length = covalence_hol_eval::defs::list_length(universal.clone()).apply(children)?;
+        let bounded = crate::init::nat::nat_lt()
+            .apply(index.clone())?
+            .apply(length)?
+            .imp(routed_list_wf)?
+            .forall(index_name, Type::nat())?;
+        let direct_route = self.carved_route_child(30, payload, 1, None)?;
+        let direct = covalence_hol_eval::defs::option_case(universal, Type::bool())
+            .apply(covalence_hol_eval::mk_bool(false))?
+            .apply(direct_wf)?
+            .apply(direct_route)?;
+        bounded.and(direct)
+    }
+
+    /// U-level path-table constructor for any of the 41 source constructors.
+    ///
+    /// Empty paths return the exact injected root label. Non-empty paths are
+    /// validated against the constructor tag, recursive slot, and traversal
+    /// index shape before routing into the selected child table. Every invalid
+    /// path returns a fixed junk label; Wf closure excludes those branches.
+    pub fn carved_u_constructor(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        let path_ty = self.carved_path_carrier();
+        let step_ty = self.runtime_path_step_carrier();
+        let label_ty = self.carved_label_carrier()?;
+        if payload.type_of()? != self.carved_universal_payload(constructor)? {
+            return Err(syntax_err("wrong U-constructor payload"));
+        }
+        let root = self.carved_root_label(constructor, payload.clone())?;
+        let junk = covalence_core::Term::select_op(label_ty.clone()).apply(
+            covalence_core::Term::abs(label_ty.clone(), covalence_hol_eval::mk_bool(true)),
+        )?;
+        let path_name = format!("cov$mutual$u$path${constructor}");
+        let path = covalence_core::Term::free(&path_name, path_ty.clone());
+        let rest = crate::init::list::tail(step_ty.clone()).apply(path.clone())?;
+        let edge_name = format!("cov$mutual$u$edge${constructor}");
+        let edge = covalence_core::Term::free(&edge_name, step_ty.clone());
+        let covalence_core::TypeKind::Spec(_, edge_args) = step_ty.kind() else {
+            return Err(syntax_err("runtime path step is not a product"));
+        };
+        let edge_constructor =
+            covalence_hol_eval::defs::fst(edge_args[0].clone(), edge_args[1].clone())
+                .apply(edge.clone())?;
+        let edge_tail = covalence_hol_eval::defs::snd(edge_args[0].clone(), edge_args[1].clone())
+            .apply(edge.clone())?;
+        let covalence_core::TypeKind::Spec(_, tail_args) = edge_args[1].kind() else {
+            return Err(syntax_err("runtime path tail is not a product"));
+        };
+        let edge_slot = covalence_hol_eval::defs::fst(tail_args[0].clone(), tail_args[1].clone())
+            .apply(edge_tail.clone())?;
+        let indices = covalence_hol_eval::defs::snd(tail_args[0].clone(), tail_args[1].clone())
+            .apply(edge_tail)?;
+
+        let child_name = format!("cov$mutual$u$child${constructor}");
+        let child = covalence_core::Term::free(&child_name, universal.clone());
+        let child_label = child.clone().apply(rest)?;
+        let child_handler = covalence_core::Term::abs(
+            universal.clone(),
+            covalence_core::subst::close(&child_label, &child_name),
+        );
+        let slots = self
+            .path_alphabet()
+            .into_iter()
+            .filter(|step| step.constructor == constructor)
+            .collect::<Vec<_>>();
+        let mut routed = junk.clone();
+        for slot in slots.iter().rev() {
+            let indexed = matches!(
+                (constructor, slot.recursive_slot),
+                (0, 0) | (2, 0) | (2, 1) | (20, 0) | (30, 0)
+            );
+            let selected = if indexed {
+                let index_option = covalence_hol_eval::defs::list_index(Type::nat())
+                    .apply(covalence_hol_eval::mk_nat(0u64))?
+                    .apply(indices.clone())?;
+                let index_name =
+                    format!("cov$mutual$u$index${constructor}${}", slot.recursive_slot);
+                let index = covalence_core::Term::free(&index_name, Type::nat());
+                let route = self.carved_route_child(
+                    constructor,
+                    payload.clone(),
+                    slot.recursive_slot,
+                    Some(index.clone()),
+                )?;
+                let route_label =
+                    covalence_hol_eval::defs::option_case(universal.clone(), label_ty.clone())
+                        .apply(junk.clone())?
+                        .apply(child_handler.clone())?
+                        .apply(route)?;
+                let index_handler = covalence_core::Term::abs(
+                    Type::nat(),
+                    covalence_core::subst::close(&route_label, &index_name),
+                );
+                covalence_hol_eval::defs::option_case(Type::nat(), label_ty.clone())
+                    .apply(junk.clone())?
+                    .apply(index_handler)?
+                    .apply(index_option)?
+            } else {
+                let route = self.carved_route_child(
+                    constructor,
+                    payload.clone(),
+                    slot.recursive_slot,
+                    None,
+                )?;
+                let route_label =
+                    covalence_hol_eval::defs::option_case(universal.clone(), label_ty.clone())
+                        .apply(junk.clone())?
+                        .apply(child_handler.clone())?
+                        .apply(route)?;
+                let no_indices = indices
+                    .clone()
+                    .equals(crate::init::list::nil(Type::nat()))?;
+                covalence_hol_eval::defs::cond(label_ty.clone())
+                    .apply(no_indices)?
+                    .apply(route_label)?
+                    .apply(junk.clone())?
+            };
+            let is_slot = edge_slot
+                .clone()
+                .equals(covalence_hol_eval::mk_nat(slot.recursive_slot as u64))?;
+            routed = covalence_hol_eval::defs::cond(label_ty.clone())
+                .apply(is_slot)?
+                .apply(selected)?
+                .apply(routed)?;
+        }
+        let is_constructor =
+            edge_constructor.equals(covalence_hol_eval::mk_nat(constructor as u64))?;
+        let edge_result = covalence_hol_eval::defs::cond(label_ty.clone())
+            .apply(is_constructor)?
+            .apply(routed)?
+            .apply(junk.clone())?;
+        let edge_handler = covalence_core::Term::abs(
+            step_ty.clone(),
+            covalence_core::subst::close(&edge_result, &edge_name),
+        );
+        let body = covalence_hol_eval::defs::option_case(step_ty, label_ty)
+            .apply(root)?
+            .apply(edge_handler)?
+            .apply(crate::init::list::head(self.runtime_path_step_carrier()).apply(path)?)?;
+        let term =
+            covalence_core::Term::abs(path_ty, covalence_core::subst::close(&body, &path_name));
+        if term.type_of()? != universal {
+            return Err(syntax_err("U constructor path table has wrong carrier"));
+        }
+        Ok(term)
+    }
+
+    /// Hypothesis-free root computation:
+    /// `⊢ carved_u_constructor i payload [] = carved_root_label i payload`.
+    pub fn carved_u_root_equation(
+        &self,
+        constructor: usize,
+        payload: covalence_core::Term,
+    ) -> Result<Thm> {
+        use crate::init::ext::ThmExt;
+
+        let step_ty = self.runtime_path_step_carrier();
+        let label_ty = self.carved_label_carrier()?;
+        let root = self.carved_root_label(constructor, payload.clone())?;
+        let lhs = self
+            .carved_u_constructor(constructor, payload)?
+            .apply(crate::init::list::nil(step_ty.clone()))?;
+        let beta = crate::init::eq::beta_nf(lhs);
+        let Some((_, normal)) = beta.concl().as_eq() else {
+            return Err(syntax_err("U root β-normalisation is not equality"));
+        };
+        let Some((case_function, head_nil_term)) = normal.as_app() else {
+            return Err(syntax_err("U root normal form is not option elimination"));
+        };
+        let Some((case_with_default, handler)) = case_function.as_app() else {
+            return Err(syntax_err("U root option elimination has no handler"));
+        };
+        let Some((_, default)) = case_with_default.as_app() else {
+            return Err(syntax_err("U root option elimination has no default"));
+        };
+        if default != &root {
+            return Err(syntax_err("U root option default is not root label"));
+        }
+        let head_nil = crate::init::list::head_nil(&step_ty)?;
+        if head_nil.concl().as_eq().map(|(left, _)| left) != Some(head_nil_term) {
+            return Err(syntax_err("U root normal form did not expose head nil"));
+        }
+        let rewrite = head_nil.cong_arg(case_function.clone())?;
+        let compute = crate::init::option::case_none(&step_ty, &label_ty, default, handler)?;
+        let theorem = beta.trans(rewrite)?.trans(compute)?;
+        if !theorem.hyps().is_empty() || theorem.concl().as_eq().map(|(_, r)| r) != Some(&root) {
+            return Err(syntax_err("U root equation failed its checked shape"));
+        }
+        Ok(theorem)
+    }
+
+    /// Simultaneous impredicative least-closure predicate over the closed
+    /// universal domain for one member of the mutual SCC.
+    pub fn carved_simultaneous_wf_predicate(&self, member: &str) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let member_index = self
+            .members
+            .iter()
+            .position(|candidate| candidate == member)
+            .ok_or_else(|| syntax_err("member is outside mutual signature"))?;
+        let universal = self.carved_universal_domain_carrier()?;
+        let predicate_ty = Type::fun(universal.clone(), Type::bool());
+        let predicate_names = self
+            .members
+            .iter()
+            .map(|member| format!("cov$mutual$carved$wf${member}"))
+            .collect::<Vec<_>>();
+        let predicates = predicate_names
+            .iter()
+            .map(|name| covalence_core::Term::free(name, predicate_ty.clone()))
+            .collect::<Vec<_>>();
+        let alphabet = self.path_alphabet();
+        let mut closures = Vec::new();
+        for constructor in 0..self.constructors.len() {
+            let payload_ty = self.carved_universal_payload(constructor)?;
+            let payload_name = format!("cov$mutual$carved$payload${constructor}");
+            let payload = covalence_core::Term::free(&payload_name, payload_ty.clone());
+            let slots = alphabet
+                .iter()
+                .filter(|step| step.constructor == constructor)
+                .collect::<Vec<_>>();
+            let guard = match slots.as_slice() {
+                [] => covalence_hol_eval::mk_bool(true),
+                [slot] => {
+                    let child_wf = predicates[slot.target_member].clone();
+                    match constructor {
+                        0 => self.carved_ctor0_wf_clause(child_wf, payload.clone())?,
+                        1 => self.carved_ctor1_wf_clause(child_wf, payload.clone())?,
+                        3 => self.carved_ctor3_wf_clause(child_wf, payload.clone())?,
+                        18 | 26 | 32 | 39 => self.carved_direct_product_wf_clause(
+                            constructor,
+                            child_wf,
+                            payload.clone(),
+                        )?,
+                        20 => self.carved_ctor20_wf_clause(child_wf, payload.clone())?,
+                        _ => {
+                            return Err(syntax_err(
+                                "single-slot constructor lacks exact Wf clause",
+                            ));
+                        }
+                    }
+                }
+                [left, right] if constructor == 2 => self.carved_ctor2_wf_clause(
+                    predicates[left.target_member].clone(),
+                    predicates[right.target_member].clone(),
+                    payload.clone(),
+                )?,
+                [left, right] if constructor == 30 => self.carved_ctor30_wf_clause(
+                    predicates[left.target_member].clone(),
+                    predicates[right.target_member].clone(),
+                    payload.clone(),
+                )?,
+                _ => return Err(syntax_err("constructor recursive-slot census drifted")),
+            };
+            let owner = self
+                .members
+                .iter()
+                .position(|member| member == self.constructors[constructor].owner())
+                .ok_or_else(|| syntax_err("constructor owner is outside mutual signature"))?;
+            let introduced = predicates[owner]
+                .clone()
+                .apply(self.carved_u_constructor(constructor, payload)?)?;
+            closures.push(guard.imp(introduced)?.forall(&payload_name, payload_ty)?);
+        }
+        let value_name = format!("cov$mutual$carved$value${member}");
+        let value = covalence_core::Term::free(&value_name, universal.clone());
+        let mut body = predicates[member_index].clone().apply(value)?;
+        for closure in closures.iter().rev() {
+            body = closure.clone().imp(body)?;
+        }
+        for (name, _) in predicate_names.iter().zip(predicates.iter()).rev() {
+            body = body.forall(name, predicate_ty.clone())?;
+        }
+        let predicate = covalence_core::Term::abs(
+            universal.clone(),
+            covalence_core::subst::close(&body, &value_name),
+        );
+        if predicate.type_of()? != Type::fun(universal, Type::bool()) {
+            return Err(syntax_err("carved simultaneous Wf predicate is ill-typed"));
+        }
+        Ok(predicate)
     }
 
     fn payload_wf_observation(
@@ -2595,6 +3119,50 @@ mod tests {
             signature.carved_universal_payload(0).unwrap(),
             crate::init::list::list(universal.clone())
         );
+        assert_eq!(
+            signature.carved_universal_payload(1).unwrap(),
+            universal.clone()
+        );
+        assert_eq!(
+            signature.carved_universal_payload(3).unwrap(),
+            covalence_hol_eval::defs::prod(
+                crate::init::option::option(Type::unit()),
+                universal.clone()
+            )
+        );
+        assert_eq!(
+            signature.carved_routed_recursive_constructors(),
+            [0, 1, 2, 3, 18, 20, 26, 30, 32, 39]
+        );
+        assert_eq!(
+            signature.carved_universal_payload(20).unwrap(),
+            crate::init::list::list(universal.clone())
+        );
+        assert_eq!(
+            signature.carved_universal_payload(30).unwrap(),
+            covalence_hol_eval::defs::prod(
+                crate::init::option::option(Type::unit()),
+                covalence_hol_eval::defs::prod(
+                    crate::init::list::list(universal.clone()),
+                    universal.clone()
+                )
+            )
+        );
+        for constructor in [18usize, 32] {
+            assert_eq!(
+                signature.carved_universal_payload(constructor).unwrap(),
+                covalence_hol_eval::defs::prod(universal.clone(), Type::nat())
+            );
+        }
+        for constructor in [26usize, 39] {
+            assert_eq!(
+                signature.carved_universal_payload(constructor).unwrap(),
+                covalence_hol_eval::defs::prod(
+                    crate::init::option::option(Type::unit()),
+                    universal.clone()
+                )
+            );
+        }
         let ctor0_payload = Term::free(
             "carved_ctor0_payload",
             crate::init::list::list(universal.clone()),
@@ -2677,6 +3245,92 @@ mod tests {
                 )
                 .is_err()
         );
+        let ctor20_payload = Term::free(
+            "carved_ctor20_payload",
+            crate::init::list::list(universal.clone()),
+        );
+        assert_eq!(
+            signature
+                .carved_ctor20_wf_clause(
+                    Term::free(
+                        "carved_ctor20_wf",
+                        Type::fun(universal.clone(), Type::bool())
+                    ),
+                    ctor20_payload
+                )
+                .unwrap()
+                .type_of()
+                .unwrap(),
+            Type::bool()
+        );
+        let ctor30_payload = Term::free(
+            "carved_ctor30_payload",
+            signature.carved_universal_payload(30).unwrap(),
+        );
+        assert_eq!(
+            signature
+                .carved_ctor30_wf_clause(
+                    Term::free(
+                        "carved_ctor30_list_wf",
+                        Type::fun(universal.clone(), Type::bool())
+                    ),
+                    Term::free(
+                        "carved_ctor30_direct_wf",
+                        Type::fun(universal.clone(), Type::bool())
+                    ),
+                    ctor30_payload.clone()
+                )
+                .unwrap()
+                .type_of()
+                .unwrap(),
+            Type::bool()
+        );
+        assert!(
+            signature
+                .carved_route_child(
+                    30,
+                    ctor30_payload,
+                    1,
+                    Some(covalence_hol_eval::mk_nat(0u64))
+                )
+                .is_err(),
+            "constructor 30 direct slot must reject a list index"
+        );
+        for constructor in 0..signature.constructors().len() {
+            let payload = Term::free(
+                format!("carved_u_payload_{constructor}"),
+                signature.carved_universal_payload(constructor).unwrap(),
+            );
+            assert_eq!(
+                signature
+                    .carved_u_constructor(constructor, payload.clone())
+                    .unwrap()
+                    .type_of()
+                    .unwrap(),
+                universal
+            );
+            let root = signature
+                .carved_u_root_equation(constructor, payload)
+                .unwrap();
+            assert!(root.hyps().is_empty());
+            assert_eq!(
+                root.concl().as_eq().unwrap().1,
+                &signature
+                    .carved_root_label(
+                        constructor,
+                        Term::free(
+                            format!("carved_u_payload_{constructor}"),
+                            signature.carved_universal_payload(constructor).unwrap()
+                        )
+                    )
+                    .unwrap()
+            );
+        }
+        assert!(
+            signature
+                .carved_u_constructor(0, Term::free("bad_u_payload", Type::nat()))
+                .is_err()
+        );
         assert!(signature.carved_route_child(0, children, 0, None).is_err());
         let child_wf = Term::free(
             "carved_child_wf",
@@ -2701,6 +3355,19 @@ mod tests {
                     Term::free("bad_wf_payload", crate::init::list::list(universal.clone()))
                 )
                 .is_err()
+        );
+        let ctor1_wf = Term::free(
+            "carved_ctor1_wf",
+            Type::fun(universal.clone(), Type::bool()),
+        );
+        let ctor1_payload = Term::free("carved_ctor1_payload", universal.clone());
+        assert_eq!(
+            signature
+                .carved_ctor1_wf_clause(ctor1_wf, ctor1_payload)
+                .unwrap()
+                .type_of()
+                .unwrap(),
+            Type::bool()
         );
         let ctor2_wf_payload = Term::free(
             "carved_ctor2_wf_payload",
@@ -2731,7 +3398,70 @@ mod tests {
                 )
                 .is_err()
         );
+        let ctor3_payload = Term::free(
+            "carved_ctor3_payload",
+            signature.carved_universal_payload(3).unwrap(),
+        );
+        let ctor3_wf = Term::free(
+            "carved_ctor3_wf",
+            Type::fun(universal.clone(), Type::bool()),
+        );
+        assert_eq!(
+            signature
+                .carved_ctor3_wf_clause(ctor3_wf, ctor3_payload.clone())
+                .unwrap()
+                .type_of()
+                .unwrap(),
+            Type::bool()
+        );
+        assert!(
+            signature
+                .carved_route_child(3, ctor3_payload, 0, Some(covalence_hol_eval::mk_nat(0u64)))
+                .is_err(),
+            "direct child must reject a spurious list index"
+        );
+        for constructor in [18usize, 26, 32, 39] {
+            let wf = Term::free(
+                format!("carved_direct_wf_{constructor}"),
+                Type::fun(universal.clone(), Type::bool()),
+            );
+            let payload = Term::free(
+                format!("carved_direct_payload_{constructor}"),
+                signature.carved_universal_payload(constructor).unwrap(),
+            );
+            assert_eq!(
+                signature
+                    .carved_direct_product_wf_clause(constructor, wf, payload)
+                    .unwrap()
+                    .type_of()
+                    .unwrap(),
+                Type::bool()
+            );
+        }
+        assert!(
+            signature
+                .carved_direct_product_wf_clause(
+                    20,
+                    Term::free(
+                        "unsupported_direct_wf",
+                        Type::fun(universal.clone(), Type::bool())
+                    ),
+                    Term::free(
+                        "unsupported_direct_payload",
+                        signature.carved_universal_payload(20).unwrap()
+                    )
+                )
+                .is_err()
+        );
         for member in signature.members() {
+            assert_eq!(
+                signature
+                    .carved_simultaneous_wf_predicate(member)
+                    .unwrap()
+                    .type_of()
+                    .unwrap(),
+                Type::fun(universal.clone(), Type::bool())
+            );
             let predicate = signature
                 .simultaneous_wf_observation_predicate(member)
                 .unwrap();
@@ -2742,6 +3472,11 @@ mod tests {
             };
             assert_eq!(result, Type::bool());
         }
+        assert!(
+            signature
+                .carved_simultaneous_wf_predicate("outside")
+                .is_err()
+        );
         for ctor in signature.constructors() {
             assert_eq!(
                 ctor.term().type_of().unwrap(),

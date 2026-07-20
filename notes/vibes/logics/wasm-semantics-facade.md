@@ -40,7 +40,10 @@ in types and tests.
 
 ## Backend contract
 
-`WasmTyping` and `WasmExecution` are the narrow capability traits.  A backend
+`WasmTyping`, `WasmExecution`, and `WasmCoverage` are the narrow capability
+traits. `WasmCoverage` reports the full imported opacity census separately
+from the premise-closed checked slice, as well as the exact builtin frontier,
+without exposing lowering or SpecTec types. A backend
 accepts the neutral objects above and returns checked facts whose neutral
 statements identify exactly what was proved.  The current native adapter owns
 the SpecTec-derived clause environment privately.  A future K adapter should
@@ -76,11 +79,17 @@ only replay in the checked metalogic establishes theorem authority.
 The facade now represents all four scalar numeric values without host
 floating-point interpretation and checks the complete scalar numeric
 instruction-typing vocabulary: constants, tests, comparisons, unary and
-binary operators, conversions, explicit numeric `select`, `nop`, and `drop`.
+binary operators, conversions, explicit `select`, `nop`, and `drop`.
 Operator/type mismatches are rejected before replay. Floating constants retain
 their raw IEEE payload, including signed zero and NaN payloads. Concrete
 execution remains the narrower checked `nop`, `i32.const; drop`, and
 `i32.const; i32.const; i32.add; drop` family.
+
+`v128` is a neutral value type and is live through the exact polymorphic
+`drop` and explicit `select` rules. Vector instruction constructors are not
+yet exposed: the current premise-closed WebAssembly slice intentionally omits
+their `Instr_ok` rules, so claiming them at the facade would outrun replayable
+coverage.
 
 The official-rule witness layer records pinned SpecTec source identities and
 official WebAssembly specification sections for every rule used by those
@@ -91,7 +100,7 @@ became as stack-sensitive as constructing them.
 
 This milestone does not yet claim:
 
-- non-scalar WebAssembly syntax;
+- non-scalar instruction syntax beyond the checked `v128` value-type uses;
 - composed whole-program validation judgments;
 - stores, frames, calls, control flow, memory, references, SIMD, or GC in the
   neutral configuration vocabulary;

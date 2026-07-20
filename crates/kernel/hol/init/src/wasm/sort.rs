@@ -148,7 +148,7 @@ pub trait RefinementLowerer {
 /// `|X*| < 2^32` premise becomes a predicate over the resolved `list X`
 /// carrier. Multi-case, field, existentially bound, and non-`If` refinements
 /// are refused.
-// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower 24 refinements in 5 unsupported families plus symbolic indices; rigid vextunop__/vextternop__/vunop_/vloadop_/cvtop_/unop_, ground shape, bshape, fNmag(32|64), and the other enumerated fragments are exact.
+// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the 3 instr refinements (VSHUFFLE length, VNARROW width, VEXTRACT_LANE signedness) once recursive Church instruction carriers have checked constructors/observation; every rigid indexed operator family is exact.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SingletonValueRefinementLowerer;
 
@@ -190,6 +190,30 @@ impl RefinementLowerer for SingletonValueRefinementLowerer {
                 source_premises,
             });
         }
+        if let Some((predicate, source_premises)) =
+            lower_vector_relation_operator(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::CasePredicate {
+                predicate,
+                source_premises,
+            });
+        }
+        if let Some((predicate, source_premises)) =
+            lower_vector_binary_operator(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::CasePredicate {
+                predicate,
+                source_premises,
+            });
+        }
+        if let Some((predicate, source_premises)) =
+            lower_vector_conversion_operator(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::CasePredicate {
+                predicate,
+                source_premises,
+            });
+        }
         if family.instances.len() != 1 {
             return Ok(RefinementLowering::Unsupported);
         }
@@ -223,6 +247,14 @@ impl RefinementLowerer for SingletonValueRefinementLowerer {
         }
         if let Some((predicate, source_premises)) =
             lower_vector_extended_unary_operator(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::CasePredicate {
+                predicate,
+                source_premises,
+            });
+        }
+        if let Some((predicate, source_premises)) =
+            lower_vector_extended_binary_operator(family, arguments, carrier)?
         {
             return Ok(RefinementLowering::CasePredicate {
                 predicate,
@@ -2607,6 +2639,1178 @@ fn exact_vextunop_guard(e: &SpecTecExp) -> bool {
     )
 }
 
+fn lower_vector_extended_binary_operator<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, Vec<&'a SpecTecPrem>)>> {
+    if family.name != "vextbinop__" {
+        return Ok(None);
+    }
+    let [left, right] = arguments else {
+        return Ok(None);
+    };
+    let Some((left_lane, left_dim)) = rigid_integer_shape(left) else {
+        return Ok(None);
+    };
+    let Some((right_lane, right_dim)) = rigid_integer_shape(right) else {
+        return Ok(None);
+    };
+    let [instance] = family.instances.as_slice() else {
+        return Ok(None);
+    };
+    let TypeShape::Variant(cases) = &instance.shape else {
+        return Ok(None);
+    };
+    let [extmul, dot, relaxed_dot] = cases.as_slice() else {
+        return Ok(None);
+    };
+    if extmul.operator.fragments() != ["EXTMUL"]
+        || dot.operator.fragments() != ["DOTS"]
+        || relaxed_dot.operator.fragments() != ["RELAXED_DOTS"]
+        || [extmul, dot, relaxed_dot]
+            .iter()
+            .any(|case| !case.params.is_empty())
+        || !exact_half_signed_payload(extmul.payload)
+        || !matches!(dot.payload, SpecTecTyp::Tup { ets } if ets.is_empty())
+        || !matches!(relaxed_dot.payload, SpecTecTyp::Tup { ets } if ets.is_empty())
+        || !matches!(extmul.refinements, [SpecTecPrem::If { e }] if exact_vextbinop_guard(e, SpecTecCmpOp::Ge, 16))
+        || !matches!(dot.refinements, [SpecTecPrem::If { e }] if exact_vextbinop_guard(e, SpecTecCmpOp::Eq, 32))
+        || !matches!(relaxed_dot.refinements, [SpecTecPrem::If { e }] if exact_vextbinop_guard(e, SpecTecCmpOp::Eq, 16))
+        || !exact_vextternop_instance(instance)
+    {
+        return Ok(None);
+    }
+    let half = CoprodBackend
+        .theory(&Variant::new(vec![
+            VCtor::new("LOW", Type::unit()),
+            VCtor::new("HIGH", Type::unit()),
+        ]))?
+        .carrier()
+        .clone();
+    let sx = signedness_carrier()?;
+    let theory = CoprodBackend.theory(&Variant::new(vec![
+        VCtor::new(
+            "EXTMUL",
+            covalence_hol_eval::defs::prod(half.clone(), sx.clone()),
+        ),
+        VCtor::new("DOTS", Type::unit()),
+        VCtor::new("RELAXED_DOTS", Type::unit()),
+    ]))?;
+    if theory.carrier() != carrier {
+        return Ok(None);
+    }
+    let pair = (left_lane, left_dim, right_lane, right_dim);
+    let doubled = matches!(
+        pair,
+        ("I8", 16, "I16", 8) | ("I16", 8, "I32", 4) | ("I32", 4, "I64", 2)
+    );
+    let value = Term::free("__vextbinop", carrier.clone());
+    let unit = covalence_hol_eval::defs::unit_nil();
+    let mut allowed = Vec::new();
+    if doubled {
+        let half_theory = CoprodBackend.theory(&Variant::new(vec![
+            VCtor::new("LOW", Type::unit()),
+            VCtor::new("HIGH", Type::unit()),
+        ]))?;
+        let sx_theory = CoprodBackend.theory(&Variant::new(vec![
+            VCtor::new("U", Type::unit()),
+            VCtor::new("S", Type::unit()),
+        ]))?;
+        let (_, ctor) = theory.constructor_named("EXTMUL")?;
+        for half_name in ["LOW", "HIGH"] {
+            for sign_name in ["U", "S"] {
+                let (_, half_ctor) = half_theory.constructor_named(half_name)?;
+                let (_, sign_ctor) = sx_theory.constructor_named(sign_name)?;
+                let payload = covalence_hol_eval::defs::pair(half.clone(), sx.clone())
+                    .apply(half_ctor.clone().apply(unit.clone())?)?
+                    .apply(sign_ctor.clone().apply(unit.clone())?)?;
+                allowed.push(value.clone().equals(ctor.clone().apply(payload)?)?);
+            }
+        }
+    }
+    for (valid, name) in [
+        (pair == ("I16", 8, "I32", 4), "DOTS"),
+        (pair == ("I8", 16, "I16", 8), "RELAXED_DOTS"),
+    ] {
+        if valid {
+            let (_, ctor) = theory.constructor_named(name)?;
+            allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+        }
+    }
+    let body = if allowed.is_empty() {
+        covalence_hol_eval::mk_bool(false)
+    } else {
+        let mut allowed = allowed.into_iter();
+        let first = allowed.next().expect("checked nonempty");
+        allowed.try_fold(first, |left, right| left.or(right))?
+    };
+    Ok(Some((
+        Term::abs(carrier.clone(), subst::close(&body, "__vextbinop")),
+        vec![
+            &extmul.refinements[0],
+            &dot.refinements[0],
+            &relaxed_dot.refinements[0],
+        ],
+    )))
+}
+
+fn exact_half_signed_payload(payload: &SpecTecTyp) -> bool {
+    matches!(
+        payload,
+        SpecTecTyp::Tup { ets }
+            if matches!(
+                ets.as_slice(),
+                [
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x: half, as1: half_args },
+                        ..
+                    },
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x: sx, as1: sx_args },
+                        ..
+                    },
+                ] if half == "half" && half_args.is_empty() && sx == "sx" && sx_args.is_empty()
+            )
+    )
+}
+
+fn exact_vextbinop_guard(e: &SpecTecExp, bound_op: SpecTecCmpOp, bound: u64) -> bool {
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::And,
+        e1: equality,
+        e2: boundary,
+        ..
+    } = e
+    else {
+        return false;
+    };
+    matches!(
+        equality.as_ref(),
+        SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            e1: twice,
+            e2: right,
+            ..
+        } if matches!(
+            twice.as_ref(),
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Mul,
+                e1: two,
+                e2: left,
+                ..
+            } if matches!(two.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(2) })
+                && exact_lane_width_call(left, "lsizenn1", "Jnn_1")
+        ) && exact_lane_width_call(right, "lsizenn2", "Jnn_2")
+    ) && matches!(
+        boundary.as_ref(),
+        SpecTecExp::Cmp { op, e1: right, e2: limit, .. }
+            if *op == bound_op
+                && exact_lane_width_call(right, "lsizenn2", "Jnn_2")
+                && matches!(limit.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(n) } if *n == bound)
+    )
+}
+
+fn lower_vector_relation_operator<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, Vec<&'a SpecTecPrem>)>> {
+    if family.name != "vrelop_" {
+        return Ok(None);
+    }
+    let [argument] = arguments else {
+        return Ok(None);
+    };
+    let Some((lane, dim)) = rigid_vector_shape(argument) else {
+        return Ok(None);
+    };
+    if !matches!(
+        (lane, dim),
+        ("I8", 16) | ("I16", 8) | ("I32", 4) | ("I64", 2) | ("F32", 4) | ("F64", 2)
+    ) {
+        return Ok(None);
+    }
+    let [integer, float] = family.instances.as_slice() else {
+        return Ok(None);
+    };
+    let TypeShape::Variant(integer_cases) = &integer.shape else {
+        return Ok(None);
+    };
+    let TypeShape::Variant(float_cases) = &float.shape else {
+        return Ok(None);
+    };
+    let [eq_i, ne_i, lt_i, gt_i, le_i, ge_i] = integer_cases.as_slice() else {
+        return Ok(None);
+    };
+    let [eq_f, ne_f, lt_f, gt_f, le_f, ge_f] = float_cases.as_slice() else {
+        return Ok(None);
+    };
+    if !exact_unit_case(eq_i, "EQ")
+        || !exact_unit_case(ne_i, "NE")
+        || [lt_i, gt_i, le_i, ge_i]
+            .into_iter()
+            .zip(["LT", "GT", "LE", "GE"])
+            .any(|(case, name)| !exact_signed_relation_case(case, name))
+        || [eq_f, ne_f, lt_f, gt_f, le_f, ge_f]
+            .into_iter()
+            .zip(["EQ", "NE", "LT", "GT", "LE", "GE"])
+            .any(|(case, name)| !exact_unit_case(case, name))
+        || !exact_vector_shape_instance(integer, "Jnn")
+        || !exact_vector_shape_instance(float, "Fnn")
+    {
+        return Ok(None);
+    }
+    let integer_lane = lane.starts_with('I');
+    let sx = signedness_carrier()?;
+    let variant = if integer_lane {
+        Variant::new(vec![
+            VCtor::new("EQ", Type::unit()),
+            VCtor::new("NE", Type::unit()),
+            VCtor::new("LT", sx.clone()),
+            VCtor::new("GT", sx.clone()),
+            VCtor::new("LE", sx.clone()),
+            VCtor::new("GE", sx.clone()),
+        ])
+    } else {
+        Variant::new(
+            ["EQ", "NE", "LT", "GT", "LE", "GE"]
+                .into_iter()
+                .map(|name| VCtor::new(name, Type::unit()))
+                .collect(),
+        )
+    };
+    let theory = CoprodBackend.theory(&variant)?;
+    if theory.carrier() != carrier {
+        return Ok(None);
+    }
+    let value = Term::free("__vrelop", carrier.clone());
+    let unit = covalence_hol_eval::defs::unit_nil();
+    let mut allowed = Vec::new();
+    for name in ["EQ", "NE"] {
+        let (_, ctor) = theory.constructor_named(name)?;
+        allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+    }
+    if integer_lane {
+        let sx_theory = CoprodBackend.theory(&Variant::new(vec![
+            VCtor::new("U", Type::unit()),
+            VCtor::new("S", Type::unit()),
+        ]))?;
+        for name in ["LT", "GT", "LE", "GE"] {
+            let (_, ctor) = theory.constructor_named(name)?;
+            for sign in if lane == "I64" {
+                &["S"][..]
+            } else {
+                &["U", "S"][..]
+            } {
+                let (_, sign_ctor) = sx_theory.constructor_named(sign)?;
+                allowed.push(
+                    value
+                        .clone()
+                        .equals(ctor.clone().apply(sign_ctor.clone().apply(unit.clone())?)?)?,
+                );
+            }
+        }
+    } else {
+        for name in ["LT", "GT", "LE", "GE"] {
+            let (_, ctor) = theory.constructor_named(name)?;
+            allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+        }
+    }
+    let mut allowed = allowed.into_iter();
+    let first = allowed.next().expect("relation universe nonempty");
+    let body = allowed.try_fold(first, |left, right| left.or(right))?;
+    Ok(Some((
+        Term::abs(carrier.clone(), subst::close(&body, "__vrelop")),
+        if integer_lane {
+            vec![
+                &lt_i.refinements[0],
+                &gt_i.refinements[0],
+                &le_i.refinements[0],
+                &ge_i.refinements[0],
+            ]
+        } else {
+            vec![]
+        },
+    )))
+}
+
+fn exact_signed_relation_case(case: &super::type_family::CaseShape<'_>, name: &str) -> bool {
+    case.operator.fragments() == [name]
+        && case.params.is_empty()
+        && matches!(
+            case.payload,
+            SpecTecTyp::Tup { ets }
+                if matches!(
+                    ets.as_slice(),
+                    [SpecTecTypBind::Bind {
+                        id,
+                        typ: SpecTecTyp::Var { x, as1 },
+                    }] if id == "sx" && x == "sx" && as1.is_empty()
+                )
+        )
+        && matches!(case.refinements, [SpecTecPrem::If { e }] if exact_signed_relation_guard(e))
+}
+
+fn exact_signed_relation_guard(e: &SpecTecExp) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Bin {
+            op: SpecTecBinOp::Or,
+            e1,
+            e2,
+            ..
+        } if matches!(
+            e1.as_ref(),
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Ne,
+                e1: width,
+                e2: sixty_four,
+                ..
+            } if exact_lane_width_call(width, "lsizenn", "Jnn")
+                && matches!(sixty_four.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(64) })
+        ) && matches!(
+            e2.as_ref(),
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Eq,
+                e1: sign,
+                e2: signed,
+                ..
+            } if matches!(sign.as_ref(), SpecTecExp::Var { id } if id == "sx")
+                && matches!(
+                    signed.as_ref(),
+                    SpecTecExp::Case { op, e1 }
+                        if op.fragments() == ["S"]
+                            && matches!(e1.as_ref(), SpecTecExp::Tup { es } if es.is_empty())
+                )
+        )
+    )
+}
+
+fn exact_vector_shape_instance(
+    instance: &super::type_family::FamilyInstance<'_>,
+    lane_kind: &str,
+) -> bool {
+    let [
+        SpecTecParam::Exp { x: lane, .. },
+        SpecTecParam::Exp { x: dim, .. },
+    ] = instance.params
+    else {
+        return false;
+    };
+    let [
+        SpecTecArg::Exp {
+            e: SpecTecExp::Case { op, e1 },
+        },
+    ] = instance.args
+    else {
+        return false;
+    };
+    let SpecTecExp::Tup { es } = e1.as_ref() else {
+        return false;
+    };
+    matches!(
+        es.as_slice(),
+        [
+            SpecTecExp::Sub { t1, t2, e1 },
+            SpecTecExp::Case { op: dim_op, e1: dim_payload },
+        ] if op.fragments() == ["", "X", ""]
+            && matches!(t1, SpecTecTyp::Var { x, as1 } if x == lane_kind && as1.is_empty())
+            && matches!(t2, SpecTecTyp::Var { x, as1 } if x == "lanetype" && as1.is_empty())
+            && matches!(e1.as_ref(), SpecTecExp::Var { id } if id == lane)
+            && dim_op.fragments() == ["", ""]
+            && matches!(
+                dim_payload.as_ref(),
+                SpecTecExp::Tup { es }
+                    if matches!(es.as_slice(), [SpecTecExp::Var { id }] if id == dim)
+            )
+    )
+}
+
+fn lower_vector_binary_operator<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, Vec<&'a SpecTecPrem>)>> {
+    if family.name != "vbinop_" {
+        return Ok(None);
+    }
+    let [argument] = arguments else {
+        return Ok(None);
+    };
+    let Some((lane, dim)) = rigid_vector_shape(argument) else {
+        return Ok(None);
+    };
+    if !matches!(
+        (lane, dim),
+        ("I8", 16) | ("I16", 8) | ("I32", 4) | ("I64", 2) | ("F32", 4) | ("F64", 2)
+    ) {
+        return Ok(None);
+    }
+    let [integer, float] = family.instances.as_slice() else {
+        return Ok(None);
+    };
+    let TypeShape::Variant(integer_cases) = &integer.shape else {
+        return Ok(None);
+    };
+    let TypeShape::Variant(float_cases) = &float.shape else {
+        return Ok(None);
+    };
+    let [
+        add,
+        sub,
+        add_sat,
+        sub_sat,
+        mul,
+        avgr,
+        q15,
+        relaxed_q15,
+        min,
+        max,
+    ] = integer_cases.as_slice()
+    else {
+        return Ok(None);
+    };
+    let float_names = [
+        "ADD",
+        "SUB",
+        "MUL",
+        "DIV",
+        "MIN",
+        "MAX",
+        "PMIN",
+        "PMAX",
+        "RELAXED_MIN",
+        "RELAXED_MAX",
+    ];
+    if !exact_unit_case(add, "ADD")
+        || !exact_unit_case(sub, "SUB")
+        || !exact_guarded_signed_case(add_sat, "ADD_SAT", SpecTecCmpOp::Le, 16)
+        || !exact_guarded_signed_case(sub_sat, "SUB_SAT", SpecTecCmpOp::Le, 16)
+        || !exact_guarded_unit_case(mul, "MUL", SpecTecCmpOp::Ge, 16)
+        || !exact_guarded_unit_case(avgr, "AVGRU", SpecTecCmpOp::Le, 16)
+        || !exact_guarded_unit_case(q15, "Q15MULR_SATS", SpecTecCmpOp::Eq, 16)
+        || !exact_guarded_unit_case(relaxed_q15, "RELAXED_Q15MULRS", SpecTecCmpOp::Eq, 16)
+        || !exact_guarded_signed_case(min, "MIN", SpecTecCmpOp::Le, 32)
+        || !exact_guarded_signed_case(max, "MAX", SpecTecCmpOp::Le, 32)
+        || float_cases.len() != float_names.len()
+        || float_cases
+            .iter()
+            .zip(float_names)
+            .any(|(case, name)| !exact_unit_case(case, name))
+        || !exact_vector_shape_instance(integer, "Jnn")
+        || !exact_vector_shape_instance(float, "Fnn")
+    {
+        return Ok(None);
+    }
+    let integer_lane = lane.starts_with('I');
+    let sx = signedness_carrier()?;
+    let variant = if integer_lane {
+        Variant::new(vec![
+            VCtor::new("ADD", Type::unit()),
+            VCtor::new("SUB", Type::unit()),
+            VCtor::new("ADD_SAT", sx.clone()),
+            VCtor::new("SUB_SAT", sx.clone()),
+            VCtor::new("MUL", Type::unit()),
+            VCtor::new("AVGRU", Type::unit()),
+            VCtor::new("Q15MULR_SATS", Type::unit()),
+            VCtor::new("RELAXED_Q15MULRS", Type::unit()),
+            VCtor::new("MIN", sx.clone()),
+            VCtor::new("MAX", sx.clone()),
+        ])
+    } else {
+        Variant::new(
+            float_names
+                .into_iter()
+                .map(|name| VCtor::new(name, Type::unit()))
+                .collect(),
+        )
+    };
+    let theory = CoprodBackend.theory(&variant)?;
+    if theory.carrier() != carrier {
+        return Ok(None);
+    }
+    let value = Term::free("__vbinop", carrier.clone());
+    let unit = covalence_hol_eval::defs::unit_nil();
+    let width = match lane {
+        "I8" => 8,
+        "I16" => 16,
+        "I32" | "F32" => 32,
+        "I64" | "F64" => 64,
+        _ => unreachable!(),
+    };
+    let mut allowed = Vec::new();
+    if integer_lane {
+        let sx_theory = CoprodBackend.theory(&Variant::new(vec![
+            VCtor::new("U", Type::unit()),
+            VCtor::new("S", Type::unit()),
+        ]))?;
+        for name in ["ADD", "SUB"] {
+            let (_, ctor) = theory.constructor_named(name)?;
+            allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+        }
+        for (valid, name) in [
+            (width >= 16, "MUL"),
+            (width <= 16, "AVGRU"),
+            (width == 16, "Q15MULR_SATS"),
+            (width == 16, "RELAXED_Q15MULRS"),
+        ] {
+            if valid {
+                let (_, ctor) = theory.constructor_named(name)?;
+                allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+            }
+        }
+        for (valid, name) in [
+            (width <= 16, "ADD_SAT"),
+            (width <= 16, "SUB_SAT"),
+            (width <= 32, "MIN"),
+            (width <= 32, "MAX"),
+        ] {
+            if valid {
+                let (_, ctor) = theory.constructor_named(name)?;
+                for sign in ["U", "S"] {
+                    let (_, sign_ctor) = sx_theory.constructor_named(sign)?;
+                    allowed.push(
+                        value
+                            .clone()
+                            .equals(ctor.clone().apply(sign_ctor.clone().apply(unit.clone())?)?)?,
+                    );
+                }
+            }
+        }
+    } else {
+        for name in float_names {
+            let (_, ctor) = theory.constructor_named(name)?;
+            allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+        }
+    }
+    let mut allowed = allowed.into_iter();
+    let first = allowed.next().expect("binary universe nonempty");
+    let body = allowed.try_fold(first, |left, right| left.or(right))?;
+    Ok(Some((
+        Term::abs(carrier.clone(), subst::close(&body, "__vbinop")),
+        if integer_lane {
+            vec![
+                &add_sat.refinements[0],
+                &sub_sat.refinements[0],
+                &mul.refinements[0],
+                &avgr.refinements[0],
+                &q15.refinements[0],
+                &relaxed_q15.refinements[0],
+                &min.refinements[0],
+                &max.refinements[0],
+            ]
+        } else {
+            vec![]
+        },
+    )))
+}
+
+fn exact_guarded_signed_case(
+    case: &super::type_family::CaseShape<'_>,
+    name: &str,
+    op: SpecTecCmpOp,
+    bound: u64,
+) -> bool {
+    case.operator.fragments() == [name]
+        && case.params.is_empty()
+        && matches!(
+            case.payload,
+            SpecTecTyp::Tup { ets }
+                if matches!(
+                    ets.as_slice(),
+                    [SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x, as1 },
+                        ..
+                    }] if x == "sx" && as1.is_empty()
+                )
+        )
+        && matches!(case.refinements, [SpecTecPrem::If { e }] if exact_lane_bound(e, op, bound))
+}
+
+fn exact_guarded_unit_case(
+    case: &super::type_family::CaseShape<'_>,
+    name: &str,
+    op: SpecTecCmpOp,
+    bound: u64,
+) -> bool {
+    case.operator.fragments() == [name]
+        && case.params.is_empty()
+        && matches!(case.payload, SpecTecTyp::Tup { ets } if ets.is_empty())
+        && matches!(case.refinements, [SpecTecPrem::If { e }] if exact_lane_bound(e, op, bound))
+}
+
+fn exact_lane_bound(e: &SpecTecExp, expected: SpecTecCmpOp, bound: u64) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Cmp { op, e1, e2, .. }
+            if *op == expected
+                && exact_lane_width_call(e1, "lsizenn", "Jnn")
+                && matches!(e2.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(n) } if *n == bound)
+    )
+}
+
+fn lower_vector_conversion_operator<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, Vec<&'a SpecTecPrem>)>> {
+    if family.name != "vcvtop__" {
+        return Ok(None);
+    }
+    let [left_arg, right_arg] = arguments else {
+        return Ok(None);
+    };
+    let Some((left_lane, _left_dim)) = rigid_vector_shape(left_arg) else {
+        return Ok(None);
+    };
+    let Some((right_lane, _right_dim)) = rigid_vector_shape(right_arg) else {
+        return Ok(None);
+    };
+    let [ii, iff, fi, ff] = family.instances.as_slice() else {
+        return Ok(None);
+    };
+    let left_i = left_lane.starts_with('I');
+    let right_i = right_lane.starts_with('I');
+    let selected = match (left_i, right_i) {
+        (true, true) => ii,
+        (true, false) => iff,
+        (false, true) => fi,
+        (false, false) => ff,
+    };
+    if !exact_vcvtop_sources(ii, iff, fi, ff) {
+        return Ok(None);
+    }
+    let half_theory = CoprodBackend.theory(&Variant::new(vec![
+        VCtor::new("LOW", Type::unit()),
+        VCtor::new("HIGH", Type::unit()),
+    ]))?;
+    let half = half_theory.carrier().clone();
+    let sx_theory = CoprodBackend.theory(&Variant::new(vec![
+        VCtor::new("U", Type::unit()),
+        VCtor::new("S", Type::unit()),
+    ]))?;
+    let sx = sx_theory.carrier().clone();
+    let zero_theory =
+        CoprodBackend.theory(&Variant::new(vec![VCtor::new("ZERO", Type::unit())]))?;
+    let zero = zero_theory.carrier().clone();
+    let (variant, class): (Variant, u8) = match (left_i, right_i) {
+        (true, true) => (
+            Variant::new(vec![VCtor::new(
+                "EXTEND",
+                covalence_hol_eval::defs::prod(half.clone(), sx.clone()),
+            )]),
+            0,
+        ),
+        (true, false) => (
+            Variant::new(vec![VCtor::new(
+                "CONVERT",
+                covalence_hol_eval::defs::prod(
+                    covalence_hol_eval::defs::option(half.clone()),
+                    sx.clone(),
+                ),
+            )]),
+            1,
+        ),
+        (false, true) => (
+            Variant::new(vec![
+                VCtor::new(
+                    "TRUNC_SAT",
+                    covalence_hol_eval::defs::prod(
+                        sx.clone(),
+                        covalence_hol_eval::defs::option(zero.clone()),
+                    ),
+                ),
+                VCtor::new(
+                    "RELAXED_TRUNC",
+                    covalence_hol_eval::defs::prod(
+                        sx.clone(),
+                        covalence_hol_eval::defs::option(zero.clone()),
+                    ),
+                ),
+            ]),
+            2,
+        ),
+        (false, false) => (
+            Variant::new(vec![
+                VCtor::new("DEMOTE", zero.clone()),
+                VCtor::new("PROMOTELOW", Type::unit()),
+            ]),
+            3,
+        ),
+    };
+    let theory = CoprodBackend.theory(&variant)?;
+    if theory.carrier() != carrier {
+        return Ok(None);
+    }
+    let width = |lane: &str| match lane {
+        "I8" => 8u64,
+        "I16" => 16,
+        "I32" | "F32" => 32,
+        "I64" | "F64" => 64,
+        _ => unreachable!(),
+    };
+    let lw = width(left_lane);
+    let rw = width(right_lane);
+    let value = Term::free("__vcvtop", carrier.clone());
+    let unit = covalence_hol_eval::defs::unit_nil();
+    let mut allowed = Vec::new();
+    match class {
+        0 if rw == 2 * lw => {
+            let (_, ctor) = theory.constructor_named("EXTEND")?;
+            for h in ["LOW", "HIGH"] {
+                for s in ["U", "S"] {
+                    let (_, hc) = half_theory.constructor_named(h)?;
+                    let (_, sc) = sx_theory.constructor_named(s)?;
+                    let payload = covalence_hol_eval::defs::pair(half.clone(), sx.clone())
+                        .apply(hc.clone().apply(unit.clone())?)?
+                        .apply(sc.clone().apply(unit.clone())?)?;
+                    allowed.push(value.clone().equals(ctor.clone().apply(payload)?)?);
+                }
+            }
+        }
+        1 => {
+            let option_half = covalence_hol_eval::defs::option(half.clone());
+            let selected_half = if lw == rw && lw == 32 {
+                Some(covalence_hol_eval::defs::none(half.clone()))
+            } else if rw == 2 * lw {
+                let (_, low) = half_theory.constructor_named("LOW")?;
+                Some(
+                    covalence_hol_eval::defs::some(half.clone())
+                        .apply(low.clone().apply(unit.clone())?)?,
+                )
+            } else {
+                None
+            };
+            if let Some(selected_half) = selected_half {
+                let (_, ctor) = theory.constructor_named("CONVERT")?;
+                for s in ["U", "S"] {
+                    let (_, sc) = sx_theory.constructor_named(s)?;
+                    let payload = covalence_hol_eval::defs::pair(option_half.clone(), sx.clone())
+                        .apply(selected_half.clone())?
+                        .apply(sc.clone().apply(unit.clone())?)?;
+                    allowed.push(value.clone().equals(ctor.clone().apply(payload)?)?);
+                }
+            }
+        }
+        2 => {
+            let option_zero = covalence_hol_eval::defs::option(zero.clone());
+            let selected_zero = if lw == rw && lw == 32 {
+                Some(covalence_hol_eval::defs::none(zero.clone()))
+            } else if lw == 2 * rw {
+                let (_, z) = zero_theory.constructor_named("ZERO")?;
+                Some(
+                    covalence_hol_eval::defs::some(zero.clone())
+                        .apply(z.clone().apply(unit.clone())?)?,
+                )
+            } else {
+                None
+            };
+            if let Some(selected_zero) = selected_zero {
+                for name in ["TRUNC_SAT", "RELAXED_TRUNC"] {
+                    let (_, ctor) = theory.constructor_named(name)?;
+                    for s in ["U", "S"] {
+                        let (_, sc) = sx_theory.constructor_named(s)?;
+                        let payload =
+                            covalence_hol_eval::defs::pair(sx.clone(), option_zero.clone())
+                                .apply(sc.clone().apply(unit.clone())?)?
+                                .apply(selected_zero.clone())?;
+                        allowed.push(value.clone().equals(ctor.clone().apply(payload)?)?);
+                    }
+                }
+            }
+        }
+        3 => {
+            if lw == 2 * rw {
+                let (_, ctor) = theory.constructor_named("DEMOTE")?;
+                let (_, z) = zero_theory.constructor_named("ZERO")?;
+                allowed.push(
+                    value
+                        .clone()
+                        .equals(ctor.clone().apply(z.clone().apply(unit.clone())?)?)?,
+                );
+            }
+            if 2 * lw == rw {
+                let (_, ctor) = theory.constructor_named("PROMOTELOW")?;
+                allowed.push(value.clone().equals(ctor.clone().apply(unit.clone())?)?);
+            }
+        }
+        _ => {}
+    }
+    let body = if allowed.is_empty() {
+        covalence_hol_eval::mk_bool(false)
+    } else {
+        let mut allowed = allowed.into_iter();
+        let first = allowed.next().expect("checked nonempty");
+        allowed.try_fold(first, |left, right| left.or(right))?
+    };
+    Ok(Some((
+        Term::abs(carrier.clone(), subst::close(&body, "__vcvtop")),
+        match &selected.shape {
+            TypeShape::Variant(cases) => cases
+                .iter()
+                .flat_map(|case| case.refinements.iter())
+                .collect(),
+            _ => unreachable!("validated variant"),
+        },
+    )))
+}
+
+fn exact_vcvtop_sources(
+    ii: &super::type_family::FamilyInstance<'_>,
+    iff: &super::type_family::FamilyInstance<'_>,
+    fi: &super::type_family::FamilyInstance<'_>,
+    ff: &super::type_family::FamilyInstance<'_>,
+) -> bool {
+    let TypeShape::Variant(ii_cases) = &ii.shape else {
+        return false;
+    };
+    let TypeShape::Variant(if_cases) = &iff.shape else {
+        return false;
+    };
+    let TypeShape::Variant(fi_cases) = &fi.shape else {
+        return false;
+    };
+    let TypeShape::Variant(ff_cases) = &ff.shape else {
+        return false;
+    };
+    let [extend] = ii_cases.as_slice() else {
+        return false;
+    };
+    let [convert] = if_cases.as_slice() else {
+        return false;
+    };
+    let [trunc, relaxed] = fi_cases.as_slice() else {
+        return false;
+    };
+    let [demote, promote] = ff_cases.as_slice() else {
+        return false;
+    };
+    extend.operator.fragments() == ["EXTEND"]
+        && exact_half_signed_payload(extend.payload)
+        && matches!(extend.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_simple_guard(e, 0))
+        && convert.operator.fragments() == ["CONVERT"]
+        && exact_optional_half_signed_payload(convert.payload)
+        && matches!(convert.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_optional_guard(e, "half?", "half", "LOW"))
+        && trunc.operator.fragments() == ["TRUNC_SAT"]
+        && exact_signed_optional_zero_payload(trunc.payload)
+        && matches!(trunc.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_optional_guard(e, "zero?", "zero", "ZERO"))
+        && relaxed.operator.fragments() == ["RELAXED_TRUNC"]
+        && exact_signed_optional_zero_payload(relaxed.payload)
+        && matches!(relaxed.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_optional_guard(e, "zero?", "zero", "ZERO"))
+        && demote.operator.fragments() == ["DEMOTE"]
+        && matches!(
+            demote.payload,
+            SpecTecTyp::Tup { ets }
+                if matches!(
+                    ets.as_slice(),
+                    [SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x, as1 },
+                        ..
+                    }] if x == "zero" && as1.is_empty()
+                )
+        )
+        && matches!(demote.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_simple_guard(e, 1))
+        && promote.operator.fragments() == ["PROMOTELOW"]
+        && matches!(promote.payload, SpecTecTyp::Tup { ets } if ets.is_empty())
+        && matches!(promote.refinements, [SpecTecPrem::If { e }] if exact_vcvtop_simple_guard(e, 2))
+        && [extend, convert, trunc, relaxed, demote, promote]
+            .iter()
+            .all(|case| case.params.is_empty())
+        && exact_two_vector_shape_instance(ii, "Jnn", "Jnn")
+        && exact_two_vector_shape_instance(iff, "Jnn", "Fnn")
+        && exact_two_vector_shape_instance(fi, "Fnn", "Jnn")
+        && exact_two_vector_shape_instance(ff, "Fnn", "Fnn")
+}
+
+fn exact_two_vector_shape_instance(
+    instance: &super::type_family::FamilyInstance<'_>,
+    left_kind: &str,
+    right_kind: &str,
+) -> bool {
+    let [
+        SpecTecParam::Exp { x: left_lane, .. },
+        SpecTecParam::Exp { x: left_dim, .. },
+        SpecTecParam::Exp { x: right_lane, .. },
+        SpecTecParam::Exp { x: right_dim, .. },
+    ] = instance.params
+    else {
+        return false;
+    };
+    let [left, right] = instance.args else {
+        return false;
+    };
+    exact_vector_shape_pattern(left, left_kind, left_lane, left_dim)
+        && exact_vector_shape_pattern(right, right_kind, right_lane, right_dim)
+}
+
+fn exact_vector_shape_pattern(
+    argument: &SpecTecArg,
+    lane_kind: &str,
+    lane: &str,
+    dim: &str,
+) -> bool {
+    let SpecTecArg::Exp {
+        e: SpecTecExp::Case { op, e1 },
+    } = argument
+    else {
+        return false;
+    };
+    let SpecTecExp::Tup { es } = e1.as_ref() else {
+        return false;
+    };
+    matches!(
+        es.as_slice(),
+        [
+            SpecTecExp::Sub { t1, t2, e1 },
+            SpecTecExp::Case { op: dim_op, e1: dim_payload },
+        ] if op.fragments() == ["", "X", ""]
+            && matches!(t1, SpecTecTyp::Var { x, as1 } if x == lane_kind && as1.is_empty())
+            && matches!(t2, SpecTecTyp::Var { x, as1 } if x == "lanetype" && as1.is_empty())
+            && matches!(e1.as_ref(), SpecTecExp::Var { id } if id == lane)
+            && dim_op.fragments() == ["", ""]
+            && matches!(
+                dim_payload.as_ref(),
+                SpecTecExp::Tup { es }
+                    if matches!(es.as_slice(), [SpecTecExp::Var { id }] if id == dim)
+            )
+    )
+}
+
+fn exact_optional_half_signed_payload(payload: &SpecTecTyp) -> bool {
+    matches!(
+        payload,
+        SpecTecTyp::Tup { ets }
+            if matches!(
+                ets.as_slice(),
+                [
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Iter { t1, it },
+                        ..
+                    },
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x, as1 },
+                        ..
+                    },
+                ] if matches!(t1.as_ref(), SpecTecTyp::Var { x, as1 } if x == "half" && as1.is_empty())
+                    && matches!(it.as_slice(), [SpecTecIter::Opt])
+                    && x == "sx" && as1.is_empty()
+            )
+    )
+}
+
+fn exact_signed_optional_zero_payload(payload: &SpecTecTyp) -> bool {
+    matches!(
+        payload,
+        SpecTecTyp::Tup { ets }
+            if matches!(
+                ets.as_slice(),
+                [
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Var { x: sx, as1: sx_args },
+                        ..
+                    },
+                    SpecTecTypBind::Bind {
+                        typ: SpecTecTyp::Iter { t1, it },
+                        ..
+                    },
+                ] if sx == "sx" && sx_args.is_empty()
+                    && matches!(t1.as_ref(), SpecTecTyp::Var { x, as1 } if x == "zero" && as1.is_empty())
+                    && matches!(it.as_slice(), [SpecTecIter::Opt])
+            )
+    )
+}
+
+fn exact_vcvtop_simple_guard(e: &SpecTecExp, class: u8) -> bool {
+    let SpecTecExp::Cmp {
+        op: SpecTecCmpOp::Eq,
+        e1,
+        e2,
+        ..
+    } = e
+    else {
+        return false;
+    };
+    let twice = |e: &SpecTecExp, function: &str, param: &str| {
+        matches!(
+            e,
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Mul,
+                e1: two,
+                e2: width,
+                ..
+            } if matches!(two.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(2) })
+                && exact_lane_width_call(width, function, param)
+        )
+    };
+    match class {
+        0 => exact_lane_width_call(e1, "lsizenn2", "Jnn_2") && twice(e2, "lsizenn1", "Jnn_1"),
+        1 => exact_lane_width_call(e1, "sizenn1", "Fnn_1") && twice(e2, "sizenn2", "Fnn_2"),
+        2 => twice(e1, "sizenn1", "Fnn_1") && exact_lane_width_call(e2, "sizenn2", "Fnn_2"),
+        _ => false,
+    }
+}
+
+fn exact_vcvtop_optional_guard(
+    e: &SpecTecExp,
+    option_field: &str,
+    binder: &str,
+    some_ctor: &str,
+) -> bool {
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::Or,
+        e1: same_width,
+        e2: double_width,
+        ..
+    } = e
+    else {
+        return false;
+    };
+    exact_vcvtop_optional_branch(same_width, option_field, binder, None, false)
+        && exact_vcvtop_optional_branch(double_width, option_field, binder, Some(some_ctor), true)
+}
+
+fn exact_vcvtop_optional_branch(
+    e: &SpecTecExp,
+    option_field: &str,
+    binder: &str,
+    expected: Option<&str>,
+    doubled: bool,
+) -> bool {
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::And,
+        e1: widths,
+        e2: option,
+        ..
+    } = e
+    else {
+        return false;
+    };
+    let (outer_fn, outer_param, inner_fn, inner_param) = if option_field == "half?" {
+        ("sizenn2", "Fnn_2", "lsizenn1", "Jnn_1")
+    } else {
+        ("sizenn1", "Fnn_1", "lsizenn2", "Jnn_2")
+    };
+    let width_ok = if doubled {
+        exact_vcvtop_double_width(widths, outer_fn, outer_param, inner_fn, inner_param)
+    } else {
+        let SpecTecExp::Bin {
+            op: SpecTecBinOp::And,
+            e1: equality,
+            e2: thirty_two,
+            ..
+        } = widths.as_ref()
+        else {
+            return false;
+        };
+        exact_vcvtop_equal_width(equality, outer_fn, outer_param, inner_fn, inner_param)
+            && matches!(
+                thirty_two.as_ref(),
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Eq,
+                    e1,
+                    e2,
+                    ..
+                } if exact_lane_width_call(e1, inner_fn, inner_param)
+                    && matches!(e2.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(32) })
+            )
+    };
+    width_ok && exact_vcvtop_option_equality(option, option_field, binder, expected)
+}
+
+fn exact_vcvtop_equal_width(
+    e: &SpecTecExp,
+    left_fn: &str,
+    left_param: &str,
+    right_fn: &str,
+    right_param: &str,
+) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            e1,
+            e2,
+            ..
+        } if exact_lane_width_call(e1, left_fn, left_param)
+            && exact_lane_width_call(e2, right_fn, right_param)
+    )
+}
+
+fn exact_vcvtop_double_width(
+    e: &SpecTecExp,
+    outer_fn: &str,
+    outer_param: &str,
+    inner_fn: &str,
+    inner_param: &str,
+) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            e1,
+            e2,
+            ..
+        } if exact_lane_width_call(e1, outer_fn, outer_param)
+            && matches!(
+                e2.as_ref(),
+                SpecTecExp::Bin {
+                    op: SpecTecBinOp::Mul,
+                    e1: two,
+                    e2: width,
+                    ..
+                } if matches!(two.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(2) })
+                    && exact_lane_width_call(width, inner_fn, inner_param)
+            )
+    )
+}
+
+fn exact_vcvtop_option_equality(
+    e: &SpecTecExp,
+    option_field: &str,
+    binder: &str,
+    expected: Option<&str>,
+) -> bool {
+    let SpecTecExp::Cmp {
+        op: SpecTecCmpOp::Eq,
+        e1,
+        e2,
+        ..
+    } = e
+    else {
+        return false;
+    };
+    let left_ok = matches!(
+        e1.as_ref(),
+        SpecTecExp::Iter {
+            e1,
+            it: SpecTecIter::Opt,
+            xes,
+        } if matches!(e1.as_ref(), SpecTecExp::Var { id } if id == binder)
+            && matches!(
+                xes.as_slice(),
+                [SpecTecIterExp::Dom {
+                    x,
+                    e: SpecTecExp::Var { id },
+                }] if x == binder && id == option_field
+            )
+    );
+    let right_ok = match expected {
+        None => matches!(e2.as_ref(), SpecTecExp::Opt { eo: None }),
+        Some(name) => matches!(
+            e2.as_ref(),
+            SpecTecExp::Opt { eo: Some(value) }
+                if matches!(
+                    value.as_ref(),
+                    SpecTecExp::Case { op, e1 }
+                        if op.fragments() == [name]
+                            && matches!(e1.as_ref(), SpecTecExp::Tup { es } if es.is_empty())
+                )
+        ),
+    };
+    left_ok && right_ok
+}
+
 fn float_magnitude_theory() -> Result<crate::init::inductive::CoprodVariantTheory> {
     CoprodBackend.theory(&Variant::new(vec![
         VCtor::new(
@@ -3532,16 +4736,73 @@ mod tests {
             "vunop_",
             "vextternop__",
             "vextunop__",
+            "vextbinop__",
+            "vrelop_",
+            "vbinop_",
+            "vcvtop__",
         ];
         assert_eq!(
             exact
                 .iter()
                 .map(|name| families.family(name).unwrap().refinements().count())
                 .sum::<usize>(),
-            32
+            53
         );
-        assert_eq!(refined.len() - exact.len(), 5);
-        assert_eq!(56 - 32, 24);
+        assert_eq!(refined.len() - exact.len(), 1);
+        assert_eq!(56 - 53, 3);
+    }
+
+    #[test]
+    fn recursive_instruction_refinement_residue_is_exactly_classified() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let family = families.family("instr").unwrap();
+        let mut refined = Vec::new();
+        for instance in &family.instances {
+            if let TypeShape::Variant(cases) = &instance.shape {
+                for case in cases {
+                    if let [SpecTecPrem::If { e }] = case.refinements {
+                        refined.push((case.operator.fragments(), e));
+                    } else {
+                        assert!(case.refinements.is_empty());
+                    }
+                }
+            }
+        }
+        assert_eq!(refined.len(), 3);
+        assert_eq!(refined[0].0, ["VSHUFFLE"]);
+        assert!(matches!(
+            refined[0].1,
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Eq,
+                ..
+            }
+        ));
+        assert_eq!(refined[1].0, ["VNARROW"]);
+        assert!(matches!(
+            refined[1].1,
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::And,
+                ..
+            }
+        ));
+        assert_eq!(refined[2].0, ["VEXTRACT_LANE"]);
+        assert!(matches!(
+            refined[2].1,
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Equiv,
+                ..
+            }
+        ));
+
+        let error = RefinementAwareTypeResolver::new(&ctx, &families)
+            .resolve_type(&SpecTecTyp::Var {
+                x: "instr".into(),
+                as1: vec![],
+            })
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("parametric field/case not modelled yet"));
     }
 
     #[test]
@@ -3780,6 +5041,63 @@ mod tests {
                 "{lane}x{dim}"
             );
             assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+
+            let relation = resolver
+                .resolve_type(&SpecTecTyp::Var {
+                    x: "vrelop_".into(),
+                    as1: vec![shape(lane, dim)],
+                })
+                .unwrap();
+            let SortInvariant::Predicate(predicate) = relation.sort.invariant() else {
+                panic!("vrelop_({lane}x{dim}) must have an exact invariant");
+            };
+            assert_eq!(
+                predicate.type_of().unwrap(),
+                Type::fun(relation.sort.carrier().clone(), Type::bool())
+            );
+            assert_eq!(relation.provenance, TypeProvenance::SourceRefinement);
+
+            let binary = resolver
+                .resolve_type(&SpecTecTyp::Var {
+                    x: "vbinop_".into(),
+                    as1: vec![shape(lane, dim)],
+                })
+                .unwrap();
+            let SortInvariant::Predicate(predicate) = binary.sort.invariant() else {
+                panic!("vbinop_({lane}x{dim}) must have an exact invariant");
+            };
+            assert_eq!(
+                predicate.type_of().unwrap(),
+                Type::fun(binary.sort.carrier().clone(), Type::bool())
+            );
+            assert_eq!(binary.provenance, TypeProvenance::SourceRefinement);
+        }
+
+        let shapes = [
+            ("I8", 16),
+            ("I16", 8),
+            ("I32", 4),
+            ("I64", 2),
+            ("F32", 4),
+            ("F64", 2),
+        ];
+        for (left, left_dim) in shapes {
+            for (right, right_dim) in shapes {
+                let conversion = resolver
+                    .resolve_type(&SpecTecTyp::Var {
+                        x: "vcvtop__".into(),
+                        as1: vec![shape(left, left_dim), shape(right, right_dim)],
+                    })
+                    .unwrap();
+                let SortInvariant::Predicate(predicate) = conversion.sort.invariant() else {
+                    panic!("vcvtop__({left}x{left_dim}, {right}x{right_dim}) must be exact");
+                };
+                assert_eq!(
+                    predicate.type_of().unwrap(),
+                    Type::fun(conversion.sort.carrier().clone(), Type::bool())
+                );
+                assert_eq!(conversion.provenance, TypeProvenance::SourceRefinement);
+            }
         }
     }
 
@@ -3826,6 +5144,7 @@ mod tests {
             (("I8", 16), ("I32", 4)),
             (("I8", 16), ("I16", 8)),
             (("I16", 8), ("I32", 4)),
+            (("I32", 4), ("I64", 2)),
         ] {
             let resolved = resolver
                 .resolve_type(&SpecTecTyp::Var {
@@ -3856,6 +5175,21 @@ mod tests {
                 Type::fun(unary.sort.carrier().clone(), Type::bool())
             );
             assert_eq!(unary.provenance, TypeProvenance::SourceRefinement);
+
+            let binary = resolver
+                .resolve_type(&SpecTecTyp::Var {
+                    x: "vextbinop__".into(),
+                    as1: vec![ishape(left, left_dim), ishape(right, right_dim)],
+                })
+                .unwrap();
+            let SortInvariant::Predicate(predicate) = binary.sort.invariant() else {
+                panic!("rigid vextbinop__ pair must have an exact invariant");
+            };
+            assert_eq!(
+                predicate.type_of().unwrap(),
+                Type::fun(binary.sort.carrier().clone(), Type::bool())
+            );
+            assert_eq!(binary.provenance, TypeProvenance::SourceRefinement);
         }
     }
 

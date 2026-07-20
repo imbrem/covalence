@@ -612,6 +612,26 @@ pub trait WasmExecution {
     fn execute(&self, from: &Configuration) -> std::result::Result<Self::Fact, Self::Error>;
 }
 
+/// Auditable coverage of the loaded semantics and the checked public slice.
+///
+/// The full imported relation may retain explicitly censused opaque premises.
+/// Facts returned by this facade are replayed only in the premise-closed
+/// execution slice, whose opaque count is separately reported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemanticsCoverage {
+    pub combined_clauses: usize,
+    pub exact_builtin_clauses: usize,
+    pub exact_builtin_operations: usize,
+    pub remaining_builtin_operations: usize,
+    pub full_opaque_premises: usize,
+    pub checked_slice_opaque_premises: usize,
+}
+
+/// Backend-independent visibility into semantic coverage and trust boundaries.
+pub trait WasmCoverage {
+    fn coverage(&self) -> SemanticsCoverage;
+}
+
 /// NativeHol realization of the first-class WebAssembly semantics API.
 ///
 /// The SpecTec-derived slice is private. Construction checks that it has no
@@ -620,7 +640,7 @@ pub trait WasmExecution {
 pub struct NativeWasmSemantics {
     clauses: Vec<Clause>,
     metas: Vec<ClauseMeta>,
-    total_clause_count: usize,
+    coverage: SemanticsCoverage,
 }
 
 impl Drop for NativeWasmSemantics {
@@ -638,7 +658,7 @@ impl Drop for NativeWasmSemantics {
 impl NativeWasmSemantics {
     /// Build the execution-capable, premise-closed semantics slice.
     pub fn execution() -> Result<Self> {
-        let (clauses, metas) = with_total_stack(|| {
+        let (clauses, metas, coverage) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
             if clauses.len() < 13_974 || clauses.len() != report.total_clauses {
@@ -651,20 +671,32 @@ impl NativeWasmSemantics {
             if slice.report().opaque_total() != 0 {
                 return Err(facade_error("execution slice contains opaque premises"));
             }
-            Ok((clauses, report.metas))
+            let coverage = SemanticsCoverage {
+                combined_clauses: report.total_clauses,
+                exact_builtin_clauses: report.n_builtin_clauses,
+                exact_builtin_operations: report.builtins.ops,
+                remaining_builtin_operations: 91 - report.builtins.zero_clause_ops,
+                full_opaque_premises: report.opaque_total(),
+                checked_slice_opaque_premises: slice.report().opaque_total(),
+            };
+            Ok((clauses, report.metas, coverage))
         })?;
-        let total_clause_count = clauses.len();
         Ok(Self {
             clauses,
             metas,
-            total_clause_count,
+            coverage,
         })
     }
 
     /// Clauses in the full combined semantics into which every returned fact
     /// is transported.
     pub fn total_clause_count(&self) -> usize {
-        self.total_clause_count
+        self.coverage.combined_clauses
+    }
+
+    /// Exact coverage and opacity boundaries for this loaded semantics.
+    pub const fn coverage(&self) -> SemanticsCoverage {
+        self.coverage
     }
 
     /// Derive the pinned normative MVP example family and return only neutral
@@ -691,6 +723,12 @@ impl NativeWasmSemantics {
             let full = rule_set_of(clauses);
             f(&env, &full)
         })
+    }
+}
+
+impl WasmCoverage for NativeWasmSemantics {
+    fn coverage(&self) -> SemanticsCoverage {
+        self.coverage
     }
 }
 
@@ -1659,6 +1697,17 @@ mod tests {
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
         assert_eq!(semantics.total_clause_count(), 13_974);
+        assert_eq!(
+            semantics.coverage(),
+            SemanticsCoverage {
+                combined_clauses: 13_974,
+                exact_builtin_clauses: 10_498,
+                exact_builtin_operations: 85,
+                remaining_builtin_operations: 17,
+                full_opaque_premises: 7,
+                checked_slice_opaque_premises: 0,
+            }
+        );
         let examples = semantics.normative_examples().unwrap();
         assert_eq!(
             examples

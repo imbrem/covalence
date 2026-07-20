@@ -22,9 +22,11 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod applicative_effect;
 pub mod arena;
 pub mod effect;
 pub mod host;
+pub mod io;
 pub mod relation;
 pub mod resource;
 pub mod runtime;
@@ -41,6 +43,7 @@ pub use admission::{
     EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
     SourcedDefinition, TerminationCertificate, Totalization,
 };
+pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{
     ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaRecursiveCell,
     ArenaRuntime, ArenaRuntimeError, ArenaValue, ArenaValues,
@@ -52,9 +55,11 @@ pub use effect::{
 pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
     HostClosures, HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame,
-    HostRuntime, HostValue, HostValues, LispMachine, MachineApplicationPart,
-    MachineApplicationPosition, MachineConfiguration, MachineControl, MachineFrame,
+    HostRuntime, HostValue, HostValues, LispConfiguration, LispMachine, LispMachineError,
+    MachineApplicationPart, MachineApplicationPosition, MachineConfiguration, MachineControl,
+    MachineFrame,
 };
+pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
@@ -63,8 +68,8 @@ pub use relation::{
 pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
-    RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
+    LispRuntime, LispValue, PrimitiveOutcome, PrimitiveSemantics, RecursiveAllocation,
+    RuntimeBinding, RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
     RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{

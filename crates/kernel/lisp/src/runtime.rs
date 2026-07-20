@@ -303,7 +303,15 @@ pub trait LispClosure {
 /// borrowed host slice and has the WIT-shaped
 /// `apply(primitive, list<value>) -> value` boundary needed by resource
 /// backends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrimitiveOutcome<V, Q> {
+    Value(V),
+    Request(Q),
+}
+
 pub trait PrimitiveSemantics<V: LispValue> {
+    type Request: Clone + core::fmt::Debug + PartialEq;
+    type Response: Clone;
     type Error;
 
     fn apply(
@@ -311,6 +319,13 @@ pub trait PrimitiveSemantics<V: LispValue> {
         values: &V,
         primitive: &V::Primitive,
         arguments: Vec<V::Value>,
+    ) -> Result<PrimitiveOutcome<V::Value, Self::Request>, Self::Error>;
+
+    fn resume(
+        &self,
+        values: &V,
+        request: &Self::Request,
+        response: Self::Response,
     ) -> Result<V::Value, Self::Error>;
 
     fn truth(&self, values: &V, value: bool) -> Result<V::Value, Self::Error>;

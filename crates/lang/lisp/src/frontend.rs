@@ -15,7 +15,7 @@ use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
     Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
     LispEnvironment, LispMachine, LispRuntime, LispValue, MachineConfiguration, MayEval,
-    PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
+    PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -50,6 +50,8 @@ pub enum Primitive {
     Multiply,
     LessEqual,
     Append,
+    Read,
+    Write,
 }
 
 /// Concrete surface dialects targeting the common core.
@@ -87,6 +89,8 @@ impl SurfaceDialect {
             "*" => Primitive::Multiply,
             "<=" => Primitive::LessEqual,
             "append" => Primitive::Append,
+            "read" if self == Self::Scheme => Primitive::Read,
+            "write" if self == Self::Scheme => Primitive::Write,
             _ => return None,
         })
     }
@@ -611,6 +615,7 @@ pub enum PrimitiveError {
     ExpectedDatum,
     ExpectedCons,
     ExpectedInteger,
+    EffectRequiresHandler,
 }
 
 /// Primitive-language failure separated from representation failure.
@@ -638,6 +643,8 @@ impl<V> PrimitiveSemantics<V> for StandardPrimitives
 where
     V: LispValue<Atom = CoreAtom, Primitive = Primitive>,
 {
+    type Request = Infallible;
+    type Response = Infallible;
     type Error = PrimitiveExecutionError<V::Error>;
 
     fn apply(
@@ -645,9 +652,9 @@ where
         runtime: &V,
         primitive: &Primitive,
         arguments: Vec<V::Value>,
-    ) -> Result<V::Value, Self::Error> {
+    ) -> Result<PrimitiveOutcome<V::Value, Self::Request>, Self::Error> {
         let arguments = arguments.as_slice();
-        match primitive {
+        let value = match primitive {
             Primitive::Cons => {
                 let [head, tail] = self.values::<_, 2>(arguments)?;
                 runtime
@@ -736,7 +743,18 @@ where
                 let [left, right] = self.values::<_, 2>(arguments)?;
                 self.append(runtime, left, right)
             }
-        }
+            Primitive::Read | Primitive::Write => Err(PrimitiveError::EffectRequiresHandler.into()),
+        }?;
+        Ok(PrimitiveOutcome::Value(value))
+    }
+
+    fn resume(
+        &self,
+        _runtime: &V,
+        request: &Self::Request,
+        _response: Self::Response,
+    ) -> Result<V::Value, Self::Error> {
+        match *request {}
     }
 
     fn truth(&self, runtime: &V, value: bool) -> Result<V::Value, Self::Error> {
@@ -872,6 +890,8 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
     ("*", Primitive::Multiply),
     ("<=", Primitive::LessEqual),
     ("append", Primitive::Append),
+    ("read", Primitive::Read),
+    ("write", Primitive::Write),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1169,6 +1189,70 @@ impl RuntimeSession<ArenaFrontendRuntime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_kernel_lisp::{
+        EffectHandler, EffectState, LispEffectMachine, handle_to_completion,
+    };
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct AddRequest<V> {
+        arguments: Vec<V>,
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    struct SuspendingAdd;
+
+    impl<V> PrimitiveSemantics<V> for SuspendingAdd
+    where
+        V: LispValue<Atom = CoreAtom, Primitive = Primitive>,
+        V::Value: Debug + PartialEq,
+    {
+        type Request = AddRequest<V::Value>;
+        type Response = V::Value;
+        type Error = PrimitiveExecutionError<V::Error>;
+
+        fn apply(
+            &self,
+            runtime: &V,
+            primitive: &Primitive,
+            arguments: Vec<V::Value>,
+        ) -> Result<PrimitiveOutcome<V::Value, Self::Request>, Self::Error> {
+            if primitive == &Primitive::Add {
+                return Ok(PrimitiveOutcome::Request(AddRequest { arguments }));
+            }
+            match StandardPrimitives.apply(runtime, primitive, arguments)? {
+                PrimitiveOutcome::Value(value) => Ok(PrimitiveOutcome::Value(value)),
+                PrimitiveOutcome::Request(never) => match never {},
+            }
+        }
+
+        fn resume(
+            &self,
+            _runtime: &V,
+            _request: &Self::Request,
+            response: Self::Response,
+        ) -> Result<V::Value, Self::Error> {
+            Ok(response)
+        }
+
+        fn truth(&self, runtime: &V, value: bool) -> Result<V::Value, Self::Error> {
+            StandardPrimitives.truth(runtime, value)
+        }
+
+        fn is_false(&self, runtime: &V, value: &V::Value) -> Result<bool, Self::Error> {
+            StandardPrimitives.is_false(runtime, value)
+        }
+    }
+
+    struct OneResponse<V>(Option<V>);
+
+    impl<V> EffectHandler<AddRequest<V>, V> for OneResponse<V> {
+        type Error = Infallible;
+
+        fn handle(&mut self, request: &AddRequest<V>) -> Result<V, Self::Error> {
+            assert_eq!(request.arguments.len(), 2);
+            Ok(self.0.take().expect("handler has one response"))
+        }
+    }
 
     fn one(source: &str) -> SExpr {
         crate::reader::read(source).unwrap().pop().unwrap()
@@ -1240,6 +1324,77 @@ mod tests {
             run_arena("(let ((invoke apply)) (invoke + (quote (20 22))))"),
             CoreAtom::Integer(Int::from(42)),
             "first-class primitive and apply-list dispatch share the owned argument API"
+        );
+    }
+
+    #[test]
+    fn applicative_effects_share_the_direct_and_handle_runtime_contract() {
+        let expression = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one("(+ 20 22)"))
+            .unwrap();
+
+        let runtime = HostFrontendRuntime::default();
+        let environment = initial_environment_for(
+            runtime.values(),
+            runtime.environments(),
+            SurfaceDialect::Scheme,
+        )
+        .unwrap();
+        let expected = runtime
+            .values()
+            .atom(CoreAtom::Integer(Int::from(42)))
+            .unwrap();
+        let machine = LispEffectMachine::new(LispMachine::with_runtime(
+            runtime,
+            SuspendingAdd,
+            covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+        ));
+        let mut handler = OneResponse(Some(expected.clone()));
+        let run = handle_to_completion(
+            &machine,
+            EffectState::Running(MachineConfiguration::with_environment(
+                expression.clone(),
+                environment,
+            )),
+            &mut handler,
+            64,
+        )
+        .unwrap();
+        assert_eq!(run.transcript.len(), 1);
+        assert_eq!(run.returned.terminal_value(), Some(&expected));
+
+        let runtime = ArenaFrontendRuntime::default();
+        let environment = initial_environment_for(
+            runtime.values(),
+            runtime.environments(),
+            SurfaceDialect::Scheme,
+        )
+        .unwrap();
+        let expected = runtime
+            .values()
+            .atom(CoreAtom::Integer(Int::from(42)))
+            .unwrap();
+        let machine = LispEffectMachine::new(LispMachine::with_runtime(
+            runtime,
+            SuspendingAdd,
+            covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+        ));
+        let mut handler = OneResponse(Some(expected));
+        let run = handle_to_completion(
+            &machine,
+            EffectState::Running(MachineConfiguration::with_environment(
+                expression,
+                environment,
+            )),
+            &mut handler,
+            64,
+        )
+        .unwrap();
+        assert_eq!(run.transcript.len(), 1);
+        let value = run.returned.terminal_value().expect("terminal value");
+        assert_eq!(
+            machine.runtime().values().view(value).unwrap(),
+            RuntimeValueView::Atom(CoreAtom::Integer(Int::from(42)))
         );
     }
 

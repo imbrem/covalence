@@ -33,6 +33,7 @@
 pub mod forsp;
 pub mod frontend;
 pub mod reader;
+pub mod scheme_effect;
 
 #[cfg(feature = "hol")]
 pub mod hol;

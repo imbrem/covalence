@@ -298,9 +298,11 @@ pub trait LispClosure {
 
 /// Meaning of a primitive vocabulary over an abstract runtime-value backend.
 ///
-/// Primitive semantics receives the value capability explicitly. It therefore
-/// cannot rely on a concrete Rust enum and can be reused by handle-based HOL
-/// or WIT realizations.
+/// Primitive semantics receives the value capability explicitly and owns the
+/// finite argument list. It therefore cannot rely on a concrete Rust enum or
+/// borrowed host slice and has the WIT-shaped
+/// `apply(primitive, list<value>) -> value` boundary needed by resource
+/// backends.
 pub trait PrimitiveSemantics<V: LispValue> {
     type Error;
 
@@ -308,7 +310,7 @@ pub trait PrimitiveSemantics<V: LispValue> {
         &self,
         values: &V,
         primitive: &V::Primitive,
-        arguments: &[V::Value],
+        arguments: Vec<V::Value>,
     ) -> Result<V::Value, Self::Error>;
 
     fn truth(&self, values: &V, value: bool) -> Result<V::Value, Self::Error>;

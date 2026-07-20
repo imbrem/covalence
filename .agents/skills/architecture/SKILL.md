@@ -100,6 +100,11 @@ disable-model-invocation: true
   - Applicative and concatenative primitive dictionaries both transfer owned
     finite value lists rather than borrowing Rust slices. This is intentional:
     it keeps primitive dispatch resource-safe and directly expressible as WIT.
+    Applicative dictionaries return either a value or an explicit request;
+    `kernel/lisp::LispEffectMachine` preserves the suspended CEK continuation,
+    validates it on resumption, and runs unchanged over direct or opaque-handle
+    runtime representations. Pure execution rejects those requests rather than
+    performing host effects.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

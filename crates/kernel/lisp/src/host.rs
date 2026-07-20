@@ -12,8 +12,8 @@ use std::sync::{Arc, OnceLock};
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
-    RuntimeDatumError, RuntimeValueLayer, RuntimeValueView, inject_datum,
+    LispRuntime, LispValue, PrimitiveOutcome, PrimitiveSemantics, RecursiveAllocation,
+    RuntimeBinding, RuntimeDatumError, RuntimeValueLayer, RuntimeValueView, inject_datum,
 };
 use crate::syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispExpression, LispSyntax, Parameter,
@@ -519,9 +519,10 @@ where
 
 /// The active expression or computed value.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MachineControl<E, V> {
+pub enum MachineControl<E, V, Q = Infallible> {
     Expression(E),
     Value(V),
+    Suspended(Q),
 }
 
 /// Evaluation-context frames for a strict lexical CEK-style machine.
@@ -569,19 +570,19 @@ pub enum MachineApplicationPart<E> {
 
 /// A complete machine configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MachineConfiguration<E, V, N, P> {
-    pub control: MachineControl<E, V>,
+pub struct MachineConfiguration<E, V, N, P, Q = Infallible> {
+    pub control: MachineControl<E, V, Q>,
     pub environment: N,
     pub continuation: Vec<MachineFrame<E, V, N, P>>,
 }
 
-impl<E, V, N: Default, P> MachineConfiguration<E, V, N, P> {
+impl<E, V, N: Default, P, Q> MachineConfiguration<E, V, N, P, Q> {
     pub fn initial(expression: E) -> Self {
         Self::with_environment(expression, N::default())
     }
 }
 
-impl<E, V, N, P> MachineConfiguration<E, V, N, P> {
+impl<E, V, N, P, Q> MachineConfiguration<E, V, N, P, Q> {
     pub fn with_environment(expression: E, environment: N) -> Self {
         Self {
             control: MachineControl::Expression(expression),
@@ -601,12 +602,12 @@ impl<E, V, N, P> MachineConfiguration<E, V, N, P> {
     }
 }
 
-pub type HostControl<S, A, P> = MachineControl<Expr<S, A, P>, Value<S, A, P>>;
+pub type HostControl<S, A, P, Q = Infallible> = MachineControl<Expr<S, A, P>, Value<S, A, P>, Q>;
 pub type HostFrame<S, A, P> = MachineFrame<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
 pub type HostApplicationPosition = MachineApplicationPosition;
 pub type HostApplicationPart<S, A, P> = MachineApplicationPart<Expr<S, A, P>>;
-pub type HostConfiguration<S, A, P> =
-    MachineConfiguration<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
+pub type HostConfiguration<S, A, P, Q = Infallible> =
+    MachineConfiguration<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P, Q>;
 
 /// Errors from the executable host machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -629,6 +630,8 @@ pub enum CoreMachineError<S, E, R = Infallible> {
         actual: usize,
     },
     ImproperArgumentList,
+    UnhandledEffect,
+    InvalidEffectSuspension,
     Primitive(E),
     Runtime(R),
 }
@@ -661,6 +664,12 @@ impl<S: Debug, E: Debug, R: Debug> Display for CoreMachineError<S, E, R> {
             },
             Self::ImproperArgumentList => {
                 f.write_str("apply-list tail did not evaluate to a proper list")
+            }
+            Self::UnhandledEffect => {
+                f.write_str("pure Lisp machine cannot perform a primitive effect")
+            }
+            Self::InvalidEffectSuspension => {
+                f.write_str("effect suspension request does not match its CEK continuation")
             }
             Self::Primitive(error) => write!(f, "primitive operation failed: {error:?}"),
             Self::Runtime(error) => write!(f, "runtime representation failed: {error:?}"),
@@ -726,14 +735,15 @@ impl<P: CorePrimitive> LispMachine<HostRuntime<P::Symbol, P::Atom, P::Primitive>
     }
 }
 
-type RuntimeConfiguration<R> = MachineConfiguration<
+pub type LispConfiguration<R, P> = MachineConfiguration<
     <R as LispRuntime>::Expr,
     <R as LispRuntime>::Value,
     <R as LispRuntime>::Environment,
     <R as LispRuntime>::Primitive,
+    <P as PrimitiveSemantics<<R as LispRuntime>::Values>>::Request,
 >;
 
-type RuntimeMachineError<R, P> = CoreMachineError<
+pub type LispMachineError<R, P> = CoreMachineError<
     <R as LispRuntime>::Symbol,
     RuntimePrimitiveError<R, P>,
     <R as LispRuntime>::Error,
@@ -765,7 +775,7 @@ where
         &self,
         parent: &R::Environment,
         bindings: Vec<(R::Symbol, R::Expr)>,
-    ) -> Result<R::Environment, RuntimeMachineError<R, P>> {
+    ) -> Result<R::Environment, LispMachineError<R, P>> {
         for (index, (name, expression)) in bindings.iter().enumerate() {
             if bindings[..index].iter().any(|(earlier, _)| earlier == name) {
                 return Err(CoreMachineError::DuplicateRecursiveBinding(name.clone()));
@@ -840,13 +850,13 @@ where
 
     fn schedule_application_part(
         &self,
-        configuration: RuntimeConfiguration<R>,
+        configuration: LispConfiguration<R, P>,
         function: Option<R::Value>,
         evaluated: Vec<Option<R::Value>>,
         splice_tail: bool,
         remaining: Vec<MachineApplicationPart<R::Expr>>,
         environment: R::Environment,
-    ) -> Vec<RuntimeConfiguration<R>> {
+    ) -> Vec<LispConfiguration<R, P>> {
         self.argument_choices(remaining.len())
             .into_iter()
             .map(|choice| {
@@ -877,12 +887,12 @@ where
 
     fn schedule_primitive_argument(
         &self,
-        configuration: RuntimeConfiguration<R>,
+        configuration: LispConfiguration<R, P>,
         primitive: R::Primitive,
         evaluated: Vec<Option<R::Value>>,
         remaining: Vec<(usize, R::Expr)>,
         environment: R::Environment,
-    ) -> Vec<RuntimeConfiguration<R>> {
+    ) -> Vec<LispConfiguration<R, P>> {
         self.argument_choices(remaining.len())
             .into_iter()
             .map(|choice| {
@@ -912,9 +922,9 @@ where
 
     fn continue_with(
         &self,
-        mut configuration: RuntimeConfiguration<R>,
+        mut configuration: LispConfiguration<R, P>,
         value: R::Value,
-    ) -> Result<Vec<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
+    ) -> Result<Vec<LispConfiguration<R, P>>, LispMachineError<R, P>> {
         let Some(frame) = configuration.continuation.pop() else {
             return Ok(Vec::new());
         };
@@ -1002,7 +1012,10 @@ where
                         .primitives
                         .apply(self.values(), &primitive, arguments)
                         .map_err(CoreMachineError::Primitive)?;
-                    configuration.control = MachineControl::Value(value);
+                    configuration.control = match value {
+                        PrimitiveOutcome::Value(value) => MachineControl::Value(value),
+                        PrimitiveOutcome::Request(request) => MachineControl::Suspended(request),
+                    };
                 } else {
                     return Ok(self.schedule_primitive_argument(
                         configuration,
@@ -1019,10 +1032,10 @@ where
 
     fn apply(
         &self,
-        mut configuration: RuntimeConfiguration<R>,
+        mut configuration: LispConfiguration<R, P>,
         function: R::Value,
         arguments: Vec<R::Value>,
-    ) -> Result<Option<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
+    ) -> Result<Option<LispConfiguration<R, P>>, LispMachineError<R, P>> {
         let closure = match self
             .values()
             .unroll(&function)
@@ -1034,7 +1047,10 @@ where
                     .primitives
                     .apply(self.values(), &primitive, arguments)
                     .map_err(CoreMachineError::Primitive)?;
-                configuration.control = MachineControl::Value(value);
+                configuration.control = match value {
+                    PrimitiveOutcome::Value(value) => MachineControl::Value(value),
+                    PrimitiveOutcome::Request(request) => MachineControl::Suspended(request),
+                };
                 return Ok(Some(configuration));
             }
             RuntimeValueLayer::ApplyListProcedure => {
@@ -1109,7 +1125,7 @@ where
         Ok(Some(configuration))
     }
 
-    fn proper_list(&self, value: R::Value) -> Result<Vec<R::Value>, RuntimeMachineError<R, P>> {
+    fn proper_list(&self, value: R::Value) -> Result<Vec<R::Value>, LispMachineError<R, P>> {
         self.values()
             .as_list(&value)
             .map_err(|error| CoreMachineError::Runtime(self.runtime.value_error(error)))?
@@ -1125,12 +1141,13 @@ where
 {
     fn step_successors(
         &self,
-        configuration: &RuntimeConfiguration<R>,
-    ) -> Result<Vec<RuntimeConfiguration<R>>, RuntimeMachineError<R, P>> {
+        configuration: &LispConfiguration<R, P>,
+    ) -> Result<Vec<LispConfiguration<R, P>>, LispMachineError<R, P>> {
         let mut next = configuration.clone();
         let control = next.control.clone();
         match control {
             MachineControl::Value(value) => self.continue_with(next, value),
+            MachineControl::Suspended(_) => Err(CoreMachineError::UnhandledEffect),
             MachineControl::Expression(expression) => {
                 match self
                     .runtime
@@ -1318,7 +1335,12 @@ where
                                 .primitives
                                 .apply(self.values(), &operator, Vec::new())
                                 .map_err(CoreMachineError::Primitive)?;
-                            next.control = MachineControl::Value(value);
+                            next.control = match value {
+                                PrimitiveOutcome::Value(value) => MachineControl::Value(value),
+                                PrimitiveOutcome::Request(request) => {
+                                    MachineControl::Suspended(request)
+                                }
+                            };
                         } else {
                             let count = arguments.len();
                             return Ok(self.schedule_primitive_argument(
@@ -1367,8 +1389,8 @@ where
 {
     fn next(
         &self,
-        configuration: &RuntimeConfiguration<R>,
-    ) -> Result<Option<RuntimeConfiguration<R>>, Self::Error> {
+        configuration: &LispConfiguration<R, P>,
+    ) -> Result<Option<LispConfiguration<R, P>>, Self::Error> {
         let mut successors = self.step_successors(configuration)?;
         match successors.len() {
             0 => Ok(None),
@@ -1388,8 +1410,8 @@ where
     R::Primitive: Debug + PartialEq,
     P: PrimitiveSemantics<R::Values>,
 {
-    type Configuration = RuntimeConfiguration<R>;
-    type Error = RuntimeMachineError<R, P>;
+    type Configuration = LispConfiguration<R, P>;
+    type Error = LispMachineError<R, P>;
 
     fn successors(
         &self,
@@ -1604,6 +1626,8 @@ mod tests {
     }
 
     impl PrimitiveSemantics<HostValues<&'static str, &'static str, Primitive>> for Sector {
+        type Request = Infallible;
+        type Response = Infallible;
         type Error = &'static str;
 
         fn apply(
@@ -1611,8 +1635,11 @@ mod tests {
             values: &HostValues<&'static str, &'static str, Primitive>,
             primitive: &Primitive,
             arguments: Vec<HostValue<&'static str, &'static str, Primitive>>,
-        ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
-            match (primitive, arguments.as_slice()) {
+        ) -> Result<
+            PrimitiveOutcome<HostValue<&'static str, &'static str, Primitive>, Self::Request>,
+            Self::Error,
+        > {
+            let value = match (primitive, arguments.as_slice()) {
                 (Primitive::Cons, [head, tail]) => values
                     .cons(head.clone(), tail.clone())
                     .map_err(|never| match never {}),
@@ -1620,7 +1647,17 @@ mod tests {
                 (Primitive::Cdr, [HostValue::Cons(_, tail)]) => Ok((**tail).clone()),
                 (Primitive::Null, [value]) => self.truth(values, matches!(value, HostValue::Nil)),
                 _ => Err("bad primitive application"),
-            }
+            }?;
+            Ok(PrimitiveOutcome::Value(value))
+        }
+
+        fn resume(
+            &self,
+            _values: &HostValues<&'static str, &'static str, Primitive>,
+            request: &Self::Request,
+            _response: Self::Response,
+        ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
+            match *request {}
         }
 
         fn truth(

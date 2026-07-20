@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 267,
+      "words": 272,
       "updated": 0
     },
     {
@@ -718,7 +718,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35822,
+      "words": 35837,
       "updated": 0
     },
     {
@@ -9344,6 +9344,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/applicative_effect.rs",
+      "kind": "file",
+      "title": "applicative_effect.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/applicative_effect.rs",
+      "words": 179,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/arena.rs",
       "kind": "file",
       "title": "arena.rs",
@@ -9367,7 +9376,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 2235,
+      "words": 2272,
       "updated": 0
     },
     {
@@ -9376,7 +9385,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 87,
+      "words": 90,
       "updated": 0
     },
     {
@@ -9403,7 +9412,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 679,
+      "words": 694,
       "updated": 0
     },
     {
@@ -10825,7 +10834,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1481,
+      "words": 1628,
       "updated": 0
     },
     {
@@ -15379,7 +15388,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35822,
+      "words": 35837,
       "updated": 0
     },
     {
@@ -25372,6 +25381,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/admission.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/applicative_effect.rs",
       "detail": null
     },
     {

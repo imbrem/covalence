@@ -83,9 +83,17 @@ disable-model-invocation: true
     `CoreExpr`; Scheme compiles it to equational HOL and Sector to relational
     HOL. The proof-free Forsp frontend instead targets the sibling stack
     capability because its call-by-push-value semantics is genuinely
-    concatenative. Forsp `read`/`print` and optional low-level pointer
-    primitives suspend through A0025; the bundled safe host adapter handles
-    only I/O and rejects pointer requests. Pure Forsp machines implement the
+    concatenative. `kernel/lisp::StackMachine` owns the
+    representation-neutral transition algorithm for lexical closures,
+    bindings, resolution, and continuations; a frontend supplies an observable
+    instruction backend and WIT-shaped primitive dictionary.
+    `kernel/lisp::StackEffectMachine` likewise owns the generic
+    suspend/resume loop; the frontend policy maps effects plus an operand list
+    to requests and maps responses back to operands. Forsp `read`/`print` and
+    optional low-level pointer primitives suspend through A0025; the bundled safe host adapter handles
+    only I/O and rejects pointer requests. Effect suspension observes the
+    generic instruction layer, so it does not depend on the concrete
+    instruction representation. Pure Forsp machines implement the
     common terminal-value observation and therefore produce checked `MayEval`
     traces on both the direct and opaque-resource runtimes; effectful runs
     retain the separate suspension/resume transcript.

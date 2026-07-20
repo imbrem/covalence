@@ -9349,7 +9349,7 @@
       "title": "arena.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/arena.rs",
-      "words": 565,
+      "words": 456,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 74,
+      "words": 76,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 1776,
+      "words": 1704,
       "updated": 0
     },
     {

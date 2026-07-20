@@ -8,11 +8,8 @@
 
 use core::convert::Infallible;
 use core::fmt::{Debug, Display, Formatter};
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
@@ -239,65 +236,25 @@ impl StackRuntime for ForspRuntime {
     }
 }
 
-static NEXT_FORSP_HANDLE_ARENA: AtomicUsize = AtomicUsize::new(1);
+pub enum ForspHandleValueKind {}
+pub enum ForspHandleClosureKind {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ForspHandleValue {
-    arena: usize,
-    index: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ForspHandleClosure {
-    arena: usize,
-    index: usize,
-}
+pub type ForspHandleValue = covalence_kernel_lisp::Resource<ForspHandleValueKind>;
+pub type ForspHandleClosure = covalence_kernel_lisp::Resource<ForspHandleClosureKind>;
+pub type ForspHandleError = covalence_kernel_lisp::ResourceError;
 
 pub type ForspHandleEnvironment = HostEnvironment<String, ForspHandleValue>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ForspHandleError {
-    ForeignValue,
-    ForeignClosure,
-    StaleValue,
-    StaleClosure,
-}
-
-impl Display for ForspHandleError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match self {
-            Self::ForeignValue => "Forsp value handle belongs to another arena",
-            Self::ForeignClosure => "Forsp closure handle belongs to another arena",
-            Self::StaleValue => "stale Forsp value handle",
-            Self::StaleClosure => "stale Forsp closure handle",
-        })
-    }
-}
-
-impl core::error::Error for ForspHandleError {}
-
-#[derive(Clone, Debug)]
-struct ForspHandleStorage {
-    arena: usize,
-    values: Vec<StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>>,
-    closures: Vec<StackClosureRecord<ForspCode, ForspHandleEnvironment>>,
-}
-
-impl ForspHandleStorage {
-    fn new() -> Self {
-        Self {
-            arena: NEXT_FORSP_HANDLE_ARENA.fetch_add(1, Ordering::Relaxed),
-            values: Vec::new(),
-            closures: Vec::new(),
-        }
-    }
-}
-
-type SharedForspHandleStorage = Rc<RefCell<ForspHandleStorage>>;
-
 #[derive(Clone, Debug)]
 pub struct ForspHandleValues {
-    storage: SharedForspHandleStorage,
+    values: covalence_kernel_lisp::ResourceTable<
+        ForspHandleValueKind,
+        StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>,
+    >,
+    closures: covalence_kernel_lisp::ResourceTable<
+        ForspHandleClosureKind,
+        StackClosureRecord<ForspCode, ForspHandleEnvironment>,
+    >,
 }
 
 impl ForspHandleValues {
@@ -305,28 +262,14 @@ impl ForspHandleValues {
         &self,
         value: &ForspHandleValue,
     ) -> Result<StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>, ForspHandleError> {
-        let storage = self.storage.borrow();
-        if value.arena != storage.arena {
-            return Err(ForspHandleError::ForeignValue);
-        }
-        storage
-            .values
-            .get(value.index)
-            .cloned()
-            .ok_or(ForspHandleError::StaleValue)
+        self.values.get_cloned(*value)
     }
 
     fn allocate(
         &self,
         layer: StackValueLayer<Datum<CoreAtom>, ForspHandleClosure>,
     ) -> ForspHandleValue {
-        let mut storage = self.storage.borrow_mut();
-        let value = ForspHandleValue {
-            arena: storage.arena,
-            index: storage.values.len(),
-        };
-        storage.values.push(layer);
-        value
+        self.values.insert(layer)
     }
 }
 
@@ -366,14 +309,7 @@ impl StackMachineValue for ForspHandleValues {
         layer: StackValueLayer<Self::Datum, Self::Closure>,
     ) -> Result<Self::Value, Self::Error> {
         if let StackValueLayer::Closure(closure) = layer {
-            let storage = self.storage.borrow();
-            if closure.arena != storage.arena {
-                return Err(ForspHandleError::ForeignClosure);
-            }
-            if closure.index >= storage.closures.len() {
-                return Err(ForspHandleError::StaleClosure);
-            }
-            drop(storage);
+            self.closures.contains(closure)?;
             Ok(self.allocate(StackValueLayer::Closure(closure)))
         } else {
             Ok(self.allocate(layer))
@@ -390,7 +326,10 @@ impl StackMachineValue for ForspHandleValues {
 
 #[derive(Clone, Debug)]
 pub struct ForspHandleClosures {
-    storage: SharedForspHandleStorage,
+    closures: covalence_kernel_lisp::ResourceTable<
+        ForspHandleClosureKind,
+        StackClosureRecord<ForspCode, ForspHandleEnvironment>,
+    >,
 }
 
 impl StackClosure for ForspHandleClosures {
@@ -403,28 +342,14 @@ impl StackClosure for ForspHandleClosures {
         &self,
         record: StackClosureRecord<Self::Code, Self::Environment>,
     ) -> Result<Self::Closure, Self::Error> {
-        let mut storage = self.storage.borrow_mut();
-        let closure = ForspHandleClosure {
-            arena: storage.arena,
-            index: storage.closures.len(),
-        };
-        storage.closures.push(record);
-        Ok(closure)
+        Ok(self.closures.insert(record))
     }
 
     fn open(
         &self,
         closure: &Self::Closure,
     ) -> Result<StackClosureRecord<Self::Code, Self::Environment>, Self::Error> {
-        let storage = self.storage.borrow();
-        if closure.arena != storage.arena {
-            return Err(ForspHandleError::ForeignClosure);
-        }
-        storage
-            .closures
-            .get(closure.index)
-            .cloned()
-            .ok_or(ForspHandleError::StaleClosure)
+        self.closures.get_cloned(*closure)
     }
 }
 
@@ -440,14 +365,17 @@ pub struct ForspHandleRuntime {
 
 impl Default for ForspHandleRuntime {
     fn default() -> Self {
-        let storage = Rc::new(RefCell::new(ForspHandleStorage::new()));
+        let arena = covalence_kernel_lisp::ResourceArena::new();
+        let values = arena.table("Forsp value");
+        let closures = arena.table("Forsp closure");
         Self {
             data: Free::new(),
             syntax: ForspSyntax,
             values: ForspHandleValues {
-                storage: Rc::clone(&storage),
+                values,
+                closures: closures.clone(),
             },
-            closures: ForspHandleClosures { storage },
+            closures: ForspHandleClosures { closures },
             environments: HostEnvironments::default(),
         }
     }

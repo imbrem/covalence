@@ -1,22 +1,19 @@
 //! Resource-handle realization of the common Lisp runtime.
 //!
-//! Unlike [`crate::HostRuntime`], recursive values, closures, environments,
-//! and recursive cells are stored in arenas and exposed only as small opaque
-//! handles. This is the reference shape for a future WIT component boundary:
-//! the evaluator uses exactly the same [`crate::LispMachine`] transition
-//! algorithm while every recursive machine object crosses the boundary by
-//! identity.
+//! Values, closures, environments, and recursive cells use the shared typed
+//! resource tables from [`crate::resource`]. Quoted data remains the free
+//! inductive S-expression backend. This combination models the eventual WIT
+//! boundary while running the same [`crate::LispMachine`] transition code as
+//! the direct Rust backend.
 
 use core::convert::Infallible;
-use core::fmt::{Debug, Display, Formatter};
+use core::fmt::{Display, Formatter};
 use core::marker::PhantomData;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use covalence_sexpr_api::{Free, FreeSExpr};
 
 use crate::host::{CoreSyntax, Datum};
+use crate::resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispValue, RecursiveAllocation, RuntimeBinding, RuntimeValueLayer,
@@ -24,45 +21,41 @@ use crate::runtime::{
 };
 use crate::syntax::CoreExpr;
 
-static NEXT_ARENA_ID: AtomicUsize = AtomicUsize::new(1);
+pub enum ArenaValueKind {}
+pub enum ArenaClosureKind {}
+pub enum ArenaEnvironmentKind {}
+pub enum ArenaCellKind {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum ResourceKind {
-    Value,
-    Closure,
-    Environment,
-    Cell,
-}
+pub type ArenaValue = Resource<ArenaValueKind>;
+pub type ArenaClosure = Resource<ArenaClosureKind>;
+pub type ArenaEnvironment = Resource<ArenaEnvironmentKind>;
+pub type ArenaRecursiveCell = Resource<ArenaCellKind>;
+
+type ArenaExpr<S, A, P> = CoreExpr<S, Datum<A>, P>;
+type ValueLayer<A, P> = RuntimeValueLayer<A, ArenaClosure, P, ArenaValue>;
+type StoredClosure<S, A, P> = ClosureRecord<S, ArenaExpr<S, A, P>, ArenaEnvironment>;
+type ValueTable<A, P> = ResourceTable<ArenaValueKind, ValueLayer<A, P>>;
+type ClosureTable<S, A, P> = ResourceTable<ArenaClosureKind, StoredClosure<S, A, P>>;
+type EnvironmentTable<S> = ResourceTable<ArenaEnvironmentKind, Vec<(S, ArenaRecursiveCell)>>;
+type CellTable = ResourceTable<ArenaCellKind, Option<ArenaValue>>;
 
 /// Failure while resolving or mutating an opaque runtime resource.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ArenaRuntimeError {
-    ForeignHandle {
-        resource: &'static str,
-        expected_arena: usize,
-        actual_arena: usize,
-    },
-    StaleHandle {
-        resource: &'static str,
-        index: usize,
-    },
+    Resource(ResourceError),
     RecursiveCellAlreadyInitialized,
+}
+
+impl From<ResourceError> for ArenaRuntimeError {
+    fn from(error: ResourceError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 impl Display for ArenaRuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ForeignHandle {
-                resource,
-                expected_arena,
-                actual_arena,
-            } => write!(
-                f,
-                "{resource} handle belongs to arena {actual_arena}, expected {expected_arena}"
-            ),
-            Self::StaleHandle { resource, index } => {
-                write!(f, "stale {resource} handle at index {index}")
-            }
+            Self::Resource(error) => Display::fmt(error, f),
             Self::RecursiveCellAlreadyInitialized => {
                 f.write_str("recursive environment cell was already initialized")
             }
@@ -72,119 +65,16 @@ impl Display for ArenaRuntimeError {
 
 impl core::error::Error for ArenaRuntimeError {}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct ResourceHandle {
-    arena: usize,
-    index: usize,
-    kind: ResourceKind,
-}
-
-impl Debug for ResourceHandle {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}({}:{})", self.kind, self.arena, self.index)
-    }
-}
-
-macro_rules! resource_handle {
-    ($name:ident, $kind:ident) => {
-        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-        pub struct $name(ResourceHandle);
-
-        impl Debug for $name {
-            fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-                self.0.fmt(f)
-            }
-        }
-
-        impl $name {
-            fn new(arena: usize, index: usize) -> Self {
-                Self(ResourceHandle {
-                    arena,
-                    index,
-                    kind: ResourceKind::$kind,
-                })
-            }
-        }
-    };
-}
-
-resource_handle!(ArenaValue, Value);
-resource_handle!(ArenaClosure, Closure);
-resource_handle!(ArenaEnvironment, Environment);
-resource_handle!(ArenaRecursiveCell, Cell);
-
-type ArenaExpr<S, A, P> = CoreExpr<S, Datum<A>, P>;
-type ValueLayer<A, P> = RuntimeValueLayer<A, ArenaClosure, P, ArenaValue>;
-type StoredClosure<S, A, P> = ClosureRecord<S, ArenaExpr<S, A, P>, ArenaEnvironment>;
-
-#[derive(Clone, Debug)]
-struct StoredCell {
-    value: Option<ArenaValue>,
-}
-
-#[derive(Clone, Debug)]
-struct Storage<S, A, P> {
-    arena: usize,
-    values: Vec<ValueLayer<A, P>>,
-    closures: Vec<StoredClosure<S, A, P>>,
-    environments: Vec<Vec<(S, usize)>>,
-    cells: Vec<StoredCell>,
-}
-
-impl<S, A, P> Storage<S, A, P> {
-    fn new() -> Self {
-        Self {
-            arena: NEXT_ARENA_ID.fetch_add(1, Ordering::Relaxed),
-            values: Vec::new(),
-            closures: Vec::new(),
-            environments: vec![Vec::new()],
-            cells: Vec::new(),
-        }
-    }
-
-    fn check(
-        &self,
-        handle: ResourceHandle,
-        kind: ResourceKind,
-        len: usize,
-    ) -> Result<usize, ArenaRuntimeError> {
-        let resource = match kind {
-            ResourceKind::Value => "value",
-            ResourceKind::Closure => "closure",
-            ResourceKind::Environment => "environment",
-            ResourceKind::Cell => "cell",
-        };
-        if handle.arena != self.arena {
-            return Err(ArenaRuntimeError::ForeignHandle {
-                resource,
-                expected_arena: self.arena,
-                actual_arena: handle.arena,
-            });
-        }
-        if handle.kind != kind || handle.index >= len {
-            return Err(ArenaRuntimeError::StaleHandle {
-                resource,
-                index: handle.index,
-            });
-        }
-        Ok(handle.index)
-    }
-}
-
-type SharedStorage<S, A, P> = Rc<RefCell<Storage<S, A, P>>>;
-
 /// Arena-backed runtime-value capability.
 #[derive(Clone, Debug)]
 pub struct ArenaValues<S, A, P> {
-    storage: SharedStorage<S, A, P>,
+    values: ValueTable<A, P>,
+    closures: ClosureTable<S, A, P>,
 }
 
 impl<S, A, P> ArenaValues<S, A, P> {
     fn allocate(&self, layer: ValueLayer<A, P>) -> ArenaValue {
-        let mut storage = self.storage.borrow_mut();
-        let index = storage.values.len();
-        storage.values.push(layer);
-        ArenaValue::new(storage.arena, index)
+        self.values.insert(layer)
     }
 
     fn layer(&self, value: &ArenaValue) -> Result<ValueLayer<A, P>, ArenaRuntimeError>
@@ -192,9 +82,7 @@ impl<S, A, P> ArenaValues<S, A, P> {
         A: Clone,
         P: Clone,
     {
-        let storage = self.storage.borrow();
-        let index = storage.check(value.0, ResourceKind::Value, storage.values.len())?;
-        Ok(storage.values[index].clone())
+        self.values.get_cloned(*value).map_err(Into::into)
     }
 
     fn equivalent_at(
@@ -296,9 +184,15 @@ where
     type Closure = ArenaClosure;
 
     fn roll(&self, layer: ValueLayer<A, P>) -> Result<Self::Value, Self::Error> {
-        if let RuntimeValueLayer::Cons { head, tail } = &layer {
-            self.layer(head)?;
-            self.layer(tail)?;
+        match &layer {
+            RuntimeValueLayer::Cons { head, tail } => {
+                self.layer(head)?;
+                self.layer(tail)?;
+            }
+            RuntimeValueLayer::Closure(closure) => {
+                self.closures.contains(*closure)?;
+            }
+            _ => {}
         }
         Ok(self.allocate(layer))
     }
@@ -311,7 +205,8 @@ where
 /// Arena-backed opaque closure capability.
 #[derive(Clone, Debug)]
 pub struct ArenaClosures<S, A, P> {
-    storage: SharedStorage<S, A, P>,
+    closures: ClosureTable<S, A, P>,
+    environments: EnvironmentTable<S>,
 }
 
 impl<S, A, P> LispClosure for ArenaClosures<S, A, P>
@@ -330,54 +225,46 @@ where
         &self,
         record: ClosureRecord<S, Self::Expr, Self::Environment>,
     ) -> Result<Self::Closure, Self::Error> {
-        let mut storage = self.storage.borrow_mut();
-        storage.check(
-            record.environment.0,
-            ResourceKind::Environment,
-            storage.environments.len(),
-        )?;
-        let index = storage.closures.len();
-        storage.closures.push(record);
-        Ok(ArenaClosure::new(storage.arena, index))
+        self.environments.contains(record.environment)?;
+        Ok(self.closures.insert(record))
     }
 
     fn open(
         &self,
         closure: &Self::Closure,
     ) -> Result<ClosureRecord<S, Self::Expr, Self::Environment>, Self::Error> {
-        let storage = self.storage.borrow();
-        let index = storage.check(closure.0, ResourceKind::Closure, storage.closures.len())?;
-        Ok(storage.closures[index].clone())
+        self.closures.get_cloned(*closure).map_err(Into::into)
     }
 }
 
 /// Arena-backed persistent lexical environments.
 #[derive(Clone, Debug)]
 pub struct ArenaEnvironments<S, A, P> {
-    storage: SharedStorage<S, A, P>,
+    values: ValueTable<A, P>,
+    environments: EnvironmentTable<S>,
+    cells: CellTable,
+    empty: ArenaEnvironment,
 }
 
 impl<S, A, P> ArenaEnvironments<S, A, P> {
     fn environment_bindings(
         &self,
         environment: &ArenaEnvironment,
-    ) -> Result<Vec<(S, usize)>, ArenaRuntimeError>
+    ) -> Result<Vec<(S, ArenaRecursiveCell)>, ArenaRuntimeError>
     where
         S: Clone,
     {
-        let storage = self.storage.borrow();
-        let index = storage.check(
-            environment.0,
-            ResourceKind::Environment,
-            storage.environments.len(),
-        )?;
-        Ok(storage.environments[index].clone())
+        self.environments
+            .get_cloned(*environment)
+            .map_err(Into::into)
     }
 }
 
 impl<S, A, P> LispEnvironment for ArenaEnvironments<S, A, P>
 where
     S: Clone + PartialEq,
+    A: Clone,
+    P: Clone,
 {
     type Symbol = S;
     type Value = ArenaValue;
@@ -385,8 +272,7 @@ where
     type Error = ArenaRuntimeError;
 
     fn empty(&self) -> Self::Environment {
-        let storage = self.storage.borrow();
-        ArenaEnvironment::new(storage.arena, 0)
+        self.empty
     }
 
     fn lookup(
@@ -394,11 +280,9 @@ where
         environment: &Self::Environment,
         symbol: &S,
     ) -> Result<Option<Self::Value>, Self::Error> {
-        let bindings = self.environment_bindings(environment)?;
-        let storage = self.storage.borrow();
-        for (name, cell) in bindings.iter().rev() {
+        for (name, cell) in self.environment_bindings(environment)?.iter().rev() {
             if name == symbol {
-                return Ok(storage.cells[*cell].value);
+                return self.cells.get_cloned(*cell).map_err(Into::into);
             }
         }
         Ok(None)
@@ -410,24 +294,20 @@ where
         bindings: Vec<RuntimeBinding<S, Self::Value>>,
     ) -> Result<Self::Environment, Self::Error> {
         let mut extended = self.environment_bindings(environment)?;
-        let mut storage = self.storage.borrow_mut();
         for binding in bindings {
-            storage.check(binding.value.0, ResourceKind::Value, storage.values.len())?;
-            let cell = storage.cells.len();
-            storage.cells.push(StoredCell {
-                value: Some(binding.value),
-            });
+            self.values.contains(binding.value)?;
+            let cell = self.cells.insert(Some(binding.value));
             extended.push((binding.symbol, cell));
         }
-        let index = storage.environments.len();
-        storage.environments.push(extended);
-        Ok(ArenaEnvironment::new(storage.arena, index))
+        Ok(self.environments.insert(extended))
     }
 }
 
 impl<S, A, P> LispRecursiveEnvironment for ArenaEnvironments<S, A, P>
 where
     S: Clone + PartialEq,
+    A: Clone,
+    P: Clone,
 {
     type Cell = ArenaRecursiveCell;
 
@@ -437,18 +317,16 @@ where
         symbols: Vec<S>,
     ) -> Result<RecursiveAllocation<Self::Environment, Self::Cell>, Self::Error> {
         let mut extended = self.environment_bindings(environment)?;
-        let mut storage = self.storage.borrow_mut();
-        let mut cells = Vec::with_capacity(symbols.len());
-        for symbol in symbols {
-            let index = storage.cells.len();
-            storage.cells.push(StoredCell { value: None });
-            extended.push((symbol, index));
-            cells.push(ArenaRecursiveCell::new(storage.arena, index));
-        }
-        let environment_index = storage.environments.len();
-        storage.environments.push(extended);
+        let cells = symbols
+            .into_iter()
+            .map(|symbol| {
+                let cell = self.cells.insert(None);
+                extended.push((symbol, cell));
+                cell
+            })
+            .collect();
         Ok(RecursiveAllocation {
-            environment: ArenaEnvironment::new(storage.arena, environment_index),
+            environment: self.environments.insert(extended),
             cells,
         })
     }
@@ -458,10 +336,11 @@ where
         cell: Self::Cell,
         value: Self::Value,
     ) -> Result<(), Self::Error> {
-        let mut storage = self.storage.borrow_mut();
-        let cell_index = storage.check(cell.0, ResourceKind::Cell, storage.cells.len())?;
-        storage.check(value.0, ResourceKind::Value, storage.values.len())?;
-        if storage.cells[cell_index].value.replace(value).is_some() {
+        self.values.contains(value)?;
+        let initialized = self
+            .cells
+            .update(cell, |slot| slot.replace(value).is_some())?;
+        if initialized {
             return Err(ArenaRuntimeError::RecursiveCellAlreadyInitialized);
         }
         Ok(())
@@ -481,17 +360,29 @@ pub struct ArenaRuntime<S, A, P> {
 
 impl<S, A, P> Default for ArenaRuntime<S, A, P> {
     fn default() -> Self {
-        let storage = Rc::new(RefCell::new(Storage::new()));
+        let arena = ResourceArena::new();
+        let value_layers = arena.table("Lisp value");
+        let closures = arena.table("Lisp closure");
+        let environments = arena.table("Lisp environment");
+        let cells = arena.table("Lisp recursive cell");
+        let empty = environments.insert(Vec::new());
         Self {
             data: Free::new(),
             values: ArenaValues {
-                storage: Rc::clone(&storage),
+                values: value_layers.clone(),
+                closures: closures.clone(),
             },
             expressions: CoreSyntax::default(),
             closures: ArenaClosures {
-                storage: Rc::clone(&storage),
+                closures,
+                environments: environments.clone(),
             },
-            environments: ArenaEnvironments { storage },
+            environments: ArenaEnvironments {
+                values: value_layers.clone(),
+                environments,
+                cells,
+                empty,
+            },
             _marker: PhantomData,
         }
     }

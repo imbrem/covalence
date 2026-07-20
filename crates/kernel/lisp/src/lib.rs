@@ -26,6 +26,7 @@ pub mod arena;
 pub mod effect;
 pub mod host;
 pub mod relation;
+pub mod resource;
 pub mod runtime;
 pub mod stack;
 pub mod syntax;
@@ -56,6 +57,7 @@ pub use relation::{
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
+pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,

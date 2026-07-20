@@ -125,12 +125,18 @@ disable-model-invocation: true
     order—inspection, termination replay, common-relation existence and
     uniqueness, then conservative totalization—and the ACL2 backend does not
     yet implement its adequacy or totalization phases.
-  - `MayEvalTransport` is the cross-semantics replay seam. The first HOL
-    adapter validates a closed, data-valued host-machine endpoint, interprets
-    the same `CoreExpr` and value in `LispRel`, and returns a hypothesis-free
-    `Reduces` theorem. It currently covers the first-order primitive fragment;
-    CEK administrative steps are not falsely identified with `LispRel` steps,
-    and β/δ/recursive transport remains the next adequacy prerequisite.
+  - `ClassifiedStepRelation` gives the common CEK machine stable semantic
+    transition labels. In particular `LispMachineStep::Beta` is lexical
+    closure application and `EnvironmentLookup` is δ lookup; labels can be
+    checked against an existing `CheckedTrace` without assuming that replayed
+    resource allocation preserves opaque handle identity.
+  - `MayEvalTransport` is the cross-semantics replay seam. `LispRel` validates
+    a closed, data-valued host endpoint and returns a hypothesis-free
+    first-order `Reduces` theorem. `LispSemantics` is the higher-order
+    equational adapter: anonymous lexical application produces a
+    hypothesis-free kernel β theorem, while named definitions retain their
+    explicit δ equation as a theorem hypothesis. CEK-wide relational HOL
+    replay and ACL2 discharge/totalization remain open.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

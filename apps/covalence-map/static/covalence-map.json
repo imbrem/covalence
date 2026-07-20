@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 298,
+      "words": 304,
       "updated": 0
     },
     {
@@ -10906,7 +10906,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1631,
+      "words": 1784,
       "updated": 0
     },
     {

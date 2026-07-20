@@ -62,11 +62,11 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, LeafKind, carved};
 use covalence_init::init::lisp::{LeafArg, Lisp as KernelLisp, lisp};
 use covalence_init::init::logic::simp;
 use covalence_init::{Term, Type};
-use covalence_kernel_lisp::{CoreExpr, Datum};
+use covalence_kernel_lisp::{CoreExpr, Datum, MachineControl, MayEval, MayEvalTransport};
 
 use std::sync::Arc;
 
-use covalence_repl_core::{Repr, Semantics, StepCert};
+use covalence_repl_core::{Fuel, Reduction, Repr, RunToValue, Semantics, StepCert, Strategy as _};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
@@ -1514,6 +1514,92 @@ impl Semantics<LispRepr> for LispSemantics {
     }
 }
 
+/// A host-machine evaluation transported to a HOL equality.
+///
+/// This is the first higher-order transport backend for the common Lisp
+/// machine.  Unlike [`crate::relation::HostMayEvalHolEvidence`], whose target
+/// is the first-order `Reduces` relation, this backend can compile lexical
+/// lambdas and proves their applications with kernel β-conversion.
+#[derive(Clone, Debug)]
+pub struct EquationalHostMayEvalEvidence {
+    pub operational_steps: usize,
+    pub equational_steps: u64,
+    pub input: Term,
+    pub value: Term,
+    pub equality: Thm,
+}
+
+impl MayEvalTransport<crate::frontend::FrontendConfiguration, crate::frontend::FrontendValue>
+    for LispSemantics
+{
+    type Evidence = EquationalHostMayEvalEvidence;
+    type Error = HolError;
+
+    fn transport_may_eval(
+        &self,
+        evaluation: &MayEval<
+            crate::frontend::FrontendConfiguration,
+            crate::frontend::FrontendValue,
+        >,
+    ) -> Result<Self::Evidence, Self::Error> {
+        let initial = evaluation.trace.start();
+        if !initial.continuation.is_empty() {
+            return Err(HolError::Stuck(
+                "common Lisp evaluation starts inside a continuation".into(),
+            ));
+        }
+        let MachineControl::Expression(expression) = &initial.control else {
+            return Err(HolError::Stuck(
+                "common Lisp evaluation does not start from an expression".into(),
+            ));
+        };
+        let endpoint = evaluation.trace.end();
+        if !endpoint.continuation.is_empty()
+            || !matches!(
+                &endpoint.control,
+                MachineControl::Value(value) if value == &evaluation.value
+            )
+        {
+            return Err(HolError::Stuck(
+                "common Lisp MayEval witness has a mismatched nonterminal endpoint".into(),
+            ));
+        }
+
+        let datum = evaluation.value.as_datum().ok_or_else(|| {
+            HolError::Stuck("common Lisp result is not an inductive data value".into())
+        })?;
+        let expected = self.compile_core(&CoreExpr::Quote(datum))?;
+        let input = self.compile_core(expression)?;
+        let mut reduction: Reduction<LispRepr, LispSemantics> = Reduction::start(input.clone());
+        let fuel = evaluation
+            .trace
+            .steps()
+            .saturating_mul(8)
+            .max(32)
+            .try_into()
+            .unwrap_or(u64::MAX);
+        RunToValue.drive(self, &mut reduction, Fuel::steps(fuel))?;
+        let equational_steps = reduction.steps();
+        let (value, equality) = reduction.into_parts();
+        if value != expected {
+            return Err(HolError::Stuck(
+                "common Lisp and equational HOL interpretations produced different values".into(),
+            ));
+        }
+        let equality = match equality {
+            Some(equality) => equality,
+            None => Thm::refl(value.clone()).map_err(kernel_err)?,
+        };
+        Ok(EquationalHostMayEvalEvidence {
+            operational_steps: evaluation.trace.steps(),
+            equational_steps,
+            input,
+            value,
+            equality,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Pred {
     Atom,
@@ -1584,7 +1670,9 @@ fn is_reserved(name: &str) -> bool {
 #[cfg(test)]
 mod core_backend_tests {
     use super::*;
-    use crate::frontend::{Frontend, SurfaceDialect};
+    use crate::defs::{Defs, install_core_definition};
+    use crate::frontend::{Frontend, HostSession, SurfaceDialect};
+    use covalence_kernel_lisp::{Definition, Parameter};
 
     fn one(source: &str) -> SExpr {
         crate::reader::read(source).unwrap().pop().unwrap()
@@ -1625,6 +1713,71 @@ mod core_backend_tests {
         assert_eq!(
             semantics.compile_core(&core).unwrap(),
             covalence_hol_eval::mk_int(Int::from(42))
+        );
+    }
+
+    #[test]
+    fn common_lexical_beta_evaluation_transports_to_hol() {
+        let surface = one("((lambda (x) (cons x (quote ()))) (quote a))");
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&surface)
+            .unwrap();
+        let evaluation = HostSession::new(SurfaceDialect::Scheme, 32)
+            .evaluate_core_evidence(&core)
+            .unwrap();
+        let evidence = LispSemantics::new()
+            .unwrap()
+            .transport_may_eval(&evaluation)
+            .unwrap();
+
+        assert!(evidence.operational_steps > 0);
+        assert!(evidence.equational_steps > 0);
+        assert!(evidence.equality.hyps().is_empty());
+        assert_eq!(
+            evidence.value,
+            LispSemantics::new()
+                .unwrap()
+                .compile(&one("(quote (a))"))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn common_named_application_transports_with_an_explicit_delta_hypothesis() {
+        let definition_form = one("(define (identity x) x)");
+        let call = one("(identity (quote a))");
+        let frontend = Frontend::new(SurfaceDialect::Scheme);
+        let (name, lambda) = frontend
+            .definition(&definition_form)
+            .unwrap()
+            .expect("definition");
+        let CoreExpr::Lambda {
+            parameters, body, ..
+        } = lambda
+        else {
+            panic!("procedure definition must lower to a named lambda")
+        };
+        let definition = Definition::fixed(
+            name,
+            parameters
+                .into_iter()
+                .map(|Parameter { name }| name)
+                .collect(),
+            *body,
+        );
+        let definitions = install_core_definition(&Defs::new(), &definition).unwrap();
+        let semantics = LispSemantics::with_defs(definitions).unwrap();
+
+        let mut host = HostSession::new(SurfaceDialect::Scheme, 32);
+        host.define_core(definition).unwrap();
+        let core = frontend.lower(&call).unwrap();
+        let evaluation = host.evaluate_core_evidence(&core).unwrap();
+        let evidence = semantics.transport_may_eval(&evaluation).unwrap();
+
+        assert_eq!(evidence.equality.hyps().len(), 1);
+        assert_eq!(
+            evidence.value,
+            semantics.compile(&one("(quote a)")).unwrap()
         );
     }
 }

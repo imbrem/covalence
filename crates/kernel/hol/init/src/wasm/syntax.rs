@@ -486,7 +486,7 @@ fn resolve_var<'a>(
                 "mutual structural synonym `{x}` is not normalized yet"
             )));
         }
-        return resolve_named(x, ctx, visited);
+        return resolve_named_scoped(x, ctx, visited, scope);
     }
     resolve_parametric(x, as1, ctx, visited, scope)
 }
@@ -893,6 +893,15 @@ fn binder_or_conventional_type(
 
 /// Resolve a nullary named type reference (chasing its definition).
 fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str>) -> Result<Type> {
+    resolve_named_scoped(name, ctx, visited, &Scope::default())
+}
+
+fn resolve_named_scoped<'a>(
+    name: &'a str,
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+) -> Result<Type> {
     if let Some(component) = ctx.mutual_by_name.get(name) {
         return resolve_mutual_named(name, component, ctx);
     }
@@ -910,7 +919,7 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
     let [SpecTecInst::Inst { dt, .. }] = insts.as_slice() else {
         return Err(syntax_err(format!("`{name}` has multiple/zero instances")));
     };
-    enter(name, dt, ctx, visited, &Scope::default())
+    enter(name, dt, ctx, visited, scope)
 }
 
 /// Simultaneous Church signature for one member of a mutually-recursive SCC.
@@ -999,6 +1008,52 @@ struct CarvedWfBasis {
     closures: Vec<covalence_core::Term>,
 }
 
+#[derive(Debug, Clone)]
+enum RecursivePayloadShape {
+    Opaque,
+    Direct { target_member: usize },
+    Product(Box<Self>, Box<Self>),
+    List(Box<Self>),
+    Option(Box<Self>),
+}
+
+impl RecursivePayloadShape {
+    fn slots(&self) -> usize {
+        match self {
+            Self::Opaque => 0,
+            Self::Direct { .. } => 1,
+            Self::Product(left, right) => left.slots() + right.slots(),
+            Self::List(item) | Self::Option(item) => item.slots(),
+        }
+    }
+
+    fn slot_is_list_indexed(&self, slot: usize) -> Result<bool> {
+        match self {
+            Self::Opaque => Err(syntax_err("recursive slot index out of range")),
+            Self::Direct { .. } => {
+                if slot == 0 {
+                    Ok(false)
+                } else {
+                    Err(syntax_err("recursive slot index out of range"))
+                }
+            }
+            Self::Product(left, right) => {
+                let left_slots = left.slots();
+                if slot < left_slots {
+                    left.slot_is_list_indexed(slot)
+                } else {
+                    right.slot_is_list_indexed(slot - left_slots)
+                }
+            }
+            Self::List(item) => {
+                item.slot_is_list_indexed(slot)?;
+                Ok(true)
+            }
+            Self::Option(item) => item.slot_is_list_indexed(slot),
+        }
+    }
+}
+
 /// Stable source-owner to source-constructor choices used to inhabit every
 /// genuinely generative member of the pinned WASM type SCC.
 pub const CARVED_WASM_OWNER_WITNESSES: [(&str, usize); 8] = [
@@ -1042,6 +1097,115 @@ impl SealedWasmMutualCarriers {
 }
 
 impl MutualChurchSignature {
+    fn recursive_payload_shape(&self, ty: &Type) -> Result<RecursivePayloadShape> {
+        use covalence_core::TypeKind;
+
+        if let TypeKind::TFree(name) = ty.kind()
+            && let Some(target_member) = self
+                .members
+                .iter()
+                .position(|member| name.as_str() == format!("cov$mutual${member}"))
+        {
+            return Ok(RecursivePayloadShape::Direct { target_member });
+        }
+        if ty.free_tvars().iter().all(|name| {
+            !self
+                .members
+                .iter()
+                .any(|member| name.as_str() == format!("cov$mutual${member}"))
+        }) {
+            return Ok(RecursivePayloadShape::Opaque);
+        }
+        let TypeKind::Spec(_, arguments) = ty.kind() else {
+            return Err(syntax_err(
+                "recursive payload occurs outside product/list/option",
+            ));
+        };
+        if arguments.len() == 2
+            && ty == &covalence_hol_eval::defs::prod(arguments[0].clone(), arguments[1].clone())
+        {
+            return Ok(RecursivePayloadShape::Product(
+                Box::new(self.recursive_payload_shape(&arguments[0])?),
+                Box::new(self.recursive_payload_shape(&arguments[1])?),
+            ));
+        }
+        if arguments.len() == 1 && ty == &crate::init::list::list(arguments[0].clone()) {
+            return Ok(RecursivePayloadShape::List(Box::new(
+                self.recursive_payload_shape(&arguments[0])?,
+            )));
+        }
+        if arguments.len() == 1 && ty == &crate::init::option::option(arguments[0].clone()) {
+            return Ok(RecursivePayloadShape::Option(Box::new(
+                self.recursive_payload_shape(&arguments[0])?,
+            )));
+        }
+        Err(syntax_err(
+            "recursive payload occurs in an unrecognised type functor",
+        ))
+    }
+
+    fn generic_wf_guard(
+        &self,
+        shape: &RecursivePayloadShape,
+        value: covalence_core::Term,
+        predicates: &[covalence_core::Term],
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+        match shape {
+            RecursivePayloadShape::Opaque => Ok(covalence_hol_eval::mk_bool(true)),
+            RecursivePayloadShape::Direct { target_member } => {
+                predicates[*target_member].clone().apply(value)
+            }
+            RecursivePayloadShape::Product(left, right) => {
+                let covalence_core::TypeKind::Spec(_, arguments) = value.type_of()?.kind().clone()
+                else {
+                    return Err(syntax_err("recursive product value has wrong type"));
+                };
+                let left_value =
+                    covalence_hol_eval::defs::fst(arguments[0].clone(), arguments[1].clone())
+                        .apply(value.clone())?;
+                let right_value =
+                    covalence_hol_eval::defs::snd(arguments[0].clone(), arguments[1].clone())
+                        .apply(value)?;
+                self.generic_wf_guard(left, left_value, predicates)?
+                    .and(self.generic_wf_guard(right, right_value, predicates)?)
+            }
+            RecursivePayloadShape::List(item) => {
+                let covalence_core::TypeKind::Spec(_, arguments) = value.type_of()?.kind().clone()
+                else {
+                    return Err(syntax_err("recursive list value has wrong type"));
+                };
+                let item_ty = arguments[0].clone();
+                let item_name = "cov$carved$wf$item";
+                let item_value = covalence_core::Term::free(item_name, item_ty.clone());
+                let body = self.generic_wf_guard(item, item_value, predicates)?;
+                let predicate = covalence_core::Term::abs(
+                    item_ty.clone(),
+                    covalence_core::subst::close(&body, item_name),
+                );
+                crate::init::nat_parse::list_all(&item_ty, &predicate).apply(value)
+            }
+            RecursivePayloadShape::Option(item) => {
+                let covalence_core::TypeKind::Spec(_, arguments) = value.type_of()?.kind().clone()
+                else {
+                    return Err(syntax_err("recursive option value has wrong type"));
+                };
+                let item_ty = arguments[0].clone();
+                let item_name = "cov$carved$wf$item";
+                let item_value = covalence_core::Term::free(item_name, item_ty.clone());
+                let body = self.generic_wf_guard(item, item_value, predicates)?;
+                let handler = covalence_core::Term::abs(
+                    item_ty.clone(),
+                    covalence_core::subst::close(&body, item_name),
+                );
+                covalence_hol_eval::defs::option_case(item_ty, Type::bool())
+                    .apply(covalence_hol_eval::mk_bool(true))?
+                    .apply(handler)?
+                    .apply(value)
+            }
+        }
+    }
+
     fn carved_constructor_wf_guard(
         &self,
         constructor: usize,
@@ -1049,6 +1213,15 @@ impl MutualChurchSignature {
         predicates: &[covalence_core::Term],
         alphabet: &[MutualPathStep],
     ) -> Result<covalence_core::Term> {
+        if self.members.len() == 1 {
+            let source = &self
+                .constructors
+                .get(constructor)
+                .ok_or_else(|| syntax_err("constructor is outside recursive signature"))?
+                .payload;
+            let shape = self.recursive_payload_shape(source)?;
+            return self.generic_wf_guard(&shape, payload, predicates);
+        }
         let slots = alphabet
             .iter()
             .filter(|step| step.constructor == constructor)
@@ -1428,6 +1601,11 @@ impl MutualChurchSignature {
         if payload.type_of()? != expected {
             return Err(syntax_err("wrong U-level routing payload"));
         }
+        if self.members.len() == 1 {
+            let source = &self.constructors[constructor].payload;
+            let shape = self.recursive_payload_shape(source)?;
+            return self.generic_route_child(&shape, payload, recursive_slot, list_index);
+        }
         if constructor == 1 {
             if recursive_slot != 0 {
                 return Err(syntax_err("recursive slot index out of range"));
@@ -1544,6 +1722,84 @@ impl MutualChurchSignature {
         covalence_hol_eval::defs::list_index(universal)
             .apply(index)?
             .apply(children)
+    }
+
+    fn generic_route_child(
+        &self,
+        shape: &RecursivePayloadShape,
+        value: covalence_core::Term,
+        recursive_slot: usize,
+        list_index: Option<covalence_core::Term>,
+    ) -> Result<covalence_core::Term> {
+        use crate::init::ext::TermExt;
+
+        let universal = self.carved_universal_domain_carrier()?;
+        match shape {
+            RecursivePayloadShape::Opaque => Err(syntax_err("recursive slot index out of range")),
+            RecursivePayloadShape::Direct { .. } => {
+                if recursive_slot != 0 {
+                    return Err(syntax_err("recursive slot index out of range"));
+                }
+                if list_index.is_some() {
+                    return Err(syntax_err(
+                        "direct recursive slot does not take a list index",
+                    ));
+                }
+                covalence_hol_eval::defs::some(universal).apply(value)
+            }
+            RecursivePayloadShape::Product(left, right) => {
+                let covalence_core::TypeKind::Spec(_, arguments) = value.type_of()?.kind().clone()
+                else {
+                    return Err(syntax_err("recursive product value has wrong type"));
+                };
+                let left_slots = left.slots();
+                if recursive_slot < left_slots {
+                    let projected =
+                        covalence_hol_eval::defs::fst(arguments[0].clone(), arguments[1].clone())
+                            .apply(value)?;
+                    self.generic_route_child(left, projected, recursive_slot, list_index)
+                } else {
+                    let projected =
+                        covalence_hol_eval::defs::snd(arguments[0].clone(), arguments[1].clone())
+                            .apply(value)?;
+                    self.generic_route_child(
+                        right,
+                        projected,
+                        recursive_slot - left_slots,
+                        list_index,
+                    )
+                }
+            }
+            RecursivePayloadShape::List(item) => {
+                if recursive_slot >= item.slots() {
+                    return Err(syntax_err("recursive slot index out of range"));
+                }
+                if !matches!(item.as_ref(), RecursivePayloadShape::Direct { .. }) {
+                    return Err(syntax_err("nested recursive list routing is not modelled"));
+                }
+                let index = list_index
+                    .ok_or_else(|| syntax_err("list-valued recursive slot needs an index"))?;
+                covalence_hol_eval::defs::list_index(universal)
+                    .apply(index)?
+                    .apply(value)
+            }
+            RecursivePayloadShape::Option(item) => {
+                if recursive_slot >= item.slots() {
+                    return Err(syntax_err("recursive slot index out of range"));
+                }
+                if list_index.is_some() {
+                    return Err(syntax_err(
+                        "optional recursive slot does not take a list index",
+                    ));
+                }
+                if !matches!(item.as_ref(), RecursivePayloadShape::Direct { .. }) {
+                    return Err(syntax_err(
+                        "nested recursive option routing is not modelled",
+                    ));
+                }
+                Ok(value)
+            }
+        }
     }
 
     /// Source-order recursive constructors whose payload router is complete.
@@ -1858,10 +2114,15 @@ impl MutualChurchSignature {
             .collect::<Vec<_>>();
         let mut routed = junk.clone();
         for slot in slots.iter().rev() {
-            let indexed = matches!(
-                (constructor, slot.recursive_slot),
-                (0, 0) | (2, 0) | (2, 1) | (20, 0) | (30, 0)
-            );
+            let indexed = if self.members.len() == 1 {
+                self.recursive_payload_shape(&self.constructors[constructor].payload)?
+                    .slot_is_list_indexed(slot.recursive_slot)?
+            } else {
+                matches!(
+                    (constructor, slot.recursive_slot),
+                    (0, 0) | (2, 0) | (2, 1) | (20, 0) | (30, 0)
+                )
+            };
             let selected = if indexed {
                 let index_option = covalence_hol_eval::defs::list_index(Type::nat())
                     .apply(covalence_hol_eval::mk_nat(0u64))?
@@ -2004,12 +2265,14 @@ impl MutualChurchSignature {
             let payload_ty = self.carved_universal_payload(constructor)?;
             let payload_name = format!("cov$mutual$carved$payload${constructor}");
             let payload = covalence_core::Term::free(&payload_name, payload_ty.clone());
-            let guard = self.carved_constructor_wf_guard(
-                constructor,
-                payload.clone(),
-                &predicates,
-                &alphabet,
-            )?;
+            let guard = self
+                .carved_constructor_wf_guard(constructor, payload.clone(), &predicates, &alphabet)
+                .map_err(|error| {
+                    syntax_err(format!(
+                        "constructor {constructor} `{}` Wf shape: {error}",
+                        self.constructors[constructor].name()
+                    ))
+                })?;
             let owner = self
                 .members
                 .iter()
@@ -3082,6 +3345,23 @@ pub fn mutual_church_signature(member: &str, ctx: &TypeCtx<'_>) -> Result<Mutual
     build_mutual_church_signature(component, ctx)
 }
 
+/// Build the same exact simultaneous signature for either a mutual SCC member
+/// or a singleton self-recursive variant.
+pub fn recursive_church_signature(
+    member: &str,
+    ctx: &TypeCtx<'_>,
+) -> Result<MutualChurchSignature> {
+    if let Some(component) = ctx.mutual_by_name.get(member) {
+        return build_mutual_church_signature(component, ctx);
+    }
+    let sealed = sealed_wasm_mutual_carriers()?;
+    let signature = build_church_signature(&[member], ctx, Some(sealed.carriers()))?;
+    if signature.path_alphabet().is_empty() {
+        return Err(syntax_err(format!("`{member}` is not recursive")));
+    }
+    Ok(signature)
+}
+
 fn resolve_mutual_named<'a>(
     target: &str,
     component: &[&'a str],
@@ -3096,6 +3376,14 @@ fn resolve_mutual_named<'a>(
 fn build_mutual_church_signature<'a>(
     component: &[&'a str],
     ctx: &TypeCtx<'a>,
+) -> Result<MutualChurchSignature> {
+    build_church_signature(component, ctx, None)
+}
+
+fn build_church_signature<'a>(
+    component: &[&'a str],
+    ctx: &TypeCtx<'a>,
+    closed_external: Option<&BTreeMap<String, Type>>,
 ) -> Result<MutualChurchSignature> {
     let mutual_members: BTreeSet<String> =
         component.iter().map(|name| (*name).to_owned()).collect();
@@ -3201,7 +3489,7 @@ fn build_mutual_church_signature<'a>(
         tenv: BTreeMap::new(),
         venv: BTreeMap::new(),
         mutual,
-        mutual_members,
+        mutual_members: mutual_members.clone(),
     };
     let mut handlers = Vec::new();
 
@@ -3234,12 +3522,47 @@ fn build_mutual_church_signature<'a>(
                 SpecTecDefTyp::Alias { .. } | SpecTecDefTyp::Struct { .. } => {}
                 SpecTecDefTyp::Variant { tcs } => {
                     for SpecTecTypCase::Field { op, t, qs, prs } in tcs {
-                        if !qs.is_empty() || !prs.is_empty() {
+                        if qs
+                            .iter()
+                            .any(|param| !matches!(param, SpecTecParam::Exp { .. }))
+                        {
                             return Err(syntax_err(format!(
-                                "mutual variant `{member}` has case binders/refinements"
+                                "recursive variant `{member}` has type case binders"
                             )));
                         }
-                        let payload = resolve_typ_d(t, ctx, &mut visited, &scope)?;
+                        // Refinements constrain membership, not the raw carrier;
+                        // they remain attached to the TypeFamily layer.
+                        let _ = prs;
+                        let mut payload_scope = scope.clone();
+                        for param in qs {
+                            if let SpecTecParam::Exp {
+                                x,
+                                t: SpecTecTyp::Var { x: declared, as1 },
+                            } = param
+                                && as1.is_empty()
+                            {
+                                payload_scope.venv.insert(x.clone(), declared.clone());
+                            }
+                        }
+                        let mut payload = resolve_typ_d(t, ctx, &mut visited, &payload_scope)?;
+                        if component.len() == 1 {
+                            payload = covalence_core::subst::subst_tfree_in_type(
+                                &payload,
+                                "cov$self",
+                                &scope.mutual[member],
+                            );
+                        }
+                        if let Some(closed) = closed_external {
+                            for (external, carrier) in closed {
+                                if !mutual_members.contains(external) {
+                                    payload = covalence_core::subst::subst_tfree_in_type(
+                                        &payload,
+                                        &format!("cov$mutual${external}"),
+                                        carrier,
+                                    );
+                                }
+                            }
+                        }
                         handlers.push((
                             member.to_owned(),
                             super::encode::mixop_key(op),
@@ -3816,6 +4139,50 @@ mod tests {
         assert!(
             sigma
                 .distinct(0, 2, &i32_value, &f32_value)
+                .unwrap()
+                .hyps()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn instr_has_a_singleton_closed_u_signature_and_constructor() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        let signature = recursive_church_signature("instr", &ctx).unwrap();
+        assert_eq!(signature.members(), ["instr"]);
+        assert!(signature.constructors().len() > 100);
+        assert!(!signature.path_alphabet().is_empty());
+        let universal = signature.carved_universal_domain_carrier().unwrap();
+        assert!(
+            universal.free_tvars().is_empty(),
+            "{:?}",
+            universal.free_tvars()
+        );
+
+        let base = signature
+            .constructors()
+            .iter()
+            .enumerate()
+            .find(|(index, _)| {
+                !signature
+                    .path_alphabet()
+                    .iter()
+                    .any(|step| step.constructor == *index)
+            })
+            .map(|(index, _)| index)
+            .unwrap();
+        let payload_ty = signature.carved_universal_payload(base).unwrap();
+        let payload = Term::select_op(payload_ty.clone())
+            .apply(Term::abs(payload_ty, covalence_hol_eval::mk_bool(true)))
+            .unwrap();
+        let constructor = signature
+            .carved_u_constructor(base, payload.clone())
+            .unwrap();
+        assert_eq!(constructor.type_of().unwrap(), universal);
+        assert!(
+            signature
+                .carved_u_root_equation(base, payload)
                 .unwrap()
                 .hyps()
                 .is_empty()

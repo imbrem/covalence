@@ -249,12 +249,126 @@ fn clause(rule: &TypedRule, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Result<T
     Ok(body)
 }
 
+fn sealed_valtype_classifier(relation: &str, defs: &[SpecTecDef]) -> Result<(Type, Term)> {
+    let defaultable = match relation {
+        "Defaultable" => true,
+        "Nondefaultable" => false,
+        _ => return Err(semantic_err("unknown sealed valtype classifier")),
+    };
+    let sealed = syntax::sealed_wasm_mutual_carriers()?;
+    let carrier = sealed
+        .carrier("valtype")
+        .cloned()
+        .ok_or_else(|| semantic_err("sealed valtype carrier is missing"))?;
+    let definition = sealed
+        .definitions()
+        .get("valtype")
+        .ok_or_else(|| semantic_err("sealed valtype definition is missing"))?;
+    let type_ctx = syntax::TypeCtx::new(defs);
+    let signature = syntax::mutual_church_signature("valtype", &type_ctx)?;
+    let value_name = "cov$semantic$valtype$classifier$value";
+    let value = Term::free(value_name, carrier.clone());
+    let represented = definition.rep.clone().apply(value)?;
+    let root = represented.apply(crate::init::list::nil(
+        signature.runtime_path_step_carrier(),
+    ))?;
+    let unit = covalence_hol_eval::defs::unit_nil();
+    let mut labels = Vec::new();
+    let unit_constructors: &[usize] = if defaultable {
+        &[34, 35, 36, 37, 38]
+    } else {
+        &[40]
+    };
+    for &constructor in unit_constructors {
+        labels.push(signature.carved_root_label(constructor, unit.clone())?);
+    }
+    let nullability = if defaultable {
+        covalence_hol_eval::defs::some(Type::unit()).apply(unit.clone())?
+    } else {
+        covalence_hol_eval::defs::none(Type::unit())
+    };
+    let universal = signature.carved_universal_domain_carrier()?;
+    let arbitrary_child = Term::select_op(universal.clone()).apply(Term::abs(
+        universal.clone(),
+        covalence_hol_eval::mk_bool(true),
+    ))?;
+    let ref_payload =
+        covalence_hol_eval::defs::pair(crate::init::option::option(Type::unit()), universal)
+            .apply(nullability)?
+            .apply(arbitrary_child)?;
+    labels.push(signature.carved_root_label(39, ref_payload)?);
+    let mut equalities = labels
+        .into_iter()
+        .map(|label| root.clone().equals(label))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter();
+    let first = equalities
+        .next()
+        .ok_or_else(|| semantic_err("valtype classifier has no cases"))?;
+    let body = equalities.try_fold(first, |left, right| left.or(right))?;
+    let predicate = Term::abs(carrier.clone(), subst::close(&body, value_name));
+    if predicate.type_of()? != Type::fun(carrier.clone(), Type::bool()) {
+        return Err(semantic_err("sealed valtype classifier is ill-typed"));
+    }
+    Ok((carrier, predicate))
+}
+
+fn sealed_valtype_relation(
+    relation: &str,
+    source_rules: &[SpecTecRule],
+    defs: &[SpecTecDef],
+) -> Result<SemanticRelation> {
+    let [SpecTecRule::Rule { ps, prs, e, .. }] = source_rules else {
+        return Err(semantic_err(
+            "sealed valtype classifier source rule census drifted",
+        ));
+    };
+    let [SpecTecParam::Exp { x, .. }] = ps.as_slice() else {
+        return Err(semantic_err(
+            "sealed valtype classifier binder census drifted",
+        ));
+    };
+    if !matches!(prs.as_slice(), [SpecTecPrem::If { .. }])
+        || !matches!(e, covalence_spectec::ast::SpecTecExp::Var { id } if id == x)
+    {
+        return Err(semantic_err("sealed valtype classifier rule shape drifted"));
+    }
+    let (carrier, classifier) = sealed_valtype_classifier(relation, defs)?;
+    let value = Term::free(x.clone(), carrier.clone());
+    let typed_rule = TypedRule {
+        binders: vec![(x.clone(), carrier.clone())],
+        premises: vec![TypedPremise::Side(classifier.apply(value.clone())?)],
+        conclusion: value,
+    };
+    let rules = vec![typed_rule];
+    let clause_rules = rules.clone();
+    let rule_set = RuleSet::new(carrier.clone(), move |d_apply| {
+        clause_rules
+            .iter()
+            .map(|rule| clause(rule, d_apply))
+            .collect()
+    });
+    let predicate_value = Term::free("cov$semantic$relation$value", carrier.clone());
+    let predicate_body = metalogic::derivable(&rule_set, &predicate_value)?;
+    let predicate = Term::abs(
+        carrier.clone(),
+        subst::close(&predicate_body, "cov$semantic$relation$value"),
+    );
+    Ok(SemanticRelation {
+        name: relation.to_owned(),
+        carrier,
+        predicate,
+        rules,
+        rule_set,
+    })
+}
+
 /// Realize one exact relation definition as a first-class HOL predicate.
 ///
 /// Refusal is fail-closed. Relation parameters, refined/unresolved carriers,
 /// non-expression binders, cross-relation recursion, and premise forms needing
 /// dependent lowering are rejected rather than erased.
-// TODO(cov:kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started, severe): Extend beyond the exact 3/125 bundled notation relations: all 122 remaining carriers need recursive structural lifting of exact nested invariants (the smallest are Defaultable/Nondefaultable over valtype); 57 still reach ground fNmag(32/64) through the legacy whole-carrier renderer before its exact CasePredicate can be applied; nonempty cross-relation SCCs still need simultaneous closure.
+// TODO(cov:kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started, severe): Extend beyond the exact 5/125 bundled relations: all 120 remaining carriers need recursive structural lifting of exact nested invariants; 57 still reach ground fNmag(32/64) through the legacy whole-carrier renderer before its exact CasePredicate can be applied; nonempty cross-relation SCCs still need simultaneous closure.
 pub fn semantic_relation(def: &SpecTecDef, defs: &[SpecTecDef]) -> Result<SemanticRelation> {
     let SpecTecDef::Rel {
         x,
@@ -270,6 +384,9 @@ pub fn semantic_relation(def: &SpecTecDef, defs: &[SpecTecDef]) -> Result<Semant
         return Err(semantic_err(
             "parameterized relation needs a typed instance environment",
         ));
+    }
+    if matches!(x.as_str(), "Defaultable" | "Nondefaultable") {
+        return sealed_valtype_relation(x, source_rules, defs);
     }
     let type_ctx = syntax::TypeCtx::new(defs);
     let families = TypeFamilies::new(defs);
@@ -313,7 +430,7 @@ pub fn semantic_relation(def: &SpecTecDef, defs: &[SpecTecDef]) -> Result<Semant
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_hol_eval::{mk_nat, prove_true};
+    use covalence_hol_eval::{DerivedRules, TypeDefExt, mk_nat, prove_true};
     use covalence_spectec::ast::{
         MixOp, SpecTecBinOp, SpecTecExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp,
     };
@@ -538,27 +655,105 @@ mod tests {
         assert_eq!(
             accepted,
             [
+                "Defaultable",
+                "Nondefaultable",
                 "NotationTypingPremise",
                 "NotationTypingPremisedots",
                 "NotationTypingScheme",
             ]
         );
-        assert_eq!(refused.values().sum::<usize>(), 122);
+        assert_eq!(refused.values().sum::<usize>(), 120);
         let count = |suffix: &str| {
             refused
                 .iter()
                 .find(|(reason, _)| reason.ends_with(suffix))
                 .map(|(_, count)| *count)
         };
-        assert_eq!(count("relation carrier is unresolved"), Some(65));
-        assert_eq!(count("parametric field/case not modelled yet"), Some(57));
+        assert_eq!(count("relation carrier is unresolved"), Some(120));
+        assert_eq!(count("parametric field/case not modelled yet"), None);
+        assert!(structural_indexed_cases.is_empty());
+    }
+
+    fn replay_sealed_valtype_case(relation: &str, constructor: usize) -> Thm {
+        use crate::init::ext::ThmExt;
+
+        let defs = crate::wasm::spec::wasm_spec();
+        let relation_def = find_relation(&defs, relation).unwrap();
+        let theory = semantic_relation(relation_def, &defs).unwrap();
+        let type_ctx = syntax::TypeCtx::new(&defs);
+        let signature = syntax::mutual_church_signature("valtype", &type_ctx).unwrap();
+        assert_eq!(signature.constructors()[constructor].owner(), "valtype");
+        let payload = covalence_hol_eval::defs::unit_nil();
+        let universal = signature
+            .carved_u_constructor(constructor, payload.clone())
+            .unwrap();
+        let wf = signature
+            .carved_nonrecursive_wf_witness(constructor, payload.clone())
+            .unwrap();
+        let sealed = syntax::sealed_wasm_mutual_carriers().unwrap();
+        let definition = &sealed.definitions()["valtype"];
+        let value = definition.abs.clone().apply(universal.clone()).unwrap();
+        let rep_abs = definition
+            .rep_abs_fwd()
+            .unwrap()
+            .all_elim(universal.clone())
+            .unwrap()
+            .imp_elim(wf)
+            .unwrap();
+        let root = signature
+            .carved_u_root_equation(constructor, payload)
+            .unwrap();
+
+        let rule = &theory.rules[0];
+        let TypedPremise::Side(generic_side) = &rule.premises[0] else {
+            panic!("sealed valtype relation must retain its classifier side premise");
+        };
+        let binder = Term::free(&rule.binders[0].0, rule.binders[0].1.clone());
+        let side =
+            covalence_core::subst::subst_free(generic_side, binder.as_free().unwrap(), &value);
+        let mut reduction = crate::init::eq::beta_nf(side.clone());
+        reduction = reduction.rhs_conv(|term| term.rw_all(&rep_abs)).unwrap();
+        reduction = reduction.rhs_conv(|term| term.rw_all(&root)).unwrap();
+        let normal = reduction.concl().as_eq().unwrap().1.clone();
+        let disjunct_count = if relation == "Defaultable" { 6 } else { 2 };
+        let mut leftmost = normal.clone();
+        let mut rights = Vec::new();
+        for _ in 1..disjunct_count {
+            let (function, right) = leftmost.as_app().expect("classifier must be disjunction");
+            let (_, left) = function
+                .as_app()
+                .expect("classifier disjunction must be binary");
+            rights.push(right.clone());
+            leftmost = left.clone();
+        }
+        let (left, right) = leftmost
+            .as_eq()
+            .expect("leftmost classifier case must be equality");
         assert_eq!(
-            structural_indexed_cases,
-            std::collections::BTreeMap::from([
-                (vec!["fNmag".to_owned()], 4),
-                (vec!["fNmag".to_owned(), "ishape".to_owned()], 53),
-            ])
+            left, right,
+            "selected source constructor must match first case"
         );
+        let mut normal_proof = Thm::refl(left.clone()).unwrap();
+        for right in rights.into_iter().rev() {
+            normal_proof = normal_proof.or_intro_l(right).unwrap();
+        }
+        assert_eq!(normal_proof.concl(), &normal);
+        let side_proof = reduction.sym().unwrap().eq_mp(normal_proof).unwrap();
+        assert!(side_proof.hyps().is_empty());
+
+        let theorem = theory
+            .derive(0, &[value.clone()], vec![Premise::Side(side_proof)])
+            .unwrap();
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &theory.holds(value).unwrap());
+        theorem
+    }
+
+    #[test]
+    fn defaultability_relations_replay_over_distinct_sealed_valtype_cases() {
+        let defaultable_i32 = replay_sealed_valtype_case("Defaultable", 34);
+        let nondefaultable_bot = replay_sealed_valtype_case("Nondefaultable", 40);
+        assert_ne!(defaultable_i32.concl(), nondefaultable_bot.concl());
     }
 
     #[test]

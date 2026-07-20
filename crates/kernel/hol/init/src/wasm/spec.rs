@@ -194,6 +194,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn remaining_type_rendering_frontier_is_explicit() {
+        let defs = wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let failures = typ_defs(&defs)
+            .into_iter()
+            .filter_map(|def| {
+                if syntax::resolve_def(def, &ctx).is_ok()
+                    || instantiates_with_declared_params(def, &ctx)
+                {
+                    return None;
+                }
+                let SpecTecDef::Typ { x, .. } = def else {
+                    unreachable!()
+                };
+                Some((
+                    x.clone(),
+                    syntax::resolve_def(def, &ctx).unwrap_err().to_string(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        eprintln!("remaining type rendering frontier: {failures:#?}");
+        assert_eq!(
+            failures
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["num_", "lane_", "lit_"]
+        );
+        assert!(failures.iter().all(|(_, error)| {
+            error.contains("parametric type") && error.contains("used without arguments")
+        }));
+    }
+
     /// The live **coverage** metric, v2 (the total-load combined set): every
     /// rule and every `Dec` clause of the whole spec loads; the combined
     /// clause list is built and kernel-checked; residue is censused exactly.
@@ -342,23 +376,23 @@ mod tests {
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 15834,
+                report.total_clauses >= 18722,
                 "combined clauses = {}",
                 report.total_clauses
             );
             // The exact-host-builtin leg is live (Waves F2/Y/Z/AA/AB/AC/AE):
-            // defining clauses for 86 operations, incl. first clauses for 75
+            // defining clauses for 87 operations, incl. first clauses for 76
             // of the 91 zero-clause tags (integer operations, structural
             // rational rounding, typed byte front doors, structural IEEE
             // representation/sign operations, and inverse sequence graphs).
             assert!(
-                report.n_builtin_clauses >= 12358,
+                report.n_builtin_clauses >= 15246,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 86, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 87, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 75,
+                report.builtins.zero_clause_ops, 76,
                 "zero-clause builtin tags filled"
             );
             assert!(

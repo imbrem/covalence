@@ -661,7 +661,7 @@ impl NativeWasmSemantics {
         let (clauses, metas, coverage) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
-            if clauses.len() < 15_834 || clauses.len() != report.total_clauses {
+            if clauses.len() < 18_722 || clauses.len() != report.total_clauses {
                 return Err(facade_error(format!(
                     "combined-set coverage regressed: {} clauses",
                     clauses.len()
@@ -1697,14 +1697,14 @@ mod tests {
     #[test]
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
-        assert_eq!(semantics.total_clause_count(), 15_834);
+        assert_eq!(semantics.total_clause_count(), 18_722);
         assert_eq!(
             semantics.coverage(),
             SemanticsCoverage {
-                combined_clauses: 15_834,
-                exact_builtin_clauses: 12_358,
-                exact_builtin_operations: 86,
-                remaining_builtin_operations: 16,
+                combined_clauses: 18_722,
+                exact_builtin_clauses: 15_246,
+                exact_builtin_operations: 87,
+                remaining_builtin_operations: 15,
                 full_opaque_premises: 7,
                 checked_slice_opaque_premises: 0,
             }

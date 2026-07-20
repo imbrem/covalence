@@ -28,7 +28,8 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **15834 combined clauses** (2026-07-20, including exact scalar `fmul_`;
+- **18722 combined clauses** (2026-07-20, including exact scalar `fmul_` and
+  `fdiv_`;
   post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
@@ -37,8 +38,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 12358 exact builtin
-  clauses over 86 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 15246 exact builtin
+  clauses over 87 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -760,8 +761,8 @@ two's-complement signed endpoint. The signed negative boundary admits
 kernel-computable equations; no host float, opaque premise, or ordinary-only
 partial closure is involved.
 
-The builtin leg is now **12358 clauses over 86 operations**, filling **75 of
-91** declarations and leaving **16**.
+The builtin leg is now **15246 clauses over 87 operations**, filling **76 of
+91** declarations and leaving **15**.
 
 ### Exact integer-to-float conversion
 
@@ -845,11 +846,31 @@ rounding facts and refuses a wrong result. No helper theorem crosses a
 RuleSet boundary, no trusted rule is added, and `fmul_` raises the builtin
 frontier by exactly one.
 
+### Exact scalar float division
+
+`fdiv_` reuses the checked finite-factor and target-quantum interfaces.
+Its 1,464-clause `fdiv_.ratio` relation forms the exact quotient
+`(a_sig * b_den) / (b_sig * a_den)` and subtracts signed binary scales.
+Normalized significands are compared by cross-scaling with their
+conclusion-pinned top-bit witnesses; the quotient bin is the operand-bin
+difference or exactly one lower. The 824 shared-shape final clauses round the
+original ratio once using `2r` versus the arbitrary denominator, so odd
+denominators are not approximated. Six hundred disjoint exceptional clauses
+cover operand NaNs, canonical invalid results for zero/zero and
+infinity/infinity, signed finite-or-infinite division by zero, signed zero
+division, and finite division by infinity.
+
+The complete detached division expansion is 2,888 clauses and generates in
+roughly 78 ms in the focused debug test. Unified NativeHol replay proves both
+`3 / 2 = 1.5` and the odd-denominator rounding fact
+`1 / 3 = 0x3eaaaaab`, while refusing a wrong result. No host float, theorem
+mint site, or cross-RuleSet helper theorem is involved.
+
 ### Design: the remaining exact arithmetic layer
 
-The 16-tag frontier is not one homogeneous float backlog. Its exact census is:
+The 15-tag frontier is not one homogeneous float backlog. Its exact census is:
 
-- strict IEEE arithmetic: `fsqrt_`, `fadd_`, `fsub_`, `fdiv_`;
+- strict IEEE arithmetic: `fsqrt_`, `fadd_`, `fsub_`;
 - relaxed float operations: `frelaxed_min_`, `frelaxed_max_`,
   `frelaxed_madd_`, `frelaxed_nmadd_`;
 - relaxed conversion/integer operations: `relaxed_trunc__`,
@@ -904,10 +925,10 @@ theorem authority.
 The smallest exact end-to-end milestone is `fmul_`. Its finite ratio has a wide
 significand product, denominator one, and an exponent sum, exercising
 normalization, rounding, carry, subnormals, and overflow without addition's
-cancellation or division's odd denominator. `fdiv_` should follow to validate
-the general `2r` versus `B` comparison; `fadd_`/`fsub_` then add exponent
-alignment and cancellation. `fsqrt_` is not rational and requires a separate
-integer-square lower/upper-bound witness.
+cancellation or division's odd denominator. `fdiv_` now validates the general
+`2r` versus `B` comparison; `fadd_`/`fsub_` next add exponent alignment and
+cancellation. `fsqrt_` is not rational and requires a separate integer-square
+lower/upper-bound witness.
 
 The first substrate checkpoint is now concrete in `lower/builtins.rs`.
 `signed_bin_add_cases` gives a disjoint, canonical signed-magnitude sum for two

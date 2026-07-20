@@ -26,6 +26,7 @@ pub mod applicative_effect;
 pub mod arena;
 pub mod effect;
 pub mod host;
+pub mod io;
 pub mod relation;
 pub mod resource;
 pub mod runtime;
@@ -58,6 +59,7 @@ pub use host::{
     MachineApplicationPart, MachineApplicationPosition, MachineConfiguration, MachineControl,
     MachineFrame,
 };
+pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,

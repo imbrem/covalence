@@ -1545,6 +1545,9 @@ impl LispRel {
                     self.compile_core(&arguments[1])?,
                 )
             }
+            Primitive::Read | Primitive::Write => Err(HolError::Stuck(
+                "effectful Scheme primitives require an explicit effect semantics".into(),
+            )),
         }
     }
 

@@ -50,6 +50,8 @@ pub enum Primitive {
     Multiply,
     LessEqual,
     Append,
+    Read,
+    Write,
 }
 
 /// Concrete surface dialects targeting the common core.
@@ -87,6 +89,8 @@ impl SurfaceDialect {
             "*" => Primitive::Multiply,
             "<=" => Primitive::LessEqual,
             "append" => Primitive::Append,
+            "read" if self == Self::Scheme => Primitive::Read,
+            "write" if self == Self::Scheme => Primitive::Write,
             _ => return None,
         })
     }
@@ -611,6 +615,7 @@ pub enum PrimitiveError {
     ExpectedDatum,
     ExpectedCons,
     ExpectedInteger,
+    EffectRequiresHandler,
 }
 
 /// Primitive-language failure separated from representation failure.
@@ -738,6 +743,7 @@ where
                 let [left, right] = self.values::<_, 2>(arguments)?;
                 self.append(runtime, left, right)
             }
+            Primitive::Read | Primitive::Write => Err(PrimitiveError::EffectRequiresHandler.into()),
         }?;
         Ok(PrimitiveOutcome::Value(value))
     }
@@ -884,6 +890,8 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
     ("*", Primitive::Multiply),
     ("<=", Primitive::LessEqual),
     ("append", Primitive::Append),
+    ("read", Primitive::Read),
+    ("write", Primitive::Write),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

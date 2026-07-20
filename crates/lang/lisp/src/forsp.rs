@@ -14,16 +14,19 @@ use std::sync::Arc;
 use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
     Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
-    HostEnvironment, HostEnvironments, LispEnvironment, StackClosure, StackClosureRecord,
-    StackConfiguration, StackEffectMachine, StackEffectMachineError, StackEffectSemantics,
-    StackInstructionLayer, StackInstructionSyntax, StackInstructionView, StackMachine,
-    StackMachineError, StackMachineValue, StackPrimitiveSemantics, StackProgramSyntax,
-    StackRuntime, StackValue, StackValueLayer, StackValueView, StepRelation, TerminalValue,
+    HostEnvironment, HostEnvironments, LispEnvironment, LispIoRequest, LispIoResponse,
+    StackClosure, StackClosureRecord, StackConfiguration, StackEffectMachine,
+    StackEffectMachineError, StackEffectSemantics, StackInstructionLayer, StackInstructionSyntax,
+    StackInstructionView, StackMachine, StackMachineError, StackMachineValue,
+    StackPrimitiveSemantics, StackProgramSyntax, StackRuntime, StackValue, StackValueLayer,
+    StackValueView, StepRelation, TerminalValue,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::frontend::CoreAtom;
+
+pub use covalence_kernel_lisp::LispIo as ForspIo;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ForspPrimitive {
@@ -442,8 +445,7 @@ impl StackRuntime for ForspHandleRuntime {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RuntimeForspRequest<V> {
-    Read,
-    Print(V),
+    Io(LispIoRequest<V>),
     PointerState,
     PointerRead(V),
     PointerWrite { address: V, value: V },
@@ -451,23 +453,10 @@ pub enum RuntimeForspRequest<V> {
     PointerFromObject(V),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RuntimeForspResponse<V> {
-    Value(V),
-    Unit,
-}
-
 pub type ForspRequest = RuntimeForspRequest<ForspValue>;
-pub type ForspResponse = RuntimeForspResponse<ForspValue>;
+pub type RuntimeForspResponse<V> = LispIoResponse<V>;
+pub type ForspResponse = LispIoResponse<ForspValue>;
 pub type ForspEffectState = EffectState<ForspConfiguration, ForspRequest>;
-
-/// Host I/O capability for the safe reference effects.
-pub trait ForspIo<V = ForspValue> {
-    type Error;
-
-    fn read(&mut self) -> Result<V, Self::Error>;
-    fn print(&mut self, value: &V) -> Result<(), Self::Error>;
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ForspIoHandlerError<E> {
@@ -491,15 +480,15 @@ where
         request: &RuntimeForspRequest<V>,
     ) -> Result<RuntimeForspResponse<V>, Self::Error> {
         match request {
-            RuntimeForspRequest::Read => self
+            RuntimeForspRequest::Io(LispIoRequest::Read) => self
                 .host
                 .read()
-                .map(RuntimeForspResponse::Value)
+                .map(LispIoResponse::Value)
                 .map_err(ForspIoHandlerError::Io),
-            RuntimeForspRequest::Print(value) => self
+            RuntimeForspRequest::Io(LispIoRequest::Write(value)) => self
                 .host
-                .print(value)
-                .map(|()| RuntimeForspResponse::Unit)
+                .write(value)
+                .map(|()| LispIoResponse::Unit)
                 .map_err(ForspIoHandlerError::Io),
             RuntimeForspRequest::PointerState
             | RuntimeForspRequest::PointerRead(_)
@@ -1276,8 +1265,8 @@ where
                 .ok_or(RuntimeForspError::Language(ForspError::EmptyStack))
         };
         let request = match effect {
-            ForspEffect::Read => RuntimeForspRequest::Read,
-            ForspEffect::Print => RuntimeForspRequest::Print(pop()?),
+            ForspEffect::Read => RuntimeForspRequest::Io(LispIoRequest::Read),
+            ForspEffect::Print => RuntimeForspRequest::Io(LispIoRequest::Write(pop()?)),
             ForspEffect::PointerState => RuntimeForspRequest::PointerState,
             ForspEffect::PointerRead => RuntimeForspRequest::PointerRead(pop()?),
             ForspEffect::PointerWrite => {
@@ -1299,15 +1288,15 @@ where
         mut operands: Vec<R::Value>,
     ) -> Result<Vec<R::Value>, Self::Error> {
         match (request, response) {
-            (RuntimeForspRequest::Read, RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerState, RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerRead(_), RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerToObject(_), RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerFromObject(_), RuntimeForspResponse::Value(value)) => {
+            (RuntimeForspRequest::Io(LispIoRequest::Read), LispIoResponse::Value(value))
+            | (RuntimeForspRequest::PointerState, LispIoResponse::Value(value))
+            | (RuntimeForspRequest::PointerRead(_), LispIoResponse::Value(value))
+            | (RuntimeForspRequest::PointerToObject(_), LispIoResponse::Value(value))
+            | (RuntimeForspRequest::PointerFromObject(_), LispIoResponse::Value(value)) => {
                 operands.push(value);
             }
-            (RuntimeForspRequest::Print(_), RuntimeForspResponse::Unit)
-            | (RuntimeForspRequest::PointerWrite { .. }, RuntimeForspResponse::Unit) => {}
+            (RuntimeForspRequest::Io(LispIoRequest::Write(_)), LispIoResponse::Unit)
+            | (RuntimeForspRequest::PointerWrite { .. }, LispIoResponse::Unit) => {}
             _ => return Err(ForspError::InvalidEffectResponse.into()),
         }
         Ok(operands)
@@ -1672,7 +1661,7 @@ mod tests {
             }
         }
 
-        fn print(&mut self, value: &V) -> Result<(), Self::Error> {
+        fn write(&mut self, value: &V) -> Result<(), Self::Error> {
             self.printed.push(value.clone());
             Ok(())
         }
@@ -1738,8 +1727,14 @@ mod tests {
 
         assert!(run.returned.operands.is_empty());
         assert_eq!(run.transcript.len(), 2);
-        assert!(matches!(run.transcript[0].request, ForspRequest::Read));
-        assert!(matches!(run.transcript[1].request, ForspRequest::Print(_)));
+        assert!(matches!(
+            run.transcript[0].request,
+            ForspRequest::Io(LispIoRequest::Read)
+        ));
+        assert!(matches!(
+            run.transcript[1].request,
+            ForspRequest::Io(LispIoRequest::Write(_))
+        ));
         assert_eq!(
             handler.host.printed,
             vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(

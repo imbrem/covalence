@@ -104,7 +104,10 @@ disable-model-invocation: true
     `kernel/lisp::LispEffectMachine` preserves the suspended CEK continuation,
     validates it on resumption, and runs unchanged over direct or opaque-handle
     runtime representations. Pure execution rejects those requests rather than
-    performing host effects.
+    performing host effects. `LispIoRequest`/`LispIoResponse` are the common
+    read/write protocol used by both Scheme's applicative dictionary and
+    Forsp's stack-effect policy; Forsp layers its unsafe pointer requests around
+    that protocol rather than defining a second I/O vocabulary.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

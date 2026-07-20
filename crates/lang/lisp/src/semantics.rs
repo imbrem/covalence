@@ -586,6 +586,9 @@ impl LispSemantics {
                 int_backend::kernel_redex(operation, &left, &right)
                     .map_err(|_| HolError::Stuck(format!("{primitive:?} expects integer operands")))
             }
+            Primitive::Read | Primitive::Write => Err(HolError::Stuck(
+                "effectful Scheme primitives require an explicit effect semantics".into(),
+            )),
         }
     }
 

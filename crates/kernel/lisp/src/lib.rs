@@ -22,9 +22,11 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod arena;
 pub mod effect;
 pub mod host;
 pub mod relation;
+pub mod resource;
 pub mod runtime;
 pub mod stack;
 pub mod syntax;
@@ -35,6 +37,10 @@ pub use covalence_sexpr_api as sexpr;
 pub use admission::{
     AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
     RecursiveCall, SourcedDefinition, TerminationCertificate, Totalization,
+};
+pub use arena::{
+    ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaRecursiveCell,
+    ArenaRuntime, ArenaRuntimeError, ArenaValue, ArenaValues,
 };
 pub use effect::{
     EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectRunError, EffectState,
@@ -51,6 +57,7 @@ pub use relation::{
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
+pub use resource::{Resource, ResourceArena, ResourceError, ResourceTable};
 pub use runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
@@ -58,7 +65,9 @@ pub use runtime::{
     RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
-    StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
+    StackClosure, StackClosureRecord, StackConfiguration, StackContinuation,
+    StackInstructionSyntax, StackMachineValue, StackProgramSyntax, StackRuntime, StackValue,
+    StackValueLayer, StackValueView,
 };
 pub use syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,

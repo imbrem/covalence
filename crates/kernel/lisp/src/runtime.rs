@@ -196,6 +196,14 @@ pub trait LispValue {
         value: &Self::Value,
     ) -> Result<RuntimeValueView<Self::Atom, Self::Primitive, Self::Value>, Self::Error>;
 
+    /// Backend-defined extensional equality of runtime values.
+    ///
+    /// Direct inductive backends normally compare their trees structurally;
+    /// resource backends may recursively compare the layers named by two
+    /// handles. Keeping this operation on the capability prevents a frontend's
+    /// `equal` primitive from depending on a concrete Rust representation.
+    fn equivalent(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error>;
+
     fn list(
         &self,
         values: impl IntoIterator<Item = Self::Value>,
@@ -468,39 +476,34 @@ pub trait LispRuntime {
     /// finer-grained provenance.
     type Error;
 
-    type Data: SExprView<Payload = Self::Atom, Value = Self::Datum, Error = Self::Error>;
+    type Data: SExprView<Payload = Self::Atom, Value = Self::Datum>;
     type Values: LispMachineValue<
             Atom = Self::Atom,
             Primitive = Self::Primitive,
             Value = Self::Value,
             Closure = Self::Closure,
-            Error = Self::Error,
         >;
     type Expressions: LispExpression<
             Symbol = Self::Symbol,
             Datum = Self::Datum,
             Primitive = Self::Primitive,
             Expr = Self::Expr,
-            Error = Self::Error,
         > + LispSyntax<
             Symbol = Self::Symbol,
             Datum = Self::Datum,
             Primitive = Self::Primitive,
             Expr = Self::Expr,
-            Error = Self::Error,
         >;
     type Closures: LispClosure<
             Symbol = Self::Symbol,
             Expr = Self::Expr,
             Environment = Self::Environment,
             Closure = Self::Closure,
-            Error = Self::Error,
         >;
     type Environments: LispRecursiveEnvironment<
             Symbol = Self::Symbol,
             Value = Self::Value,
             Environment = Self::Environment,
-            Error = Self::Error,
         >;
 
     fn values(&self) -> &Self::Values;
@@ -508,6 +511,16 @@ pub trait LispRuntime {
     fn expressions(&self) -> &Self::Expressions;
     fn closures(&self) -> &Self::Closures;
     fn environments(&self) -> &Self::Environments;
+
+    fn data_error(&self, error: <Self::Data as SExprSyntax>::Error) -> Self::Error;
+    fn value_error(&self, error: <Self::Values as LispValue>::Error) -> Self::Error;
+    fn expression_error(&self, error: <Self::Expressions as LispExpression>::Error) -> Self::Error;
+    fn syntax_error(&self, error: <Self::Expressions as LispSyntax>::Error) -> Self::Error;
+    fn closure_error(&self, error: <Self::Closures as LispClosure>::Error) -> Self::Error;
+    fn environment_error(
+        &self,
+        error: <Self::Environments as LispEnvironment>::Error,
+    ) -> Self::Error;
 }
 
 #[cfg(test)]

@@ -7,13 +7,15 @@
 //! the same core syntax without sharing ACL2 admission or Scheme-specific
 //! surface extensions.
 
-use core::fmt::{Display, Formatter};
+use core::convert::Infallible;
+use core::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 
 use covalence_kernel_lisp::{
-    CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, Definition as LispDefinition,
-    ExecutionError, HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues,
-    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
+    ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
+    Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
+    LispEnvironment, LispMachine, LispRuntime, LispValue, PrimitiveSemantics, RuntimeBinding,
+    RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -596,134 +598,180 @@ pub enum PrimitiveError {
     ExpectedInteger,
 }
 
+/// Primitive-language failure separated from representation failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrimitiveExecutionError<E> {
+    Language(PrimitiveError),
+    Runtime(E),
+}
+
+impl<E> From<PrimitiveError> for PrimitiveExecutionError<E> {
+    fn from(error: PrimitiveError) -> Self {
+        Self::Language(error)
+    }
+}
+
+pub type HostPrimitiveError = PrimitiveExecutionError<Infallible>;
+
 impl CorePrimitive for StandardPrimitives {
     type Symbol = String;
     type Atom = CoreAtom;
     type Primitive = Primitive;
 }
 
-impl PrimitiveSemantics<HostValues<String, CoreAtom, Primitive>> for StandardPrimitives {
-    type Error = PrimitiveError;
+impl<V> PrimitiveSemantics<V> for StandardPrimitives
+where
+    V: LispValue<Atom = CoreAtom, Primitive = Primitive>,
+{
+    type Error = PrimitiveExecutionError<V::Error>;
 
     fn apply(
         &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
+        runtime: &V,
         primitive: &Primitive,
-        arguments: &[FrontendValue],
-    ) -> Result<FrontendValue, PrimitiveError> {
+        arguments: &[V::Value],
+    ) -> Result<V::Value, Self::Error> {
         match primitive {
             Primitive::Cons => {
-                let [head, tail] = self.values::<2>(arguments)?;
-                Ok(runtime
+                let [head, tail] = self.values::<_, 2>(arguments)?;
+                runtime
                     .cons(head, tail)
-                    .expect("the direct host value backend is infallible"))
+                    .map_err(PrimitiveExecutionError::Runtime)
             }
             Primitive::Car => {
-                let [value] = self.values::<1>(arguments)?;
-                match value {
-                    HostValue::Cons(head, _) => Ok(*head),
-                    HostValue::Atom(_)
-                    | HostValue::Nil
-                    | HostValue::Closure(_)
-                    | HostValue::Primitive(_)
-                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
+                let [value] = self.values::<_, 1>(arguments)?;
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Cons { head, .. } => Ok(head),
+                    _ => Ok(runtime.nil()),
                 }
             }
             Primitive::Cdr => {
-                let [value] = self.values::<1>(arguments)?;
-                match value {
-                    HostValue::Cons(_, tail) => Ok(*tail),
-                    HostValue::Atom(_)
-                    | HostValue::Nil
-                    | HostValue::Closure(_)
-                    | HostValue::Primitive(_)
-                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
+                let [value] = self.values::<_, 1>(arguments)?;
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Cons { tail, .. } => Ok(tail),
+                    _ => Ok(runtime.nil()),
                 }
             }
             Primitive::Atom => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, !matches!(value, HostValue::Cons(_, _)))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_atom = !matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Cons { .. }
+                );
+                self.truth(runtime, is_atom)
             }
             Primitive::Consp => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, matches!(value, HostValue::Cons(_, _)))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_cons = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Cons { .. }
+                );
+                self.truth(runtime, is_cons)
             }
             Primitive::Null => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, matches!(value, HostValue::Nil))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_nil = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Nil
+                );
+                self.truth(runtime, is_nil)
             }
             Primitive::Integer => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(
-                    runtime,
-                    matches!(value, HostValue::Atom(CoreAtom::Integer(_))),
-                )
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_integer = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Atom(CoreAtom::Integer(_))
+                );
+                self.truth(runtime, is_integer)
             }
             Primitive::Equal => {
-                let [left, right] = self.values::<2>(arguments)?;
-                self.truth(runtime, left == right)
+                let [left, right] = self.values::<_, 2>(arguments)?;
+                let equal = runtime
+                    .equivalent(&left, &right)
+                    .map_err(PrimitiveExecutionError::Runtime)?;
+                self.truth(runtime, equal)
             }
-            Primitive::Add => self.integer_binary(arguments, |left, right| left + right),
-            Primitive::Subtract => self.integer_binary(arguments, |left, right| left - right),
-            Primitive::Multiply => self.integer_binary(arguments, |left, right| left * right),
+            Primitive::Add => self.integer_binary(runtime, arguments, |left, right| left + right),
+            Primitive::Subtract => {
+                self.integer_binary(runtime, arguments, |left, right| left - right)
+            }
+            Primitive::Multiply => {
+                self.integer_binary(runtime, arguments, |left, right| left * right)
+            }
             Primitive::LessEqual => {
-                let [left, right] = self.integers(arguments)?;
+                let [left, right] = self.integers(runtime, arguments)?;
                 self.truth(runtime, left <= right)
             }
             Primitive::Append => {
-                let [left, right] = self.values::<2>(arguments)?;
-                Ok(Self::append(left, right))
+                let [left, right] = self.values::<_, 2>(arguments)?;
+                self.append(runtime, left, right)
             }
         }
     }
 
-    fn truth(
-        &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
-        value: bool,
-    ) -> Result<FrontendValue, PrimitiveError> {
-        Ok(if value {
+    fn truth(&self, runtime: &V, value: bool) -> Result<V::Value, Self::Error> {
+        if value {
             runtime
                 .atom(CoreAtom::symbol("t"))
-                .expect("the direct host value backend is infallible")
+                .map_err(PrimitiveExecutionError::Runtime)
         } else {
-            runtime.nil()
-        })
+            Ok(runtime.nil())
+        }
     }
 
-    fn is_false(
-        &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
-        value: &FrontendValue,
-    ) -> Result<bool, PrimitiveError> {
+    fn is_false(&self, runtime: &V, value: &V::Value) -> Result<bool, Self::Error> {
         Ok(matches!(
             runtime
                 .view(value)
-                .expect("the direct host value backend is infallible"),
+                .map_err(PrimitiveExecutionError::Runtime)?,
             RuntimeValueView::Nil
         ))
     }
 }
 
 impl StandardPrimitives {
-    fn append(left: FrontendValue, right: FrontendValue) -> FrontendValue {
-        match left {
-            HostValue::Nil => right,
-            HostValue::Cons(head, tail) => HostValue::cons(*head, Self::append(*tail, right)),
+    fn append<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
+        &self,
+        runtime: &V,
+        left: V::Value,
+        right: V::Value,
+    ) -> Result<V::Value, PrimitiveExecutionError<V::Error>> {
+        match runtime
+            .view(&left)
+            .map_err(PrimitiveExecutionError::Runtime)?
+        {
+            RuntimeValueView::Nil => Ok(right),
+            RuntimeValueView::Cons { head, tail } => {
+                let tail = self.append(runtime, tail, right)?;
+                runtime
+                    .cons(head, tail)
+                    .map_err(PrimitiveExecutionError::Runtime)
+            }
             // ACL2's `binary-append` and the existing kernel Lisp theory use
             // this total extension. Scheme programs should still pass proper
             // lists; the shared primitive remains defined on every datum.
-            HostValue::Atom(_)
-            | HostValue::Closure(_)
-            | HostValue::Primitive(_)
-            | HostValue::ApplyListProcedure => right,
+            RuntimeValueView::Atom(_)
+            | RuntimeValueView::Closure
+            | RuntimeValueView::Primitive(_)
+            | RuntimeValueView::ApplyListProcedure => Ok(right),
         }
     }
 
-    fn values<const N: usize>(
-        &self,
-        arguments: &[FrontendValue],
-    ) -> Result<[FrontendValue; N], PrimitiveError> {
+    fn values<V: Clone, const N: usize>(&self, arguments: &[V]) -> Result<[V; N], PrimitiveError> {
         if arguments.len() != N {
             return Err(PrimitiveError::Arity {
                 expected: N,
@@ -736,12 +784,23 @@ impl StandardPrimitives {
             .map_err(|_| unreachable!("length checked"))
     }
 
-    fn integers(&self, arguments: &[FrontendValue]) -> Result<[Int; 2], PrimitiveError> {
-        let values = self.values::<2>(arguments)?;
+    fn integers<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
+        &self,
+        runtime: &V,
+        arguments: &[V::Value],
+    ) -> Result<[Int; 2], PrimitiveExecutionError<V::Error>> {
+        let values = self.values::<_, 2>(arguments)?;
         values
-            .map(|value| match value {
-                HostValue::Atom(CoreAtom::Integer(value)) => Ok(value),
-                _ => Err(PrimitiveError::ExpectedInteger),
+            .map(|value| {
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Atom(CoreAtom::Integer(value)) => {
+                        Ok::<Int, PrimitiveExecutionError<V::Error>>(value)
+                    }
+                    _ => Err(PrimitiveError::ExpectedInteger.into()),
+                }
             })
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?
@@ -749,18 +808,32 @@ impl StandardPrimitives {
             .map_err(|_| unreachable!("array length preserved"))
     }
 
-    fn integer_binary(
+    fn integer_binary<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
         &self,
-        arguments: &[FrontendValue],
+        runtime: &V,
+        arguments: &[V::Value],
         operation: impl FnOnce(Int, Int) -> Int,
-    ) -> Result<FrontendValue, PrimitiveError> {
-        let [left, right] = self.integers(arguments)?;
-        Ok(HostValue::Atom(CoreAtom::Integer(operation(left, right))))
+    ) -> Result<V::Value, PrimitiveExecutionError<V::Error>> {
+        let [left, right] = self.integers(runtime, arguments)?;
+        runtime
+            .atom(CoreAtom::Integer(operation(left, right)))
+            .map_err(PrimitiveExecutionError::Runtime)
     }
 }
 
 pub fn host_machine() -> CoreMachine<StandardPrimitives> {
     CoreMachine::new(StandardPrimitives)
+}
+
+pub type ArenaFrontendRuntime = ArenaRuntime<String, CoreAtom, Primitive>;
+pub type ArenaFrontendMachine = LispMachine<ArenaFrontendRuntime, StandardPrimitives>;
+
+pub fn arena_machine() -> ArenaFrontendMachine {
+    LispMachine::with_runtime(
+        ArenaFrontendRuntime::default(),
+        StandardPrimitives,
+        covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+    )
 }
 
 const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
@@ -785,16 +858,29 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
     ("append", Primitive::Append),
 ];
 
-/// Initial lexical bindings supplied by a concrete host frontend.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InitialEnvironmentError<V, E> {
+    Value(V),
+    Environment(E),
+}
+
+/// Initial lexical bindings supplied by a concrete frontend runtime.
 ///
 /// Kernel evaluation itself has no distinguished names: Scheme chooses these
 /// bindings as language policy, making primitives ordinary shadowable values
 /// rather than syntax.
-pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
-    let environments = HostEnvironments::<String, FrontendValue>::default();
+pub fn initial_environment_for<V, E>(
+    values: &V,
+    environments: &E,
+    dialect: SurfaceDialect,
+) -> Result<E::Environment, InitialEnvironmentError<V::Error, E::Error>>
+where
+    V: LispValue<Atom = CoreAtom, Primitive = Primitive, Value = E::Value>,
+    E: LispEnvironment<Symbol = String>,
+{
     let environment = environments.empty();
     if dialect != SurfaceDialect::Scheme {
-        return environment;
+        return Ok(environment);
     }
     environments
         .extend(
@@ -802,40 +888,50 @@ pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
             SCHEME_PRIMITIVES
                 .iter()
                 .map(|(name, primitive)| {
-                    RuntimeBinding::new((*name).to_owned(), HostValue::Primitive(*primitive))
+                    values
+                        .primitive(*primitive)
+                        .map(|value| RuntimeBinding::new((*name).to_owned(), value))
+                        .map_err(InitialEnvironmentError::Value)
                 })
-                .chain([RuntimeBinding::new(
+                .chain([Ok(RuntimeBinding::new(
                     "apply".to_owned(),
-                    HostValue::ApplyListProcedure,
-                )])
-                .collect(),
+                    values.apply_list_procedure(),
+                ))])
+                .collect::<Result<Vec<_>, _>>()?,
         )
-        .expect("the direct host environment is infallible")
+        .map_err(InitialEnvironmentError::Environment)
 }
 
-/// Stateful proof-free frontend execution.
-///
-/// Definitions are lexical named closures. Recursive calls may diverge; fuel
-/// exhaustion is an ordinary result and carries no ACL2 admission claim.
-#[derive(Clone, Debug)]
-pub struct HostSession {
-    frontend: Frontend,
-    environment: FrontendEnvironment,
-    fuel: usize,
+pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
+    let runtime = covalence_kernel_lisp::HostRuntime::<String, CoreAtom, Primitive>::default();
+    initial_environment_for(runtime.values(), runtime.environments(), dialect).unwrap_or_else(
+        |error| match error {
+            InitialEnvironmentError::Value(never) | InitialEnvironmentError::Environment(never) => {
+                match never {}
+            }
+        },
+    )
 }
+
+type ValueErrorOf<R> = <<R as LispRuntime>::Values as LispValue>::Error;
+type EnvironmentErrorOf<R> = <<R as LispRuntime>::Environments as LispEnvironment>::Error;
+pub type RuntimeSessionMachineError<R> =
+    CoreMachineError<String, PrimitiveExecutionError<ValueErrorOf<R>>, <R as LispRuntime>::Error>;
 
 #[derive(Debug)]
-pub enum HostSessionError {
+pub enum SessionError<M, V, E> {
+    Setup(InitialEnvironmentError<V, E>),
     Lower(LowerError),
-    Execute(ExecutionError<CoreMachineError<String, PrimitiveError>>),
-    Machine(CoreMachineError<String, PrimitiveError>),
+    Execute(ExecutionError<M>),
+    Machine(M),
     ExpectedDefinition { index: usize },
     DefinitionDidNotProduceClosure,
 }
 
-impl Display for HostSessionError {
+impl<M: Display, V: Debug, E: Debug> Display for SessionError<M, V, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Setup(error) => write!(f, "failed to initialize frontend environment: {error:?}"),
             Self::Lower(error) => Display::fmt(error, f),
             Self::Execute(error) => Display::fmt(error, f),
             Self::Machine(error) => Display::fmt(error, f),
@@ -849,36 +945,99 @@ impl Display for HostSessionError {
     }
 }
 
-impl core::error::Error for HostSessionError {}
+impl<M, V, E> core::error::Error for SessionError<M, V, E>
+where
+    M: core::error::Error,
+    V: Debug,
+    E: Debug,
+{
+}
 
-impl HostSession {
-    pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {
-        Self {
+pub type RuntimeSessionError<R> =
+    SessionError<RuntimeSessionMachineError<R>, ValueErrorOf<R>, EnvironmentErrorOf<R>>;
+
+/// Stateful proof-free frontend execution over a selected runtime backend.
+///
+/// Definitions are lexical named closures. Recursive calls may diverge; fuel
+/// exhaustion is an ordinary result and carries no ACL2 admission claim.
+#[derive(Clone, Debug)]
+pub struct RuntimeSession<R>
+where
+    R: LispRuntime,
+{
+    frontend: Frontend,
+    machine: LispMachine<R, StandardPrimitives>,
+    environment: R::Environment,
+    fuel: usize,
+}
+
+impl<R> RuntimeSession<R>
+where
+    R: LispRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = Primitive,
+            Expr = FrontendExpr,
+        >,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    pub fn with_runtime(
+        dialect: SurfaceDialect,
+        fuel: usize,
+        runtime: R,
+    ) -> Result<Self, RuntimeSessionError<R>> {
+        let environment =
+            initial_environment_for(runtime.values(), runtime.environments(), dialect)
+                .map_err(SessionError::Setup)?;
+        Ok(Self {
             frontend: Frontend::new(dialect),
-            environment: initial_environment(dialect),
+            machine: LispMachine::with_runtime(
+                runtime,
+                StandardPrimitives,
+                covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+            ),
+            environment,
             fuel,
-        }
+        })
     }
 
-    pub fn environment(&self) -> &FrontendEnvironment {
+    pub fn runtime(&self) -> &R {
+        self.machine.runtime()
+    }
+
+    pub fn environment(&self) -> &R::Environment {
         &self.environment
     }
 
-    pub fn evaluate(&self, form: &SExpr) -> Result<FrontendValue, HostSessionError> {
-        let expression = self.frontend.lower(form).map_err(HostSessionError::Lower)?;
+    pub fn evaluate(&self, form: &SExpr) -> Result<R::Value, RuntimeSessionError<R>> {
+        let expression = self.frontend.lower(form).map_err(SessionError::Lower)?;
         self.evaluate_core(&expression)
     }
 
-    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, HostSessionError> {
+    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R>> {
         let Some((name, expression)) = self
             .frontend
             .definition(form)
-            .map_err(HostSessionError::Lower)?
+            .map_err(SessionError::Lower)?
         else {
             return Ok(None);
         };
         let value = self.evaluate_core(&expression)?;
-        self.environment = self.environment.extend([(name.clone(), value)]);
+        self.environment = self
+            .machine
+            .runtime()
+            .environments()
+            .extend(
+                &self.environment,
+                vec![RuntimeBinding::new(name.clone(), value)],
+            )
+            .map_err(|error| {
+                SessionError::Machine(CoreMachineError::Runtime(
+                    self.machine.runtime().environment_error(error),
+                ))
+            })?;
         Ok(Some(name))
     }
 
@@ -891,12 +1050,13 @@ impl HostSession {
     pub fn define_core(
         &mut self,
         definition: LispDefinition<String, FrontendExpr>,
-    ) -> Result<String, HostSessionError> {
+    ) -> Result<String, RuntimeSessionError<R>> {
         let name = definition.name.clone();
         let expression = definition.into_recursive_lambda();
-        self.environment = host_machine()
+        self.environment = self
+            .machine
             .bind_recursive(&self.environment, vec![(name.clone(), expression)])
-            .map_err(HostSessionError::Machine)?;
+            .map_err(SessionError::Machine)?;
         Ok(name)
     }
 
@@ -905,23 +1065,24 @@ impl HostSession {
     ///
     /// Every closure captures the same newly allocated lexical generation, so
     /// definitions may refer forward as well as backward within the group.
-    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, HostSessionError> {
+    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, RuntimeSessionError<R>> {
         let mut names = Vec::with_capacity(forms.len());
         let mut bindings = Vec::with_capacity(forms.len());
         for (index, form) in forms.iter().enumerate() {
             let Some((name, expression)) = self
                 .frontend
                 .definition(form)
-                .map_err(HostSessionError::Lower)?
+                .map_err(SessionError::Lower)?
             else {
-                return Err(HostSessionError::ExpectedDefinition { index });
+                return Err(SessionError::ExpectedDefinition { index });
             };
             names.push(name.clone());
             bindings.push((name, expression));
         }
-        self.environment = host_machine()
+        self.environment = self
+            .machine
             .bind_recursive(&self.environment, bindings)
-            .map_err(HostSessionError::Machine)?;
+            .map_err(SessionError::Machine)?;
         Ok(names)
     }
 
@@ -933,18 +1094,48 @@ impl HostSession {
     pub fn evaluate_core(
         &self,
         expression: &FrontendExpr,
-    ) -> Result<FrontendValue, HostSessionError> {
+    ) -> Result<R::Value, RuntimeSessionError<R>> {
         let trace = execute(
-            &host_machine(),
-            HostConfiguration::with_environment(expression.clone(), self.environment.clone()),
+            &self.machine,
+            covalence_kernel_lisp::MachineConfiguration::with_environment(
+                expression.clone(),
+                self.environment.clone(),
+            ),
             self.fuel,
         )
-        .map_err(HostSessionError::Execute)?;
+        .map_err(SessionError::Execute)?;
         trace
             .end()
             .terminal_value()
             .cloned()
-            .ok_or(HostSessionError::DefinitionDidNotProduceClosure)
+            .ok_or(SessionError::DefinitionDidNotProduceClosure)
+    }
+}
+
+pub type HostFrontendRuntime = covalence_kernel_lisp::HostRuntime<String, CoreAtom, Primitive>;
+pub type HostSession = RuntimeSession<HostFrontendRuntime>;
+pub type HostSessionError = RuntimeSessionError<HostFrontendRuntime>;
+pub type ArenaSession = RuntimeSession<ArenaFrontendRuntime>;
+
+impl RuntimeSession<HostFrontendRuntime> {
+    pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {
+        Self::with_runtime(dialect, fuel, HostFrontendRuntime::default()).unwrap_or_else(|error| {
+            match error {
+                SessionError::Setup(InitialEnvironmentError::Value(never))
+                | SessionError::Setup(InitialEnvironmentError::Environment(never))
+                | SessionError::Machine(CoreMachineError::Runtime(never)) => match never {},
+                _ => unreachable!("constructing an empty host session does not execute code"),
+            }
+        })
+    }
+}
+
+impl RuntimeSession<ArenaFrontendRuntime> {
+    pub fn arena(
+        dialect: SurfaceDialect,
+        fuel: usize,
+    ) -> Result<Self, RuntimeSessionError<ArenaFrontendRuntime>> {
+        Self::with_runtime(dialect, fuel, ArenaFrontendRuntime::default())
     }
 }
 
@@ -960,6 +1151,30 @@ mod tests {
         HostSession::new(dialect, 128)
             .evaluate(&one(source))
             .unwrap()
+    }
+
+    fn run_arena(source: &str) -> CoreAtom {
+        let expression = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one(source))
+            .unwrap();
+        let machine = arena_machine();
+        let environment = initial_environment_for(
+            machine.runtime().values(),
+            machine.runtime().environments(),
+            SurfaceDialect::Scheme,
+        )
+        .unwrap();
+        let trace = execute(
+            &machine,
+            covalence_kernel_lisp::MachineConfiguration::with_environment(expression, environment),
+            256,
+        )
+        .unwrap();
+        let value = trace.end().terminal_value().expect("terminal value");
+        match machine.runtime().values().view(value).unwrap() {
+            RuntimeValueView::Atom(atom) => atom,
+            other => panic!("expected atom, got {other:?}"),
+        }
     }
 
     #[test]
@@ -978,6 +1193,21 @@ mod tests {
                 "(let ((twice (lambda (x) (+ x x)))) (twice 21))"
             ),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+    }
+
+    #[test]
+    fn scheme_programs_run_unchanged_on_the_handle_runtime() {
+        assert_eq!(
+            run_arena(
+                "(letrec ((length
+                            (lambda (xs)
+                              (if (null? xs)
+                                  0
+                                  (+ 1 (length (cdr xs)))))))
+                   (length (quote (a b c))))"
+            ),
+            CoreAtom::Integer(Int::from(3))
         );
     }
 
@@ -1149,6 +1379,26 @@ mod tests {
             session.evaluate(&one("(first (quote value))")).unwrap(),
             HostValue::datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
         );
+    }
+
+    #[test]
+    fn stateful_definition_groups_are_runtime_generic() {
+        let mut session = ArenaSession::arena(SurfaceDialect::Scheme, 256).unwrap();
+        let forms = crate::reader::read(
+            "(label first (lambda (x) (second x)))
+             (label second (lambda (x) (cons x (quote ()))))",
+        )
+        .unwrap();
+        session.define_group(&forms).unwrap();
+        let value = session.evaluate(&one("(first (quote value))")).unwrap();
+        let datum = covalence_kernel_lisp::project_datum(
+            session.runtime().data(),
+            session.runtime().values(),
+            &value,
+        )
+        .unwrap()
+        .expect("result contains only data");
+        assert_eq!(datum, Datum::list([Datum::Atom(CoreAtom::symbol("value"))]));
     }
 
     #[test]

@@ -718,7 +718,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35762,
+      "words": 35777,
       "updated": 0
     },
     {
@@ -9322,7 +9322,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/sexpr/src/lib.rs",
-      "words": 734,
+      "words": 779,
       "updated": 0
     },
     {
@@ -9344,6 +9344,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/arena.rs",
+      "kind": "file",
+      "title": "arena.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/arena.rs",
+      "words": 456,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/effect.rs",
       "kind": "file",
       "title": "effect.rs",
@@ -9358,7 +9367,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 2157,
+      "words": 2235,
       "updated": 0
     },
     {
@@ -9367,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 67,
+      "words": 76,
       "updated": 0
     },
     {
@@ -9385,7 +9394,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 664,
+      "words": 677,
       "updated": 0
     },
     {
@@ -9394,7 +9403,7 @@
       "title": "stack.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/stack.rs",
-      "words": 67,
+      "words": 186,
       "updated": 0
     },
     {
@@ -10780,7 +10789,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 882,
+      "words": 1704,
       "updated": 0
     },
     {
@@ -10789,7 +10798,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1199,
+      "words": 1449,
       "updated": 0
     },
     {
@@ -15343,7 +15352,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35762,
+      "words": 35777,
       "updated": 0
     },
     {
@@ -25336,6 +25345,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/admission.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/arena.rs",
       "detail": null
     },
     {

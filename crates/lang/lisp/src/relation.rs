@@ -42,10 +42,14 @@
 //! `notes/vibes/lisp/relational-recursion.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::mk_blob;
+use covalence_init::init::eq::{beta_nf_concl, beta_nf_expand};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
-use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
+use covalence_init::metalogic::binary::{
+    Premise, RuleSet2, derivable2, derive_mixed, rule_induction2,
+};
 use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
     CheckedTrace, CoreExpr, Datum, DeterministicStep, EvaluationDeterminacy, MayEval,
@@ -55,6 +59,7 @@ use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 use std::sync::Arc;
 
+use covalence_core::subst;
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
 use crate::carrier::{Acl2Carrier, CarvedCarrier, exact_datum_carved};
@@ -926,6 +931,44 @@ impl LispRel {
         .map_err(kernel_err)
     }
 
+    /// `⊢ Step (append nil y) y`.
+    pub fn step_append_nil(&self, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(20, &[y.clone()])
+    }
+
+    /// `⊢ Step (append (atom payload) y) y`.
+    pub fn step_append_atom(&self, payload: &Term, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(21, &[payload.clone(), y.clone()])
+    }
+
+    /// `⊢ Step (append (scons h t) y) (scons h (append t y))`.
+    pub fn step_append_cons(&self, head: &Term, tail: &Term, y: &Term) -> Result<Thm, HolError> {
+        self.step_base(22, &[head.clone(), tail.clone(), y.clone()])
+    }
+
+    /// Lift `⊢ Step from to` through an `scons head` tail context.
+    pub fn step_scons_tail(
+        &self,
+        head: &Term,
+        from: &Term,
+        to: &Term,
+        step: Thm,
+    ) -> Result<Thm, HolError> {
+        if step.concl() != &self.step_prop(from, to)? {
+            return Err(HolError::Stuck(
+                "scons step congruence received a theorem for a different step".into(),
+            ));
+        }
+        derive_mixed(
+            &self.step_rule_set(),
+            26,
+            self.step_n_clauses()?,
+            &[head.clone(), from.clone(), to.clone()],
+            vec![Premise::Derivation(step)],
+        )
+        .map_err(kernel_err)
+    }
+
     /// `Step from to` (the proposition).
     pub fn step_prop(&self, from: &Term, to: &Term) -> Result<Term, HolError> {
         derivable2(&self.step_rule_set(), from, to).map_err(kernel_err)
@@ -986,6 +1029,140 @@ impl LispRel {
             vec![Premise::Side(step), Premise::Derivation(rest)],
         )
         .map_err(kernel_err)
+    }
+
+    /// Lift a checked multi-step reduction through the tail of a structural
+    /// cons value.
+    ///
+    /// Given `⊢ Reduces from to`, derive
+    /// `⊢ Reduces (scons head from) (scons head to)` by induction over the
+    /// `Reduces` derivation. This is a reusable semantic congruence theorem,
+    /// not host rewriting: the step case uses the relation's checked scons
+    /// tail-congruence clause.
+    pub fn reduces_scons_tail(
+        &self,
+        head: &Term,
+        from: &Term,
+        to: &Term,
+        reduction: Thm,
+    ) -> Result<Thm, HolError> {
+        let tau = self.tau();
+        let n = Term::free("__scons_red_from", tau.clone());
+        let w = Term::free("__scons_red_to", tau.clone());
+        let body = self.reduces_prop(
+            &self.scons(head.clone(), n.clone())?,
+            &self.scons(head.clone(), w.clone())?,
+        )?;
+        let inner = Term::abs(tau.clone(), subst::close(&body, "__scons_red_to"));
+        let pred = Term::abs(tau.clone(), subst::close(&inner, "__scons_red_from"));
+
+        let cons_n = self.scons(head.clone(), n.clone())?;
+        let refl = self.reduces_refl(&cons_n)?;
+        let refl = beta_nf_expand(
+            pred.clone()
+                .apply(n.clone())
+                .map_err(kernel_err)?
+                .apply(n.clone())
+                .map_err(kernel_err)?,
+            refl,
+        )
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_from", tau.clone())
+        .map_err(kernel_err)?;
+
+        let a = Term::free("__scons_red_a", tau.clone());
+        let b = Term::free("__scons_red_b", tau.clone());
+        let c = Term::free("__scons_red_c", tau.clone());
+        let step_ab = self.step_prop(&a, &b)?;
+        let pred_bc = pred
+            .clone()
+            .apply(b.clone())
+            .map_err(kernel_err)?
+            .apply(c.clone())
+            .map_err(kernel_err)?;
+        let step_assumed = Thm::assume(step_ab.clone()).map_err(kernel_err)?;
+        let tail_step = self.step_scons_tail(head, &a, &b, step_assumed)?;
+        let pred_reduction =
+            beta_nf_concl(Thm::assume(pred_bc.clone()).map_err(kernel_err)?).map_err(kernel_err)?;
+        let cons_a = self.scons(head.clone(), a.clone())?;
+        let cons_b = self.scons(head.clone(), b.clone())?;
+        let cons_c = self.scons(head.clone(), c.clone())?;
+        let lifted = self.reduces_step(&cons_a, &cons_b, &cons_c, tail_step, pred_reduction)?;
+        let lifted = beta_nf_expand(
+            pred.clone()
+                .apply(a.clone())
+                .map_err(kernel_err)?
+                .apply(c.clone())
+                .map_err(kernel_err)?,
+            lifted,
+        )
+        .map_err(kernel_err)?
+        .imp_intro(&pred_bc)
+        .map_err(kernel_err)?
+        .imp_intro(&step_ab)
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_c", tau.clone())
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_b", tau.clone())
+        .map_err(kernel_err)?
+        .all_intro("__scons_red_a", tau.clone())
+        .map_err(kernel_err)?;
+
+        let derivation = self.reduces_prop(&n, &w)?;
+        let congruence = rule_induction2(
+            &pred,
+            vec![refl, lifted],
+            &derivation,
+            "__scons_red_from",
+            tau.clone(),
+            "__scons_red_to",
+            tau,
+        )
+        .map_err(kernel_err)?;
+        if reduction.concl() != &self.reduces_prop(from, to)? {
+            return Err(HolError::Stuck(
+                "scons congruence received a theorem for a different reduction".into(),
+            ));
+        }
+        beta_nf_concl(
+            congruence
+                .all_elim(from.clone())
+                .map_err(kernel_err)?
+                .all_elim(to.clone())
+                .map_err(kernel_err)?
+                .imp_elim(reduction)
+                .map_err(kernel_err)?,
+        )
+        .map_err(kernel_err)
+    }
+
+    /// Change only the terminal target of a checked reduction using a checked
+    /// equality `old = new`.
+    pub fn retarget_reduces(
+        &self,
+        initial: &Term,
+        old: &Term,
+        new: &Term,
+        reduction: Thm,
+        equality: Thm,
+    ) -> Result<Thm, HolError> {
+        if reduction.concl() != &self.reduces_prop(initial, old)? {
+            return Err(HolError::Stuck(
+                "reduction retargeting received a theorem for a different endpoint".into(),
+            ));
+        }
+        if equality.concl().as_eq() != Some((old, new)) {
+            return Err(HolError::Stuck(
+                "reduction retargeting received an equality with different endpoints".into(),
+            ));
+        }
+        let value = Term::free("__retarget_reduces_value", self.tau());
+        let body = self.reduces_prop(initial, &value)?;
+        let predicate = Term::abs(self.tau(), subst::close(&body, "__retarget_reduces_value"));
+        beta_nf_concl(equality.cong_arg(predicate).map_err(kernel_err)?)
+            .map_err(kernel_err)?
+            .eq_mp(reduction)
+            .map_err(kernel_err)
     }
 
     // ------------------------------------------------------------------

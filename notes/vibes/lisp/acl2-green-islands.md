@@ -283,9 +283,12 @@ pointwise results only when their initial configurations match. Host execution
 and syntactic equality cannot introduce a theorem: malformed evidence is
 rejected, while successful equality is kernel reflexivity.
 
-This is not yet the universal admission theorem. The remaining severe
-`lisp.acl2.admission-layer` obligation is to prove, over all carrier inputs,
-existence of a terminal relational result and uniqueness of any such result,
-then use those theorems to totalize general admitted ACL2 definitions. The
-pointwise `APPEND` bridge is the executable target and corruption gate for
-that induction proof.
+`APPEND` now also has a closed universal existence theorem:
+`∀x y. Reduces (rel-append x y) (ACL2-APPEND-model x y)`. Its checked proof
+combines ACL2-carrier induction, induction over relational reductions, and the
+conservatively admitted APPEND equation; it performs no host execution.
+
+The remaining severe `lisp.acl2.admission-layer` obligation is to generalize
+that construction to admitted definitions, prove uniqueness of any terminal
+relational result, and totalize only from those theorems. The pointwise bridge
+remains the executable corruption gate for the universal proof.

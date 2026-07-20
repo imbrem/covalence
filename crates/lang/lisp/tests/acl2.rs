@@ -18,7 +18,10 @@
 
 use covalence_init::init::acl2::count::acl2_count_natp_fact;
 use covalence_kernel_lisp::{CoreExpr, Datum};
-use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution};
+use covalence_lisp::acl2::{
+    Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution,
+    replay_acl2_append_existence,
+};
 use covalence_lisp::carrier::Acl2Carrier;
 use covalence_lisp::frontend::{CoreAtom, Frontend, HostSession, SurfaceDialect};
 use covalence_lisp::reader::read_one;
@@ -92,6 +95,13 @@ fn relational_append_agrees_with_conservatively_admitted_acl2_append() {
         evidence.model_agreement.concl().as_eq().unwrap().1,
         &evidence.execution.value
     );
+}
+
+#[test]
+fn relational_append_exists_for_every_acl2_object() {
+    let s = session();
+    let existence = replay_acl2_append_existence(s.induction_env()).unwrap();
+    assert!(existence.theorem.hyps().is_empty());
 }
 
 #[test]

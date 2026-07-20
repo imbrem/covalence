@@ -86,6 +86,7 @@
 use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 
+use covalence_core::subst;
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_int};
@@ -96,6 +97,7 @@ use covalence_init::init::acl2::append::{
     car_of_append_when_consp_fact, cdr_of_append_fact, cdr_of_append_when_consp_fact,
     consp_of_append_fact, equal_when_append_same_fact, with_append, with_append_count_laws,
 };
+use covalence_init::init::acl2::carrier::acl2_payload;
 use covalence_init::init::acl2::count::{
     acl2_count_car_strict_fact, acl2_count_car_weak_fact, acl2_count_cdr_strict_fact,
     acl2_count_cdr_weak_fact, acl2_count_cons_greater_fact, acl2_count_consp_positive_fact,
@@ -103,6 +105,7 @@ use covalence_init::init::acl2::count::{
 };
 use covalence_init::init::acl2::defun::{
     Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun, defun_ground,
+    defun_law,
 };
 use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
@@ -113,10 +116,11 @@ use covalence_init::init::acl2::simplify::{
     FactCache, IndConfig, prove_by_induction, with_arith_rules,
 };
 use covalence_init::init::acl2::term::Terms;
+use covalence_init::init::eq::{beta_expand, beta_reduce};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation, MayEvalReplay,
-    SourcedDefinition, TraceReplay, evaluate,
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
+    EvaluationExistence, MayEvalReplay, SourcedDefinition, TraceReplay, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -223,6 +227,10 @@ impl From<HolError> for Acl2Error {
 
 fn kernel_err(e: impl core::fmt::Display) -> Acl2Error {
     Acl2Error::Eval(HolError::Kernel(e.to_string()))
+}
+
+fn bridge_kernel_err(e: impl core::fmt::Display) -> HolError {
+    HolError::Kernel(e.to_string())
 }
 
 // ============================================================================
@@ -346,8 +354,8 @@ pub struct Acl2HolReplayEvidence {
 /// total model at the same inputs equals that value. Both are closed kernel
 /// theorems; the host driver below carries no theorem authority.
 ///
-/// This is deliberately pointwise. Universal existence and uniqueness over
-/// all ACL2 objects remains the admission-layer obligation.
+/// This is deliberately pointwise. The universal existence theorem is exposed
+/// separately; universal uniqueness remains the admission-layer obligation.
 #[derive(Clone)]
 pub struct Acl2AppendExecutionEvidence {
     pub execution: LispMayEvalEvidence,
@@ -392,6 +400,135 @@ pub fn replay_acl2_append_execution(
         execution,
         model_agreement,
     })
+}
+
+/// Prove universal existence of relational execution for ACL2 `APPEND`.
+///
+/// The result is exactly
+///
+/// ```text
+/// ⊢ ∀x y. Reduces (rel-append x y) (ACL2-APPEND-model x y)
+/// ```
+///
+/// over ACL2's actual object carrier. The proof uses structural induction on
+/// `x`, rule induction for the `Reduces` congruence under `cons`, and the
+/// conservatively admitted APPEND equation. It performs no host execution.
+pub fn replay_acl2_append_existence(
+    environment: &Acl2Env,
+) -> Result<EvaluationExistence<Thm>, HolError> {
+    let (_, append) = environment
+        .user("APPEND")
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let relation = LispRel::over_acl2_carrier()?;
+    let tm = &*environment.tm;
+    let carrier = tm.th.ty.clone();
+    let x = Term::free("__append_total_x", carrier.clone());
+    let y = Term::free("__append_total_y", carrier.clone());
+    let relational = |left: Term, right: Term| relation.append_of(left, right);
+    let model = |left: Term, right: Term| {
+        append
+            .model
+            .clone()
+            .apply(left)
+            .map_err(|error| HolError::Kernel(error.to_string()))?
+            .apply(right)
+            .map_err(|error| HolError::Kernel(error.to_string()))
+    };
+    let body = relation.reduces_prop(
+        &relational(x.clone(), y.clone())?,
+        &model(x.clone(), y.clone())?,
+    )?;
+    let all_y = body
+        .clone()
+        .forall("__append_total_y", carrier.clone())
+        .map_err(|error| HolError::Kernel(error.to_string()))?;
+    let motive = Term::abs(carrier.clone(), subst::close(&all_y, "__append_total_x"));
+
+    let leaf_case = |leaf: Term, step: Thm| -> Result<Thm, HolError> {
+        let input = relational(leaf.clone(), y.clone())?;
+        let raw = relation.reduces_step(&input, &y, &y, step, relation.reduces_refl(&y)?)?;
+        let law = defun_law(environment, append, &[leaf.clone(), y.clone()])
+            .map_err(|error| HolError::Kernel(error.to_string()))?;
+        let model_value = model(leaf.clone(), y.clone())?;
+        let retargeted = relation.retarget_reduces(
+            &input,
+            &y,
+            &model_value,
+            raw,
+            law.sym().map_err(bridge_kernel_err)?,
+        )?;
+        let all_y = retargeted
+            .all_intro("__append_total_y", carrier.clone())
+            .map_err(bridge_kernel_err)?;
+        beta_expand(&motive, leaf, all_y).map_err(bridge_kernel_err)
+    };
+
+    let payload = Term::free("b", acl2_payload());
+    let atom = tm
+        .th
+        .atom
+        .clone()
+        .apply(payload.clone())
+        .map_err(bridge_kernel_err)?;
+    let case_atom = leaf_case(atom, relation.step_append_atom(&payload, &y)?)?;
+    let case_nil = leaf_case(tm.th.nil.clone(), relation.step_append_nil(&y)?)?;
+    let case_cons = {
+        let h = Term::free("h", carrier.clone());
+        let t = Term::free("t", carrier.clone());
+        let ph = motive.clone().apply(h.clone()).map_err(bridge_kernel_err)?;
+        let pt = motive.clone().apply(t.clone()).map_err(bridge_kernel_err)?;
+        let recursive_input = relational(t.clone(), y.clone())?;
+        let recursive_model = model(t.clone(), y.clone())?;
+        let ih = beta_reduce(Thm::assume(pt.clone()).map_err(bridge_kernel_err)?)
+            .map_err(bridge_kernel_err)?
+            .all_elim(y.clone())
+            .map_err(bridge_kernel_err)?;
+        let lifted = relation.reduces_scons_tail(&h, &recursive_input, &recursive_model, ih)?;
+        let cons = relation.scons(h.clone(), t.clone())?;
+        let input = relational(cons.clone(), y.clone())?;
+        let middle = relation.scons(h.clone(), recursive_input)?;
+        let output = relation.scons(h.clone(), recursive_model)?;
+        let step = relation.step_append_cons(&h, &t, &y)?;
+        let raw = relation.reduces_step(&input, &middle, &output, step, lifted)?;
+        let law = defun_law(environment, append, &[cons.clone(), y.clone()])
+            .map_err(|error| HolError::Kernel(error.to_string()))?;
+        let model_value = model(cons.clone(), y.clone())?;
+        let retargeted = relation.retarget_reduces(
+            &input,
+            &output,
+            &model_value,
+            raw,
+            law.sym().map_err(bridge_kernel_err)?,
+        )?;
+        let all_y = retargeted
+            .all_intro("__append_total_y", carrier.clone())
+            .map_err(bridge_kernel_err)?;
+        beta_expand(&motive, cons, all_y)
+            .map_err(bridge_kernel_err)?
+            .imp_intro(&pt)
+            .map_err(bridge_kernel_err)?
+            .imp_intro(&ph)
+            .map_err(bridge_kernel_err)?
+    };
+    let induction = tm
+        .th
+        .induct(&motive, vec![case_atom, case_nil, case_cons])
+        .map_err(bridge_kernel_err)?;
+    let theorem = beta_reduce(induction.all_elim(x.clone()).map_err(bridge_kernel_err)?)
+        .map_err(bridge_kernel_err)?
+        .all_intro("__append_total_x", carrier.clone())
+        .map_err(bridge_kernel_err)?;
+    let expected = body
+        .forall("__append_total_y", carrier.clone())
+        .map_err(bridge_kernel_err)?
+        .forall("__append_total_x", carrier)
+        .map_err(bridge_kernel_err)?;
+    if !theorem.hyps().is_empty() || theorem.concl() != &expected {
+        return Err(HolError::Kernel(
+            "universal ACL2 APPEND existence proof has the wrong theorem shape".into(),
+        ));
+    }
+    Ok(EvaluationExistence { theorem })
 }
 
 impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {

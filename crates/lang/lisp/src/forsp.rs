@@ -15,10 +15,10 @@ use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprV
 use covalence_kernel_lisp::{
     Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
     HostEnvironment, HostEnvironments, LispEnvironment, StackClosure, StackClosureRecord,
-    StackConfiguration, StackInstructionLayer, StackInstructionSyntax, StackInstructionView,
-    StackMachine, StackMachineError, StackMachineValue, StackPrimitiveSemantics,
-    StackProgramSyntax, StackRuntime, StackValue, StackValueLayer, StackValueView, StepRelation,
-    TerminalValue,
+    StackConfiguration, StackEffectMachine, StackEffectMachineError, StackEffectSemantics,
+    StackInstructionLayer, StackInstructionSyntax, StackInstructionView, StackMachine,
+    StackMachineError, StackMachineValue, StackPrimitiveSemantics, StackProgramSyntax,
+    StackRuntime, StackValue, StackValueLayer, StackValueView, StepRelation, TerminalValue,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -1251,24 +1251,96 @@ impl TerminalValue for ForspMachine {
     }
 }
 
-pub type RuntimeForspEffectState<R> =
-    EffectState<StackConfigurationOf<R>, RuntimeForspRequest<<R as StackRuntime>::Value>>;
+/// Forsp's policy for converting effect words into requests and responses.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspEffects;
+
+impl<R> StackEffectSemantics<R> for ForspEffects
+where
+    R: StackRuntime<Primitive = ForspPrimitive>,
+    R::Syntax: StackInstructionView<Effect = ForspEffect>,
+{
+    type Request = RuntimeForspRequest<R::Value>;
+    type Response = RuntimeForspResponse<R::Value>;
+    type Error = RuntimeForspError<R::Error>;
+
+    fn suspend(
+        &self,
+        _runtime: &R,
+        effect: &ForspEffect,
+        mut operands: Vec<R::Value>,
+    ) -> Result<(Vec<R::Value>, Self::Request), Self::Error> {
+        let mut pop = || {
+            operands
+                .pop()
+                .ok_or(RuntimeForspError::Language(ForspError::EmptyStack))
+        };
+        let request = match effect {
+            ForspEffect::Read => RuntimeForspRequest::Read,
+            ForspEffect::Print => RuntimeForspRequest::Print(pop()?),
+            ForspEffect::PointerState => RuntimeForspRequest::PointerState,
+            ForspEffect::PointerRead => RuntimeForspRequest::PointerRead(pop()?),
+            ForspEffect::PointerWrite => {
+                let value = pop()?;
+                let address = pop()?;
+                RuntimeForspRequest::PointerWrite { address, value }
+            }
+            ForspEffect::PointerToObject => RuntimeForspRequest::PointerToObject(pop()?),
+            ForspEffect::PointerFromObject => RuntimeForspRequest::PointerFromObject(pop()?),
+        };
+        Ok((operands, request))
+    }
+
+    fn resume(
+        &self,
+        _runtime: &R,
+        request: &Self::Request,
+        response: Self::Response,
+        mut operands: Vec<R::Value>,
+    ) -> Result<Vec<R::Value>, Self::Error> {
+        match (request, response) {
+            (RuntimeForspRequest::Read, RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerState, RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerRead(_), RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerToObject(_), RuntimeForspResponse::Value(value))
+            | (RuntimeForspRequest::PointerFromObject(_), RuntimeForspResponse::Value(value)) => {
+                operands.push(value);
+            }
+            (RuntimeForspRequest::Print(_), RuntimeForspResponse::Unit)
+            | (RuntimeForspRequest::PointerWrite { .. }, RuntimeForspResponse::Unit) => {}
+            _ => return Err(ForspError::InvalidEffectResponse.into()),
+        }
+        Ok(operands)
+    }
+}
+
+fn forsp_effect_error<E>(
+    error: StackEffectMachineError<
+        StackMachineError<String, ForspEffect, RuntimeForspError<E>, E>,
+        RuntimeForspError<E>,
+    >,
+) -> RuntimeForspError<E> {
+    match error {
+        StackEffectMachineError::Stack(error) => forsp_stack_error(error),
+        StackEffectMachineError::Effect(error) => error,
+    }
+}
+
+pub type RuntimeForspEffectState<R> = covalence_kernel_lisp::StackEffectState<R, ForspEffects>;
 
 /// Forsp effect suspension over a selected stack runtime.
 #[derive(Clone, Debug)]
 pub struct RuntimeForspEffectMachine<R> {
-    pure: RuntimeForspMachine<R>,
+    runtime: R,
 }
 
 impl<R> RuntimeForspEffectMachine<R> {
     pub fn new(runtime: R) -> Self {
-        Self {
-            pure: RuntimeForspMachine::new(runtime),
-        }
+        Self { runtime }
     }
 
     pub fn runtime(&self) -> &R {
-        self.pure.runtime()
+        &self.runtime
     }
 }
 
@@ -1285,58 +1357,16 @@ where
         >,
 {
     pub fn initial(&self, code: R::Code) -> RuntimeForspEffectState<R> {
-        EffectState::Running(self.pure.initial(code))
-    }
-
-    fn request(
-        effect: ForspEffect,
-        continuation: &mut StackConfigurationOf<R>,
-    ) -> Result<RuntimeForspRequest<R::Value>, RuntimeForspError<R::Error>> {
-        let mut pop = || {
-            continuation
-                .operands
-                .pop()
-                .ok_or(RuntimeForspError::Language(ForspError::EmptyStack))
-        };
-        Ok(match effect {
-            ForspEffect::Read => RuntimeForspRequest::Read,
-            ForspEffect::Print => RuntimeForspRequest::Print(pop()?),
-            ForspEffect::PointerState => RuntimeForspRequest::PointerState,
-            ForspEffect::PointerRead => RuntimeForspRequest::PointerRead(pop()?),
-            ForspEffect::PointerWrite => {
-                let value = pop()?;
-                let address = pop()?;
-                RuntimeForspRequest::PointerWrite { address, value }
-            }
-            ForspEffect::PointerToObject => RuntimeForspRequest::PointerToObject(pop()?),
-            ForspEffect::PointerFromObject => RuntimeForspRequest::PointerFromObject(pop()?),
-        })
+        StackEffectMachine::new(&self.runtime, ForspPrimitives, ForspEffects).initial(code)
     }
 
     fn next_effect(
         &self,
         state: &RuntimeForspEffectState<R>,
     ) -> Result<Option<RuntimeForspEffectState<R>>, RuntimeForspError<R::Error>> {
-        match state {
-            EffectState::Suspended(_) | EffectState::Returned(_) => Ok(None),
-            EffectState::Running(configuration) => {
-                let machine = StackMachine::new(self.runtime(), ForspPrimitives);
-                if let Some((StackInstructionLayer::Effect(effect), mut continuation)) = machine
-                    .take_instruction(configuration)
-                    .map_err(forsp_stack_error)?
-                {
-                    let request = Self::request(effect, &mut continuation)?;
-                    return Ok(Some(EffectState::Suspended(EffectSuspension {
-                        continuation,
-                        request,
-                    })));
-                }
-                Ok(Some(match self.pure.next_configuration(configuration)? {
-                    Some(next) => EffectState::Running(next),
-                    None => EffectState::Returned(configuration.clone()),
-                }))
-            }
-        }
+        StackEffectMachine::new(&self.runtime, ForspPrimitives, ForspEffects)
+            .next_effect(state)
+            .map_err(forsp_effect_error)
     }
 }
 
@@ -1439,20 +1469,9 @@ where
         suspension: EffectSuspension<Self::Configuration, Self::Request>,
         response: Self::Response,
     ) -> Result<Self::Configuration, Self::Error> {
-        let mut continuation = suspension.continuation;
-        match (suspension.request, response) {
-            (RuntimeForspRequest::Read, RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerState, RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerRead(_), RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerToObject(_), RuntimeForspResponse::Value(value))
-            | (RuntimeForspRequest::PointerFromObject(_), RuntimeForspResponse::Value(value)) => {
-                continuation.operands.push(value);
-            }
-            (RuntimeForspRequest::Print(_), RuntimeForspResponse::Unit)
-            | (RuntimeForspRequest::PointerWrite { .. }, RuntimeForspResponse::Unit) => {}
-            _ => return Err(ForspError::InvalidEffectResponse.into()),
-        }
-        Ok(continuation)
+        StackEffectMachine::new(&self.runtime, ForspPrimitives, ForspEffects)
+            .resume(suspension, response)
+            .map_err(forsp_effect_error)
     }
 }
 

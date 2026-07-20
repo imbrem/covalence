@@ -268,7 +268,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 262,
+      "words": 264,
       "updated": 0
     },
     {
@@ -718,7 +718,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35807,
+      "words": 35822,
       "updated": 0
     },
     {
@@ -9376,7 +9376,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 82,
+      "words": 87,
       "updated": 0
     },
     {
@@ -9413,6 +9413,15 @@
       "status": "tracked",
       "path": "crates/kernel/lisp/src/stack.rs",
       "words": 296,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/stack_effect.rs",
+      "kind": "file",
+      "title": "stack_effect.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/stack_effect.rs",
+      "words": 238,
       "updated": 0
     },
     {
@@ -10807,7 +10816,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 1774,
+      "words": 1793,
       "updated": 0
     },
     {
@@ -15370,7 +15379,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35807,
+      "words": 35822,
       "updated": 0
     },
     {
@@ -25405,6 +25414,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/stack.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/stack_effect.rs",
       "detail": null
     },
     {

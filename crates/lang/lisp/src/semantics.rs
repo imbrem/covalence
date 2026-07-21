@@ -484,26 +484,19 @@ impl LispSemantics {
         primitive: Primitive,
         arguments: &[FrontendExpr],
     ) -> Result<Term, HolError> {
-        let require_arity = |expected: usize| {
-            if arguments.len() == expected {
-                Ok(())
-            } else {
-                Err(HolError::Stuck(format!(
-                    "{primitive:?} expects {expected} arguments (got {})",
-                    arguments.len()
-                )))
-            }
-        };
+        let expected = primitive.arity();
+        if arguments.len() != expected {
+            return Err(HolError::Stuck(format!(
+                "{primitive:?} expects {expected} arguments (got {})",
+                arguments.len()
+            )));
+        }
         match primitive {
-            Primitive::Cons => {
-                require_arity(2)?;
-                Ok(Term::app(
-                    Term::app(self.cs.scons.clone(), self.compile_core(&arguments[0])?),
-                    self.compile_core(&arguments[1])?,
-                ))
-            }
+            Primitive::Cons => Ok(Term::app(
+                Term::app(self.cs.scons.clone(), self.compile_core(&arguments[0])?),
+                self.compile_core(&arguments[1])?,
+            )),
             Primitive::Car | Primitive::Cdr => {
-                require_arity(1)?;
                 let operator = if primitive == Primitive::Car {
                     self.cs.car.clone()
                 } else {
@@ -512,7 +505,6 @@ impl LispSemantics {
                 Ok(Term::app(operator, self.compile_core(&arguments[0])?))
             }
             Primitive::Atom | Primitive::Consp | Primitive::Null => {
-                require_arity(1)?;
                 let argument = self.compile_core(&arguments[0])?;
                 if primitive == Primitive::Null {
                     Ok(hol_not(Term::app(self.l.consp.clone(), argument)))
@@ -528,10 +520,7 @@ impl LispSemantics {
             Primitive::Integer => {
                 // TODO(cov:lisp.hol.numeric-datum-sum, major): Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement `integer?` uniformly for open terms and nested quoted data.
                 let [argument] = arguments else {
-                    return Err(HolError::Stuck(format!(
-                        "{primitive:?} expects 1 argument (got {})",
-                        arguments.len()
-                    )));
+                    unreachable!("arity checked above")
                 };
                 match argument {
                     CoreExpr::Literal(Datum::Atom(CoreAtom::Integer(_)))
@@ -549,7 +538,6 @@ impl LispSemantics {
                 }
             }
             Primitive::Equal => {
-                require_arity(2)?;
                 let left = self.compile_core(&arguments[0])?;
                 let right = self.compile_core(&arguments[1])?;
                 let ty = left.type_of().map_err(kernel_err)?;
@@ -561,7 +549,6 @@ impl LispSemantics {
                 Ok(Term::app(Term::app(Term::eq_op(ty), left), right))
             }
             Primitive::Append => {
-                require_arity(2)?;
                 let left = self.compile_core(&arguments[0])?;
                 let right = self.compile_core(&arguments[1])?;
                 self.l
@@ -573,7 +560,6 @@ impl LispSemantics {
                     .map_err(kernel_err)
             }
             Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
-                require_arity(2)?;
                 let operation = match primitive {
                     Primitive::Add => IntOp::Add,
                     Primitive::Subtract => IntOp::Sub,

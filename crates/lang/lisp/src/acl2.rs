@@ -1951,9 +1951,11 @@ const INT_OPS: [&str; 7] = ["+", "-", "*", "<=", "=", "zp", "natp"];
 /// `zp` / `natp` unary); `None` for non-arithmetic heads.
 fn int_op_arity(name: &str) -> Option<usize> {
     match name {
-        "+" | "-" | "*" | "<=" | "=" => Some(2),
         "zp" | "natp" => Some(1),
-        _ => None,
+        _ => SurfaceDialect::Acl2Core
+            .primitive(name)
+            .filter(|primitive| primitive.is_numeric() || *primitive == Primitive::Equal)
+            .map(Primitive::arity),
     }
 }
 

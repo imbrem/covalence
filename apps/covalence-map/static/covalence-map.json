@@ -9461,6 +9461,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/atom.rs",
+      "kind": "file",
+      "title": "atom.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/atom.rs",
+      "words": 51,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/effect.rs",
       "kind": "file",
       "title": "effect.rs",
@@ -9512,6 +9521,15 @@
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
       "words": 111,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/primitive.rs",
+      "kind": "file",
+      "title": "primitive.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/primitive.rs",
+      "words": 77,
       "updated": 0
     },
     {
@@ -11266,7 +11284,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 2229,
+      "words": 2231,
       "updated": 0
     },
     {
@@ -11392,7 +11410,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1784,
+      "words": 1770,
       "updated": 0
     },
     {
@@ -19349,7 +19367,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
       "words": 472,
-      "updated": 1784676092
+      "updated": 1784676287
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -26649,6 +26667,12 @@
     {
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/atom.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/effect.rs",
       "detail": null
     },
@@ -26674,6 +26698,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/io.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/primitive.rs",
       "detail": null
     },
     {
@@ -37439,8 +37469,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "cdb4294a19a27d6d26a978dc937e8d74affb34d2",
-      "committedAt": 1784676092
+      "commit": "bb42dae8abc700bee12bd0c4cebbb45148652b04",
+      "committedAt": 1784676287
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

@@ -3381,7 +3381,7 @@
       "summary": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 529,
+      "line": 521,
       "crate": "covalence-lisp"
     },
     {

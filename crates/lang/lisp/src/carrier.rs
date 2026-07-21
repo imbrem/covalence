@@ -32,12 +32,15 @@
 
 use std::sync::{Arc, LazyLock};
 
+use covalence_core::subst;
 use covalence_hol_eval::EvalThm as Thm;
-use covalence_hol_eval::{as_blob, as_int, defs, mk_blob, mk_int};
+use covalence_hol_eval::derived::DerivedRules;
+use covalence_hol_eval::{as_blob, as_int, defs, mk_blob, mk_bool, mk_int};
 use covalence_init::init::acl2::carrier::{Acl2, acl2_payload};
 use covalence_init::init::acl2::prims::{Prims, prims};
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, LeafKind, carved};
+use covalence_init::init::lisp::Lisp as KernelLisp;
 use covalence_init::{Term, Type};
 use covalence_sexp::{AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SExp, SExpr};
 use covalence_types::Int;
@@ -100,6 +103,177 @@ pub fn exact_datum_carved() -> Result<&'static CarvedSExpr, HolError> {
     DATUM
         .as_ref()
         .map_err(|error| HolError::Theory(format!("exact Lisp datum build failed: {error}")))
+}
+
+/// Proof-producing operations specialized to exact `int ⊕ bytes` Lisp data.
+///
+/// This bundles the shared S-expression fixpoint, its ordinary Lisp
+/// catamorphisms, and `integer?`, whose atom branch performs coproduct case
+/// analysis. It is built once and introduces only conservative definitions.
+pub struct ExactDatumTheory {
+    pub sexpr: &'static CarvedSExpr,
+    pub lisp: KernelLisp,
+    integer_p: Term,
+    integer_p_eq: Thm,
+    integer_steps: [Term; 3],
+}
+
+/// Process-global exact datum theory used by Scheme and the exact relational
+/// dialect. ACL2 retains its independently realized but isomorphic carrier.
+pub fn exact_datum_theory() -> Result<&'static ExactDatumTheory, HolError> {
+    static THEORY: LazyLock<std::result::Result<ExactDatumTheory, String>> =
+        LazyLock::new(|| build_exact_datum_theory().map_err(|error| error.to_string()));
+    THEORY
+        .as_ref()
+        .map_err(|error| HolError::Theory(format!("exact Lisp datum theory failed: {error}")))
+}
+
+fn build_exact_datum_theory() -> Result<ExactDatumTheory, HolError> {
+    let sexpr = exact_datum_carved()?;
+    let lisp = KernelLisp::build_with(sexpr, "lisp.datum.ops").map_err(theory_err)?;
+    let payload = Term::free("__payload", int_symbol_payload());
+    let on_int = Term::abs(Type::int(), mk_bool(true));
+    let on_symbol = Term::abs(Type::bytes(), mk_bool(false));
+    let dispatch =
+        covalence_init::init::coprod::coprod_case(Type::int(), Type::bytes(), Type::bool())
+            .apply(on_int)
+            .map_err(kernel_err)?
+            .apply(on_symbol)
+            .map_err(kernel_err)?
+            .apply(payload.clone())
+            .map_err(kernel_err)?;
+    let atom_step = Term::abs(int_symbol_payload(), subst::close(&dispatch, "__payload"));
+    let false_value = mk_bool(false);
+    let cons_step = Term::abs(
+        sexpr.tau.clone(),
+        Term::abs(
+            sexpr.tau.clone(),
+            Term::abs(Type::bool(), Term::abs(Type::bool(), false_value.clone())),
+        ),
+    );
+    let integer_steps = [atom_step, false_value, cons_step];
+    let body = sexpr
+        .prec(&integer_steps, &Type::bool())
+        .map_err(kernel_err)?;
+    let integer_p_eq = Thm::define("lisp.datum.integer?", body).map_err(kernel_err)?;
+    let integer_p = integer_p_eq
+        .concl()
+        .as_eq()
+        .ok_or_else(|| HolError::Kernel("integer? definition is not an equation".into()))?
+        .0
+        .clone();
+    Ok(ExactDatumTheory {
+        sexpr,
+        lisp,
+        integer_p,
+        integer_p_eq,
+        integer_steps,
+    })
+}
+
+impl ExactDatumTheory {
+    pub fn integer_p(&self) -> &Term {
+        &self.integer_p
+    }
+
+    /// Prove `integer? (atom payload)` by coproduct reduction.
+    pub fn integer_atom(&self, payload: &Term) -> Result<Thm, HolError> {
+        let atom = self
+            .sexpr
+            .atom
+            .clone()
+            .apply(payload.clone())
+            .map_err(kernel_err)?;
+        let unfold = self
+            .integer_p_eq
+            .clone()
+            .cong_fn(atom)
+            .map_err(kernel_err)?;
+        let compute = self
+            .sexpr
+            .prec_eq(&self.integer_steps, 0, &Type::bool())
+            .map_err(kernel_err)?
+            .all_elim(payload.clone())
+            .map_err(kernel_err)?;
+        let mut theorem = unfold
+            .trans(compute)
+            .map_err(kernel_err)?
+            .reduce_rhs()
+            .map_err(kernel_err)?;
+        if let Some((injection, value)) = payload.as_app() {
+            let on_int = Term::abs(Type::int(), mk_bool(true));
+            let on_symbol = Term::abs(Type::bytes(), mk_bool(false));
+            let case = if *injection == defs::inl(Type::int(), Type::bytes()) {
+                covalence_init::init::coprod::case_inl(
+                    &Type::int(),
+                    &Type::bytes(),
+                    &Type::bool(),
+                    &on_int,
+                    &on_symbol,
+                    value,
+                )
+            } else if *injection == defs::inr(Type::int(), Type::bytes()) {
+                covalence_init::init::coprod::case_inr(
+                    &Type::int(),
+                    &Type::bytes(),
+                    &Type::bool(),
+                    &on_int,
+                    &on_symbol,
+                    value,
+                )
+            } else {
+                return Err(HolError::Stuck(
+                    "integer? atom has an unknown payload variant".into(),
+                ));
+            };
+            theorem = theorem
+                .trans(case.map_err(kernel_err)?)
+                .map_err(kernel_err)?;
+        }
+        theorem.reduce_rhs().map_err(kernel_err)
+    }
+
+    pub fn integer_nil(&self) -> Result<Thm, HolError> {
+        self.integer_p_eq
+            .clone()
+            .cong_fn(self.sexpr.snil.clone())
+            .map_err(kernel_err)?
+            .trans(
+                self.sexpr
+                    .prec_eq(&self.integer_steps, 1, &Type::bool())
+                    .map_err(kernel_err)?,
+            )
+            .map_err(kernel_err)
+    }
+
+    pub fn integer_cons(&self, head: &Term, tail: &Term) -> Result<Thm, HolError> {
+        let cons = self
+            .sexpr
+            .scons
+            .clone()
+            .apply(head.clone())
+            .map_err(kernel_err)?
+            .apply(tail.clone())
+            .map_err(kernel_err)?;
+        let unfold = self
+            .integer_p_eq
+            .clone()
+            .cong_fn(cons)
+            .map_err(kernel_err)?;
+        let compute = self
+            .sexpr
+            .prec_eq(&self.integer_steps, 2, &Type::bool())
+            .map_err(kernel_err)?
+            .all_elim(head.clone())
+            .map_err(kernel_err)?
+            .all_elim(tail.clone())
+            .map_err(kernel_err)?;
+        unfold
+            .trans(compute)
+            .map_err(kernel_err)?
+            .reduce_rhs()
+            .map_err(kernel_err)
+    }
 }
 
 // ============================================================================

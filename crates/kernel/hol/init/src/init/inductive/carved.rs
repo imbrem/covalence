@@ -1183,7 +1183,7 @@ impl CarvedSExpr {
     /// fully applied to the three step terms (their types are
     /// [`para_step_tys`]`(tau, beta)`). This is the term the Lisp layer
     /// [`Thm::define`]s a total recursive function as.
-    pub(crate) fn prec(&self, steps: &[Term], beta: &Type) -> Result<Term> {
+    pub fn prec(&self, steps: &[Term], beta: &Type) -> Result<Term> {
         let (rec, _) = self.rec_at(beta)?;
         let mut r = rec;
         for s in steps {
@@ -1197,7 +1197,7 @@ impl CarvedSExpr {
     /// (`r⃗` = the recursive arguments among `x⃗`). The `rec s⃗ …`
     /// applications match [`Self::prec`]`(steps, beta).apply(…)` verbatim,
     /// so an unfolded definition rewrites against this equation directly.
-    pub(crate) fn prec_eq(&self, steps: &[Term], i: usize, beta: &Type) -> Result<Thm> {
+    pub fn prec_eq(&self, steps: &[Term], i: usize, beta: &Type) -> Result<Thm> {
         let (_, eqs) = self.rec_at(beta)?;
         let mut eq = eqs.get(i).cloned().ok_or_else(|| {
             Error::ConnectiveRule(format!("carved prec_eq: bad constructor index {i}"))

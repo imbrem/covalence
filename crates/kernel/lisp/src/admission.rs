@@ -70,6 +70,13 @@ pub struct DuplicateDefinition<S> {
     pub duplicate: usize,
 }
 
+/// A direct call between members of a [`DefinitionGroup`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DefinitionDependency {
+    pub caller: usize,
+    pub callee: usize,
+}
+
 impl<S: PartialEq, E> DefinitionGroup<S, E> {
     pub fn new(definitions: Vec<Definition<S, E>>) -> Result<Self, DuplicateDefinition<S>>
     where
@@ -109,6 +116,135 @@ impl<S: Clone, D, P> DefinitionGroup<S, CoreExpr<S, D, P>> {
                 (name, definition.into_recursive_lambda())
             })
             .collect()
+    }
+}
+
+impl<S: Clone + PartialEq, D, P> DefinitionGroup<S, CoreExpr<S, D, P>> {
+    /// Direct group-member calls, after lexical shadowing is accounted for.
+    pub fn dependencies(&self) -> Vec<DefinitionDependency> {
+        let names: Vec<_> = self
+            .definitions
+            .iter()
+            .map(|definition| definition.name.clone())
+            .collect();
+        let mut dependencies = Vec::new();
+        for (caller, definition) in self.definitions.iter().enumerate() {
+            let mut bound = definition.parameters.clone();
+            bound.extend(definition.rest.iter().cloned());
+            collect_dependencies(
+                &definition.body,
+                &names,
+                &mut bound,
+                caller,
+                &mut dependencies,
+            );
+        }
+        dependencies
+    }
+}
+
+fn collect_dependencies<S: Clone + PartialEq, D, P>(
+    expression: &CoreExpr<S, D, P>,
+    group_names: &[S],
+    bound: &mut Vec<S>,
+    caller: usize,
+    output: &mut Vec<DefinitionDependency>,
+) {
+    macro_rules! visit {
+        ($child:expr) => {
+            collect_dependencies($child, group_names, bound, caller, output)
+        };
+    }
+    match expression {
+        CoreExpr::Literal(_)
+        | CoreExpr::Truth(_)
+        | CoreExpr::Variable(_)
+        | CoreExpr::Quote(_)
+        | CoreExpr::PrimitiveValue(_)
+        | CoreExpr::ApplyListProcedure => {}
+        CoreExpr::If {
+            condition,
+            consequent,
+            alternative,
+        } => {
+            visit!(condition);
+            visit!(consequent);
+            visit!(alternative);
+        }
+        CoreExpr::Cond { clauses } => {
+            for (condition, branch) in clauses {
+                visit!(condition);
+                visit!(branch);
+            }
+        }
+        CoreExpr::Sequence { first, rest } => {
+            visit!(first);
+            for child in rest {
+                visit!(child);
+            }
+        }
+        CoreExpr::Lambda {
+            name,
+            parameters,
+            rest,
+            body,
+        } => {
+            let old_len = bound.len();
+            bound.extend(name.iter().cloned());
+            bound.extend(parameters.iter().map(|parameter| parameter.name.clone()));
+            bound.extend(rest.iter().map(|parameter| parameter.name.clone()));
+            visit!(body);
+            bound.truncate(old_len);
+        }
+        CoreExpr::Apply {
+            operator,
+            arguments,
+        }
+        | CoreExpr::ApplyList {
+            operator,
+            arguments,
+            tail: _,
+        } => {
+            if let CoreExpr::Variable(name) = operator.as_ref()
+                && !bound.contains(name)
+                && let Some(callee) = group_names.iter().position(|candidate| candidate == name)
+            {
+                let dependency = DefinitionDependency { caller, callee };
+                if !output.contains(&dependency) {
+                    output.push(dependency);
+                }
+            }
+            visit!(operator);
+            for argument in arguments {
+                visit!(argument);
+            }
+            if let CoreExpr::ApplyList { tail, .. } = expression {
+                visit!(tail);
+            }
+        }
+        CoreExpr::Let { bindings, body } => {
+            for binding in bindings {
+                visit!(&binding.value);
+            }
+            let old_len = bound.len();
+            bound.extend(bindings.iter().map(|binding| binding.name.clone()));
+            visit!(body);
+            bound.truncate(old_len);
+        }
+        CoreExpr::LetRec { bindings, body } => {
+            let old_len = bound.len();
+            bound.extend(bindings.iter().map(|binding| binding.name.clone()));
+            for binding in bindings {
+                visit!(&binding.value);
+            }
+            visit!(body);
+            bound.truncate(old_len);
+        }
+        CoreExpr::Primitive { arguments, .. } => {
+            for argument in arguments {
+                visit!(argument);
+            }
+        }
     }
 }
 
@@ -332,6 +468,40 @@ mod tests {
                 first: 0,
                 duplicate: 2,
             })
+        );
+    }
+
+    #[test]
+    fn definition_dependencies_respect_lexical_shadowing() {
+        type Expr = CoreExpr<&'static str, (), ()>;
+        let call = |name| Expr::Apply {
+            operator: Box::new(Expr::Variable(name)),
+            arguments: Vec::new(),
+        };
+        let definitions = DefinitionGroup::new(vec![
+            Definition::fixed("even", vec!["n"], call("odd")),
+            Definition::fixed(
+                "odd",
+                vec!["even"],
+                Expr::Sequence {
+                    first: Box::new(call("even")),
+                    rest: vec![call("odd")],
+                },
+            ),
+        ])
+        .unwrap();
+        assert_eq!(
+            definitions.dependencies(),
+            vec![
+                DefinitionDependency {
+                    caller: 0,
+                    callee: 1,
+                },
+                DefinitionDependency {
+                    caller: 1,
+                    callee: 1,
+                },
+            ]
         );
     }
 

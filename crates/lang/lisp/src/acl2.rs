@@ -123,7 +123,7 @@ use covalence_init::init::inductive::determinacy::graph_det;
 use covalence_init::init::inductive::existence::graph_total;
 use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, DefinitionGroup, Evaluation,
     EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
     MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
 };
@@ -1092,6 +1092,15 @@ impl Acl2Session {
             body.clone(),
         );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
+        let core_recursive = !DefinitionGroup::new(vec![definition.core.clone()])
+            .expect("a singleton definition group has unique binders")
+            .dependencies()
+            .is_empty();
+        if core_recursive != (admission.recursive_calls > 0) {
+            return Err(inadmissible(
+                "surface and lowered-core recursion analyses disagree".into(),
+            ));
+        }
         let mut operational = self.operational.clone();
         operational
             .define_core(definition.core.clone())

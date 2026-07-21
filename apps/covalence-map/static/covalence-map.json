@@ -286,7 +286,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 349,
+      "words": 351,
       "updated": 0
     },
     {
@@ -9439,7 +9439,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 491,
+      "words": 661,
       "updated": 0
     },
     {
@@ -11257,7 +11257,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 2335,
+      "words": 2344,
       "updated": 0
     },
     {
@@ -17233,7 +17233,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 82,
+      "words": 84,
       "updated": 0
     },
     {
@@ -19339,8 +19339,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 406,
-      "updated": 1784674239
+      "words": 420,
+      "updated": 1784675104
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37424,8 +37424,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "27331abb86a546f1dad9f9478e659d54d3caa65f",
-      "committedAt": 1784674239
+      "commit": "c4f7b15fba860b114f8af51fa1561d51aac7ae73",
+      "committedAt": 1784675104
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

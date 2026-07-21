@@ -63,7 +63,9 @@ pub use host::{
     MachineControl, MachineFrame,
 };
 pub use inductive_runtime::{
-    InductiveRuntimeError, InductiveRuntimeValue, InductiveRuntimeValues, RuntimeExternal,
+    InductiveClosure, InductiveClosureKind, InductiveClosures, InductiveEnvironment,
+    InductiveLispRuntimeError, InductiveLispValue, InductiveRuntime, InductiveRuntimeError,
+    InductiveRuntimeValue, InductiveRuntimeValues, RuntimeExternal,
 };
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{

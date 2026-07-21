@@ -286,7 +286,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 345,
+      "words": 347,
       "updated": 0
     },
     {
@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37507,
+      "words": 37531,
       "updated": 0
     },
     {
@@ -9443,6 +9443,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/inductive_runtime.rs",
+      "kind": "file",
+      "title": "inductive_runtime.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/inductive_runtime.rs",
+      "words": 509,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/io.rs",
       "kind": "file",
       "title": "io.rs",
@@ -9457,7 +9466,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 99,
+      "words": 101,
       "updated": 0
     },
     {
@@ -11230,7 +11239,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1732,
+      "words": 1795,
       "updated": 0
     },
     {
@@ -15865,7 +15874,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37507,
+      "words": 37531,
       "updated": 0
     },
     {
@@ -16658,6 +16667,15 @@
       "status": "tracked",
       "path": "notes/projects/json-inductive-composition.toml",
       "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/lisp-foundation.toml",
+      "kind": "file",
+      "title": "lisp-foundation.toml",
+      "status": "tracked",
+      "path": "notes/projects/lisp-foundation.toml",
+      "words": 25,
       "updated": 0
     },
     {
@@ -26503,6 +26521,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/host.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/inductive_runtime.rs",
       "detail": null
     },
     {

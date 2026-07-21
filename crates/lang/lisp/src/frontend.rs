@@ -1197,9 +1197,12 @@ where
 }
 
 pub type HostFrontendRuntime = covalence_kernel_lisp::HostRuntime<String, CoreAtom, Primitive>;
+pub type InductiveFrontendRuntime =
+    covalence_kernel_lisp::InductiveRuntime<String, CoreAtom, Primitive>;
 pub type HostSession = RuntimeSession<HostFrontendRuntime>;
 pub type HostSessionError = RuntimeSessionError<HostFrontendRuntime>;
 pub type ArenaSession = RuntimeSession<ArenaFrontendRuntime>;
+pub type InductiveSession = RuntimeSession<InductiveFrontendRuntime>;
 
 impl<R> RuntimeSession<R, StandardPrimitives>
 where
@@ -1241,6 +1244,17 @@ impl RuntimeSession<ArenaFrontendRuntime> {
         fuel: usize,
     ) -> Result<Self, RuntimeSessionError<ArenaFrontendRuntime>> {
         Self::with_runtime(dialect, fuel, ArenaFrontendRuntime::default())
+    }
+}
+
+impl RuntimeSession<InductiveFrontendRuntime> {
+    /// Build a session whose recursive runtime values are realized through
+    /// the shared `data/inductive` backend.
+    pub fn inductive(
+        dialect: SurfaceDialect,
+        fuel: usize,
+    ) -> Result<Self, RuntimeSessionError<InductiveFrontendRuntime>> {
+        Self::with_runtime(dialect, fuel, InductiveFrontendRuntime::default())
     }
 }
 
@@ -1347,6 +1361,15 @@ mod tests {
         }
     }
 
+    fn run_inductive(source: &str) -> CoreAtom {
+        let session = InductiveSession::inductive(SurfaceDialect::Scheme, 512).unwrap();
+        let value = session.evaluate(&one(source)).unwrap();
+        match session.runtime().values().view(&value).unwrap() {
+            RuntimeValueView::Atom(atom) => atom,
+            other => panic!("expected atom, got {other:?}"),
+        }
+    }
+
     #[test]
     fn sector_pairs_lower_to_the_common_core() {
         assert_eq!(
@@ -1418,6 +1441,26 @@ mod tests {
             run_arena("(let ((invoke apply)) (invoke + (quote (20 22))))"),
             CoreAtom::Integer(Int::from(42)),
             "first-class primitive and apply-list dispatch share the owned argument API"
+        );
+    }
+
+    #[test]
+    fn scheme_programs_run_unchanged_on_the_inductive_runtime() {
+        assert_eq!(
+            run_inductive(
+                "(letrec ((length
+                            (lambda (xs)
+                              (if (null? xs)
+                                  0
+                                  (+ 1 (length (cdr xs)))))))
+                   (length (quote (a b c d))))"
+            ),
+            CoreAtom::Integer(Int::from(4))
+        );
+        assert_eq!(
+            run_inductive("(let ((invoke apply)) (invoke + (quote (20 22))))"),
+            CoreAtom::Integer(Int::from(42)),
+            "first-class procedures and proper-list splicing survive the inductive backend"
         );
     }
 
@@ -1682,6 +1725,18 @@ mod tests {
         .unwrap()
         .expect("result contains only data");
         assert_eq!(datum, Datum::list([Datum::Atom(CoreAtom::symbol("value"))]));
+
+        let mut session = InductiveSession::inductive(SurfaceDialect::Scheme, 256).unwrap();
+        session.define_group(&forms).unwrap();
+        let value = session.evaluate(&one("(first (quote value))")).unwrap();
+        let datum = covalence_kernel_lisp::project_datum(
+            session.runtime().data(),
+            session.runtime().values(),
+            &value,
+        )
+        .unwrap()
+        .expect("result contains only data");
+        assert_eq!(datum, Datum::list([Datum::Atom(CoreAtom::symbol("value"))]));
     }
 
     #[test]
@@ -1726,6 +1781,14 @@ mod tests {
         assert_eq!(
             session.evaluate(&one("(add1 41)")).unwrap(),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+
+        let mut session = InductiveSession::inductive(SurfaceDialect::Acl2Core, 128).unwrap();
+        session.define(&one("(defun add1 (x) (+ x 1))")).unwrap();
+        let value = session.evaluate(&one("(add1 41)")).unwrap();
+        assert_eq!(
+            session.runtime().values().view(&value).unwrap(),
+            RuntimeValueView::Atom(CoreAtom::Integer(Int::from(42)))
         );
     }
 }

@@ -5,12 +5,17 @@
 //! inductive values. The evaluator-facing API is nevertheless exactly
 //! [`crate::LispMachineValue`].
 
+use core::convert::Infallible;
+use core::fmt::{Display, Formatter};
+
 use covalence_sexpr_api::{
     EncodingError, InductiveRepresentation, RawArgument, RawEncoding, RawInductive,
 };
 
 use crate::{
-    LispMachineValue, LispValue, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
+    ClosureRecord, CoreExpr, CoreSyntax, HostEnvironment, HostEnvironments, LispClosure,
+    LispMachineValue, LispRuntime, LispRuntimeSnapshot, LispValue, Resource, ResourceArena,
+    ResourceError, ResourceTable, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
     RuntimeValueView, runtime_value_fixpoint,
 };
 
@@ -43,6 +48,100 @@ pub type InductiveRuntimeValue<A, C, P> =
 #[derive(Clone, Debug)]
 pub struct InductiveRuntimeValues<A, C, P> {
     encoding: RawEncoding<RuntimeValueParameter, RuntimeExternal<A, C, P>>,
+}
+
+/// Resource kind for closures captured by [`InductiveRuntime`].
+pub enum InductiveClosureKind {}
+
+/// Opaque closure handle used by the complete inductive runtime bundle.
+pub type InductiveClosure = Resource<InductiveClosureKind>;
+
+/// Values of a complete inductive runtime.
+pub type InductiveLispValue<A, P> = InductiveRuntimeValue<A, InductiveClosure, P>;
+
+/// Persistent lexical environment of a complete inductive runtime.
+pub type InductiveEnvironment<S, A, P> = HostEnvironment<S, InductiveLispValue<A, P>>;
+
+type StoredClosure<S, A, P> = ClosureRecord<
+    S,
+    CoreExpr<S, covalence_sexpr_api::FreeSExpr<A>, P>,
+    InductiveEnvironment<S, A, P>,
+>;
+
+/// Closure capability backed by a typed resource table.
+#[derive(Clone, Debug)]
+pub struct InductiveClosures<S, A, P> {
+    closures: ResourceTable<InductiveClosureKind, StoredClosure<S, A, P>>,
+}
+
+impl<S, A, P> LispClosure for InductiveClosures<S, A, P>
+where
+    S: Clone,
+    A: Clone,
+    P: Clone,
+{
+    type Symbol = S;
+    type Expr = CoreExpr<S, covalence_sexpr_api::FreeSExpr<A>, P>;
+    type Environment = InductiveEnvironment<S, A, P>;
+    type Closure = InductiveClosure;
+    type Error = ResourceError;
+
+    fn close(
+        &self,
+        record: ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error> {
+        Ok(self.closures.insert(record))
+    }
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>, Self::Error> {
+        self.closures.get_cloned(*closure)
+    }
+}
+
+/// Coherent failure channel for [`InductiveRuntime`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InductiveLispRuntimeError {
+    Value(InductiveRuntimeError),
+    Resource(ResourceError),
+}
+
+impl Display for InductiveLispRuntimeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Value(error) => write!(f, "inductive Lisp value error: {error:?}"),
+            Self::Resource(error) => Display::fmt(error, f),
+        }
+    }
+}
+
+impl core::error::Error for InductiveLispRuntimeError {}
+
+/// Complete CEK runtime whose recursive values use `data/inductive`.
+#[derive(Clone, Debug)]
+pub struct InductiveRuntime<S, A, P> {
+    data: covalence_sexpr_api::Free<A>,
+    values: InductiveRuntimeValues<A, InductiveClosure, P>,
+    expressions: CoreSyntax<S, A, P>,
+    closures: InductiveClosures<S, A, P>,
+    environments: HostEnvironments<S, InductiveLispValue<A, P>>,
+}
+
+impl<S, A, P> Default for InductiveRuntime<S, A, P> {
+    fn default() -> Self {
+        let arena = ResourceArena::new();
+        Self {
+            data: covalence_sexpr_api::Free::new(),
+            values: InductiveRuntimeValues::new(),
+            expressions: CoreSyntax::default(),
+            closures: InductiveClosures {
+                closures: arena.table("inductive Lisp closure"),
+            },
+            environments: HostEnvironments::default(),
+        }
+    }
 }
 
 impl<A, C, P> Default for InductiveRuntimeValues<A, C, P> {
@@ -264,6 +363,91 @@ where
                 Ok(RuntimeValueLayer::ApplyListProcedure)
             }
             _ => Err(InductiveRuntimeError::MalformedValue),
+        }
+    }
+}
+
+impl<S, A, P> LispRuntime for InductiveRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone + PartialEq,
+    P: Clone + PartialEq,
+{
+    type Symbol = S;
+    type Atom = A;
+    type Datum = covalence_sexpr_api::FreeSExpr<A>;
+    type Primitive = P;
+    type Expr = CoreExpr<S, Self::Datum, P>;
+    type Value = InductiveLispValue<A, P>;
+    type Closure = InductiveClosure;
+    type Environment = InductiveEnvironment<S, A, P>;
+    type Error = InductiveLispRuntimeError;
+    type Data = covalence_sexpr_api::Free<A>;
+    type Values = InductiveRuntimeValues<A, InductiveClosure, P>;
+    type Expressions = CoreSyntax<S, A, P>;
+    type Closures = InductiveClosures<S, A, P>;
+    type Environments = HostEnvironments<S, Self::Value>;
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn data(&self) -> &Self::Data {
+        &self.data
+    }
+
+    fn expressions(&self) -> &Self::Expressions {
+        &self.expressions
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+
+    fn data_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn value_error(&self, error: InductiveRuntimeError) -> Self::Error {
+        InductiveLispRuntimeError::Value(error)
+    }
+
+    fn expression_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn syntax_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn closure_error(&self, error: ResourceError) -> Self::Error {
+        InductiveLispRuntimeError::Resource(error)
+    }
+
+    fn environment_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+}
+
+impl<S, A, P> LispRuntimeSnapshot for InductiveRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone + PartialEq,
+    P: Clone + PartialEq,
+{
+    fn replay_snapshot(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            values: self.values.clone(),
+            expressions: self.expressions.clone(),
+            closures: InductiveClosures {
+                closures: self.closures.closures.snapshot(),
+            },
+            environments: self.environments.clone(),
         }
     }
 }

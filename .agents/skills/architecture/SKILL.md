@@ -79,10 +79,12 @@ disable-model-invocation: true
     `runtime_value_fixpoint`. `HostValues` is the direct enum realization,
     `ArenaValues` is the opaque-resource realization, and
     `InductiveRuntimeValues` is the representation-stress realization built
-    through `data/inductive`. Primitive dictionaries must remain generic over
-    `LispValue`; conformance tests exercise Scheme primitives on the inductive
-    realization so the polynomial declaration cannot degrade into dead
-    metadata.
+    through `data/inductive`. `InductiveRuntime` completes it with direct core
+    syntax, persistent recursive environments, and opaque closure resources;
+    full Scheme recursion, first-class `apply`, definition groups, and ACL2
+    `defun` execution run through the same CEK transition code. Primitive
+    dictionaries must remain generic over `LispValue` so the polynomial
+    declaration cannot degrade into dead metadata.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated

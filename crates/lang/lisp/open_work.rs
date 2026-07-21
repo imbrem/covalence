@@ -11,6 +11,5 @@
 // TODO(cov:lang.lisp.value-semantics-integers-are-typed-int-terms-not-sexpr-data, minor): Value-semantics integers are typed int terms, not sexpr data: Great
 // TODO(cov:lang.lisp.forward-references-default-to-sexpr-sexpr, minor): Forward references default to sexpr… → sexpr: A call to a not-yet-defined
 // TODO(cov:lang.lisp.carved-sexpr-rename-pending, minor): carved → sexpr rename pending: The code still uses the carved jargon
-// TODO(cov:lang.lisp.null-is-the-consp-complement, minor): null? is the consp complement: (⊢ ¬ consp v), correct on lists;
 // TODO(cov:lang.lisp.eq-is-atoms-only, minor): eq? is atoms-only: Both operands must reduce to atom b values; the
 // TODO(cov:lang.lisp.predicate-eq-values-are-bool-literals-data-values-are-sexpr, minor): Predicate/eq? values are bool literals, data values are sexpr: See

@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37867,
+      "words": 37858,
       "updated": 0
     },
     {
@@ -9529,7 +9529,7 @@
       "title": "primitive.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/primitive.rs",
-      "words": 77,
+      "words": 79,
       "updated": 0
     },
     {
@@ -11257,7 +11257,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/open_work.rs",
-      "words": 17,
+      "words": 16,
       "updated": 0
     },
     {
@@ -11338,7 +11338,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 2038,
+      "words": 2060,
       "updated": 0
     },
     {
@@ -11392,7 +11392,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2847,
+      "words": 2831,
       "updated": 0
     },
     {
@@ -11410,7 +11410,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1770,
+      "words": 1771,
       "updated": 0
     },
     {
@@ -15982,7 +15982,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37867,
+      "words": 37858,
       "updated": 0
     },
     {
@@ -16099,7 +16099,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3869,
+      "words": 3859,
       "updated": 0
     },
     {
@@ -17260,7 +17260,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 96,
+      "words": 97,
       "updated": 0
     },
     {
@@ -19366,8 +19366,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 513,
-      "updated": 1784676901
+      "words": 532,
+      "updated": 1784676985
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -23081,15 +23081,6 @@
       "id": "todo:lang.lisp.forward-references-default-to-sexpr-sexpr",
       "kind": "todo",
       "title": "Forward references default to sexpr… → sexpr: A call to a not-yet-defined",
-      "status": "minor",
-      "path": "crates/lang/lisp/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lang.lisp.null-is-the-consp-complement",
-      "kind": "todo",
-      "title": "null? is the consp complement: (⊢ ¬ consp v), correct on lists;",
       "status": "minor",
       "path": "crates/lang/lisp/open_work.rs",
       "words": 0,
@@ -37469,8 +37460,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "01f1cc670697bf8a49299da80dca2044912b5a49",
-      "committedAt": 1784676901
+      "commit": "4e80bd51c41fc82fc8db37b26b0f059ba49249aa",
+      "committedAt": 1784676985
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

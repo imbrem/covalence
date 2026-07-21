@@ -54,6 +54,7 @@ impl SurfaceDialect {
             "atom?" | "atom" => Primitive::Atom,
             "consp" | "pair?" => Primitive::Consp,
             "null?" | "null" => Primitive::Null,
+            "not" if self == Self::Scheme => Primitive::Not,
             "integer?" | "integerp" => Primitive::Integer,
             "eq?" | "equal" => Primitive::Equal,
             "=" if self.parses_integers() => Primitive::Equal,
@@ -860,6 +861,11 @@ where
                 );
                 self.truth(runtime, is_nil)
             }
+            Primitive::Not => {
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_false = self.is_false(runtime, &value)?;
+                self.truth(runtime, is_false)
+            }
             Primitive::Integer => {
                 let [value] = self.values::<_, 1>(arguments)?;
                 let is_integer = matches!(
@@ -1029,6 +1035,7 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
     ("consp", Primitive::Consp),
     ("null?", Primitive::Null),
     ("null", Primitive::Null),
+    ("not", Primitive::Not),
     ("integer?", Primitive::Integer),
     ("integerp", Primitive::Integer),
     ("eq?", Primitive::Equal),
@@ -1764,6 +1771,21 @@ mod tests {
                 "(let ((#%covalence-or-0 7)) (or nil #%covalence-or-0))"
             ),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(7))))
+        );
+        let truth = CoreAtom::symbol("t");
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(not nil)"),
+            HostValue::datum(Datum::Atom(truth.clone()))
+        );
+        assert_eq!(run_arena("(not nil)"), truth.clone());
+        assert_eq!(run_inductive("(not nil)"), truth);
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(not (quote value))"),
+            HostValue::datum(Datum::Nil)
+        );
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(null? (quote value))"),
+            HostValue::datum(Datum::Nil)
         );
     }
 

@@ -53,7 +53,8 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   and `data/inductive` stack-value representations.
 - The HOL frontend has equational and relational adapters. Concrete checked
   executions can cross into HOL without treating host evaluation as theorem
-  authority.
+  authority. `null?` and Scheme `not` use exact equality with `nil`, rather
+  than conflating every non-cons atom with the false value.
 - ACL2 has readers, event/world handling, book linking, a checked derivation
   path, corpus reporting, and concrete operational evidence through the common
   Lisp runtime.

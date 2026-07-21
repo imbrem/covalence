@@ -504,18 +504,21 @@ impl LispSemantics {
                 };
                 Ok(Term::app(operator, self.compile_core(&arguments[0])?))
             }
-            Primitive::Atom | Primitive::Consp | Primitive::Null => {
+            Primitive::Atom | Primitive::Consp => {
                 let argument = self.compile_core(&arguments[0])?;
-                if primitive == Primitive::Null {
-                    Ok(hol_not(Term::app(self.l.consp.clone(), argument)))
+                let operator = if primitive == Primitive::Atom {
+                    self.l.atom_p.clone()
                 } else {
-                    let operator = if primitive == Primitive::Atom {
-                        self.l.atom_p.clone()
-                    } else {
-                        self.l.consp.clone()
-                    };
-                    Ok(Term::app(operator, argument))
-                }
+                    self.l.consp.clone()
+                };
+                Ok(Term::app(operator, argument))
+            }
+            Primitive::Null | Primitive::Not => {
+                let argument = self.compile_core(&arguments[0])?;
+                Ok(Term::app(
+                    Term::app(Term::eq_op(self.cs.tau.clone()), argument),
+                    self.cs.snil.clone(),
+                ))
             }
             Primitive::Integer => {
                 // TODO(cov:lisp.hol.numeric-datum-sum, major): Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement `integer?` uniformly for open terms and nested quoted data.
@@ -660,12 +663,10 @@ impl LispSemantics {
             }
             ("atom?" | "atom", 1) => Ok(Term::app(self.l.atom_p.clone(), self.compile(&args[0])?)),
             ("consp" | "pair?", 1) => Ok(Term::app(self.l.consp.clone(), self.compile(&args[0])?)),
-            // `null? E` compiles to `¬ (consp E)` — congruential: `consp v`
-            // fires to a literal, then `¬ literal` folds via `simp`.
-            ("null?" | "null", 1) => Ok(hol_not(Term::app(
-                self.l.consp.clone(),
-                self.compile(&args[0])?,
-            ))),
+            ("null?" | "null" | "not", 1) => Ok(Term::app(
+                Term::app(Term::eq_op(self.cs.tau.clone()), self.compile(&args[0])?),
+                self.cs.snil.clone(),
+            )),
             // `eq?` compiles to the **real HOL equation** `a = b : bool` at
             // element type `sexpr`. It is congruential (operands reduce to atom
             // values first); once both are atoms, the leaf step

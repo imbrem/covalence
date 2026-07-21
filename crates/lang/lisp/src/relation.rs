@@ -1736,26 +1736,19 @@ impl LispRel {
         primitive: Primitive,
         arguments: &[FrontendExpr],
     ) -> Result<Term, HolError> {
-        let require_arity = |expected: usize| {
-            if arguments.len() == expected {
-                Ok(())
-            } else {
-                Err(HolError::Stuck(format!(
-                    "{primitive:?} expects {expected} arguments (got {})",
-                    arguments.len()
-                )))
-            }
-        };
+        let expected = primitive.arity();
+        if arguments.len() != expected {
+            return Err(HolError::Stuck(format!(
+                "{primitive:?} expects {expected} arguments (got {})",
+                arguments.len()
+            )));
+        }
         match primitive {
-            Primitive::Cons => {
-                require_arity(2)?;
-                self.scons(
-                    self.compile_core(&arguments[0])?,
-                    self.compile_core(&arguments[1])?,
-                )
-            }
+            Primitive::Cons => self.scons(
+                self.compile_core(&arguments[0])?,
+                self.compile_core(&arguments[1])?,
+            ),
             Primitive::Car | Primitive::Cdr => {
-                require_arity(1)?;
                 let argument = self.compile_core(&arguments[0])?;
                 if primitive == Primitive::Car {
                     self.car(argument)
@@ -1763,22 +1756,17 @@ impl LispRel {
                     self.cdr(argument)
                 }
             }
-            Primitive::Atom | Primitive::Consp | Primitive::Null => {
-                require_arity(1)?;
+            Primitive::Atom | Primitive::Consp | Primitive::Null | Primitive::Not => {
                 let argument = self.compile_core(&arguments[0])?;
                 match primitive {
                     Primitive::Atom => self.atom_p_of(argument),
                     Primitive::Consp => self.consp_of(argument),
-                    Primitive::Null => self.null_p_of(argument),
+                    Primitive::Null | Primitive::Not => self.null_p_of(argument),
                     _ => unreachable!(),
                 }
             }
-            Primitive::Integer => {
-                require_arity(1)?;
-                self.integer_p_of(self.compile_core(&arguments[0])?)
-            }
+            Primitive::Integer => self.integer_p_of(self.compile_core(&arguments[0])?),
             Primitive::Equal => {
-                require_arity(2)?;
                 let left = self.compile_core(&arguments[0])?;
                 let right = self.compile_core(&arguments[1])?;
                 if self
@@ -1791,15 +1779,11 @@ impl LispRel {
                     self.eq_of(left, right)
                 }
             }
-            Primitive::Append => {
-                require_arity(2)?;
-                self.append_of(
-                    self.compile_core(&arguments[0])?,
-                    self.compile_core(&arguments[1])?,
-                )
-            }
+            Primitive::Append => self.append_of(
+                self.compile_core(&arguments[0])?,
+                self.compile_core(&arguments[1])?,
+            ),
             Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
-                require_arity(2)?;
                 let operation = match primitive {
                     Primitive::Add => IntOp::Add,
                     Primitive::Subtract => IntOp::Sub,

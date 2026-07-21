@@ -8,6 +8,7 @@ pub enum LispPrimitive {
     Atom,
     Consp,
     Null,
+    Not,
     Integer,
     Equal,
     Add,
@@ -33,6 +34,7 @@ impl LispPrimitive {
             | Self::Atom
             | Self::Consp
             | Self::Null
+            | Self::Not
             | Self::Integer
             | Self::Write => 1,
             Self::Cons

@@ -37,7 +37,6 @@
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::Term;
-use covalence_kernel_lisp::Definition as LispDefinition;
 use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
 use covalence_sexp::SExpr;
 
@@ -305,80 +304,15 @@ impl Session {
     /// definition? If so, add the assumed equation to the dictionary and
     /// return the function name (for the ack), else `Ok(None)`.
     pub fn try_define(&mut self, form: &SExpr) -> Result<Option<String>, HolError> {
-        let SExpr::List(items) = form else {
+        let Some(definition) = Frontend::new(SurfaceDialect::Scheme)
+            .lower_definition(form)
+            .map_err(|error| HolError::Stuck(error.to_string()))?
+        else {
             return Ok(None);
         };
-        let Some(op) = items.first().and_then(SExpr::as_symbol) else {
-            return Ok(None);
-        };
-        match op {
-            // `(defun f (p₁ … pₙ) body)`.
-            "defun" if items.len() == 4 => {
-                let name = items[1]
-                    .as_symbol()
-                    .ok_or_else(|| HolError::Stuck("defun name is not a symbol".into()))?;
-                let params = self.param_names(&items[2])?;
-                self.install(name, &params, &items[3])?;
-                Ok(Some(name.to_string()))
-            }
-            // `(define f (lambda (p…) body))` — the metacircular `label`/`define`.
-            "define" | "label" if items.len() == 3 => {
-                let name = items[1]
-                    .as_symbol()
-                    .ok_or_else(|| HolError::Stuck("define name is not a symbol".into()))?;
-                let (params, body) = self.as_lambda(&items[2])?;
-                self.install(name, &params, body)?;
-                Ok(Some(name.to_string()))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    /// Install `(name, params, body)` as an assumed `defun` equation. The body
-    /// is compiled with `name` **already in scope** (so recursion resolves to
-    /// the def's own free-variable head).
-    ///
-    /// Because HOL is typed but Lisp is not, the recursive head's *return type*
-    /// (`bool` for a predicate, `sexpr` for a list-valued function, `int` for
-    /// a counting function) must be fixed **before** the body compiles. We try
-    /// `bool` first, then `sexpr`, then `int` — covering `lat?`/`member?`
-    /// (predicates, whose `t`/`nil` must render as booleans), `rember` (data),
-    /// and `len` (integer-valued). A body only type-checks under the head type
-    /// its recursive calls actually inhabit, so the attempts are disambiguated
-    /// by which one succeeds.
-    fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), HolError> {
-        let core = Frontend::new(SurfaceDialect::Scheme)
-            .lower(body)
-            .map_err(|error| HolError::Stuck(error.to_string()))?;
-        let definition = LispDefinition::fixed(name.to_owned(), params.to_vec(), core);
+        let name = definition.name.clone();
         self.defs = install_core_definition(&self.defs, &definition)?;
-        Ok(())
-    }
-
-    fn param_names(&self, params: &SExpr) -> Result<Vec<String>, HolError> {
-        let SExpr::List(items) = params else {
-            return Err(HolError::Stuck("parameter list is not a list".into()));
-        };
-        items
-            .iter()
-            .map(|p| {
-                p.as_symbol()
-                    .map(str::to_string)
-                    .ok_or_else(|| HolError::Stuck("parameter is not a symbol".into()))
-            })
-            .collect()
-    }
-
-    /// Destructure a `(lambda (params) body)` form.
-    fn as_lambda<'a>(&self, form: &'a SExpr) -> Result<(Vec<String>, &'a SExpr), HolError> {
-        let SExpr::List(items) = form else {
-            return Err(HolError::Stuck("define value is not a lambda".into()));
-        };
-        if items.len() != 3 || items[0].as_symbol() != Some("lambda") {
-            return Err(HolError::Stuck("define value is not a lambda".into()));
-        }
-        let params = self.param_names(&items[1])?;
-        Ok((params, &items[2]))
+        Ok(Some(name))
     }
 
     /// An acknowledgement [`Outcome`] for a definition cell: the function name

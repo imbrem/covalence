@@ -175,7 +175,10 @@ impl Frontend {
     ///
     /// Naming the closure gives the partial operational semantics a recursive
     /// self-binding. It does not establish ACL2 termination or totality.
-    pub fn definition(&self, form: &SExpr) -> Result<Option<(String, FrontendExpr)>, LowerError> {
+    pub fn lower_definition(
+        &self,
+        form: &SExpr,
+    ) -> Result<Option<LispDefinition<String, FrontendExpr>>, LowerError> {
         let Some(items) = form.as_list() else {
             return Ok(None);
         };
@@ -197,15 +200,12 @@ impl Frontend {
             let name = self.symbol(name, "define", "name")?;
             let formals = self.parameters(&SExpr::List(parameters.to_vec()), "define")?;
             let body = self.lower_body("define", &items[2..])?;
-            return Ok(Some((
-                name.clone(),
-                CoreExpr::Lambda {
-                    name: Some(name),
-                    parameters: formals.required,
-                    rest: formals.rest,
-                    body: Box::new(body),
-                },
-            )));
+            return Ok(Some(LispDefinition {
+                name,
+                parameters: formals.required.into_iter().map(|p| p.name).collect(),
+                rest: formals.rest.map(|p| p.name),
+                body,
+            }));
         }
         if kind == "define" && self.dialect == SurfaceDialect::Scheme && items.len() == 3 {
             let name = self.symbol(&items[1], "define", "name")?;
@@ -213,7 +213,11 @@ impl Frontend {
                 .as_list()
                 .is_some_and(|value| value.first().and_then(SExpr::as_symbol) == Some("lambda"));
             if !is_lambda {
-                return Ok(Some((name, self.lower(&items[2])?)));
+                return Ok(Some(LispDefinition::fixed(
+                    name,
+                    Vec::new(),
+                    self.lower(&items[2])?,
+                )));
             }
         }
         let (name, formals, body) = match kind {
@@ -254,15 +258,21 @@ impl Frontend {
             }
             _ => return Ok(None),
         };
-        Ok(Some((
-            name.clone(),
-            CoreExpr::Lambda {
-                name: Some(name),
-                parameters: formals.required,
-                rest: formals.rest,
-                body: Box::new(body),
-            },
-        )))
+        Ok(Some(LispDefinition {
+            name,
+            parameters: formals.required.into_iter().map(|p| p.name).collect(),
+            rest: formals.rest.map(|p| p.name),
+            body,
+        }))
+    }
+
+    /// Compatibility view of [`Self::lower_definition`] as a named recursive
+    /// closure expression.
+    pub fn definition(&self, form: &SExpr) -> Result<Option<(String, FrontendExpr)>, LowerError> {
+        Ok(self.lower_definition(form)?.map(|definition| {
+            let name = definition.name.clone();
+            (name, definition.into_recursive_lambda())
+        }))
     }
 
     fn datum_atom(&self, atom: &Atom) -> CoreAtom {

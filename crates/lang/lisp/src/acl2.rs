@@ -1239,12 +1239,7 @@ impl Acl2Session {
         }
     }
 
-    /// Install an admissible definition: compile the (translated) body with
-    /// the recursive head pre-registered, and enter `{f = λ…} ⊢ f = λ…` into
-    /// the dictionary. Return-type disambiguation extends
-    /// `session::Session::install`'s trick: try `bool` (predicates), then
-    /// `sexpr` (data functions), then `int` (integer-valued functions, e.g.
-    /// `len`); the wrong choices fail to type-check.
+    /// Install an admissible lowered definition as an assumed equation.
     fn install(
         &mut self,
         definition: &LispDefinition<String, FrontendExpr>,

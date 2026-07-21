@@ -36,7 +36,7 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 - The same CEK transition code runs over direct Rust values, opaque resource
   arenas, and an inductive S-expression realization.
 - Scheme supports lexical closures, recursive definitions, first-class
-  `apply`, sequential `let*`, short-circuit `and`/`or`, Scheme `cond`
+  `apply`, sequential and named `let`, short-circuit `and`/`or`, Scheme `cond`
   test-value, `=>`, and sequence clauses, atomic
   duplicate-checked definition groups, and handled I/O in the host/runtime
   path. Derived forms lower hygienically to the common core and run unchanged

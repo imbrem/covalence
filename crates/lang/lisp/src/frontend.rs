@@ -524,12 +524,56 @@ impl Frontend {
                 detail: "expected bindings and at least one body expression".to_owned(),
             });
         }
+        if !recursive && self.dialect == SurfaceDialect::Scheme && items[1].as_symbol().is_some() {
+            return self.lower_named_let(items);
+        }
         let bindings = self.lower_bindings(form, &items[1])?;
+        reject_duplicate_bindings(form, &bindings)?;
         let body = Box::new(self.lower_body(form, &items[2..])?);
         Ok(if recursive {
             CoreExpr::LetRec { bindings, body }
         } else {
             CoreExpr::Let { bindings, body }
+        })
+    }
+
+    fn lower_named_let(&self, items: &[SExpr]) -> Result<FrontendExpr, LowerError> {
+        if items.len() < 4 {
+            return Err(LowerError::Malformed {
+                form: "let",
+                detail: "named let requires bindings and at least one body expression".to_owned(),
+            });
+        }
+        let name = self.symbol(&items[1], "let", "loop name")?;
+        let bindings = self.lower_bindings("let", &items[2])?;
+        reject_duplicate_bindings("let", &bindings)?;
+        let mut temporaries = Vec::with_capacity(bindings.len());
+        let mut parameters = Vec::with_capacity(bindings.len());
+        let mut arguments = Vec::with_capacity(bindings.len());
+        for (index, binding) in bindings.into_iter().enumerate() {
+            let temporary = fresh_symbol(items, &format!("#%covalence-named-let-{index}"));
+            parameters.push(covalence_kernel_lisp::Parameter::new(binding.name));
+            arguments.push(CoreExpr::Variable(temporary.clone()));
+            temporaries.push(covalence_kernel_lisp::Binding::new(
+                temporary,
+                binding.value,
+            ));
+        }
+        let procedure = CoreExpr::Lambda {
+            name: Some(name.clone()),
+            parameters,
+            rest: None,
+            body: Box::new(self.lower_body("let", &items[3..])?),
+        };
+        Ok(CoreExpr::Let {
+            bindings: temporaries,
+            body: Box::new(CoreExpr::LetRec {
+                bindings: vec![covalence_kernel_lisp::Binding::new(name.clone(), procedure)],
+                body: Box::new(CoreExpr::Apply {
+                    operator: Box::new(CoreExpr::Variable(name)),
+                    arguments,
+                }),
+            }),
         })
     }
 
@@ -752,6 +796,24 @@ fn contains_symbol(expression: &SExpr, candidate: &str) -> bool {
             .iter()
             .any(|expression| contains_symbol(expression, candidate)),
     }
+}
+
+fn reject_duplicate_bindings(
+    form: &'static str,
+    bindings: &[covalence_kernel_lisp::Binding<String, FrontendExpr>],
+) -> Result<(), LowerError> {
+    for (duplicate, binding) in bindings.iter().enumerate() {
+        if bindings[..duplicate]
+            .iter()
+            .any(|earlier| earlier.name == binding.name)
+        {
+            return Err(LowerError::Malformed {
+                form,
+                detail: format!("duplicate binding `{}`", binding.name),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Standard proof-free primitive implementation shared by differential tests
@@ -1787,6 +1849,33 @@ mod tests {
             run(SurfaceDialect::Scheme, "(null? (quote value))"),
             HostValue::datum(Datum::Nil)
         );
+    }
+
+    #[test]
+    fn scheme_named_let_is_recursive_and_keeps_initializers_outside_its_scope() {
+        let source = "(let loop ((n 2) (acc 0))
+                        (if (<= n 1)
+                            acc
+                            (loop (- n 1) (+ acc 42))))";
+        let expected = CoreAtom::Integer(Int::from(42));
+        assert_eq!(
+            run(SurfaceDialect::Scheme, source),
+            HostValue::datum(Datum::Atom(expected.clone()))
+        );
+        assert_eq!(run_arena(source), expected);
+        assert_eq!(run_inductive(source), expected);
+
+        let error = HostSession::new(SurfaceDialect::Scheme, 64)
+            .evaluate(&one("(let loop ((value loop)) value)"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unbound variable"), "{error}");
+
+        let error = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one("(let ((x 1) (x 2)) x)"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate binding `x`"), "{error}");
     }
 
     #[test]

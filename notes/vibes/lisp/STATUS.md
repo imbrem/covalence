@@ -39,8 +39,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   `apply`, atomic duplicate-checked definition groups, and handled I/O in the
   host/runtime path. Top-level values and recursive procedures are distinct
   in the shared API. Groups expose lexical call dependencies. ACL2 consumes
-  the same lowered `Definition` boundary and specializes the common structural
-  recursion checker with its `car`/`cdr` descent policy.
+  the same lowered `Definition` boundary; dependency-first recursive
+  components identify definitions that must be admitted together. ACL2
+  specializes the common structural recursion checker with its `car`/`cdr`
+  descent policy.
 - Forsp uses the separate generic stack-machine capability because its
   concatenative semantics is not CEK application in disguise. The same
   program produces checked `MayEval` evidence over direct, opaque-resource,

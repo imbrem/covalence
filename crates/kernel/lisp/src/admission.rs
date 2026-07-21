@@ -93,6 +93,16 @@ pub struct DefinitionDependency {
     pub callee: usize,
 }
 
+/// A mutually recursive component of a definition group.
+///
+/// Components are dependency-first. Members index the original group and
+/// retain source order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefinitionComponent {
+    pub members: Vec<usize>,
+    pub recursive: bool,
+}
+
 impl<S: PartialEq, E> DefinitionGroup<S, E> {
     pub fn new(definitions: Vec<Definition<S, E>>) -> Result<Self, DuplicateDefinition<S>>
     where
@@ -157,6 +167,83 @@ impl<S: Clone + PartialEq, D, P> DefinitionGroup<S, CoreExpr<S, D, P>> {
             });
         }
         dependencies
+    }
+
+    /// Partition definitions into units that must be installed or admitted
+    /// together.
+    pub fn components(&self) -> Vec<DefinitionComponent> {
+        let dependencies = self.dependencies();
+        let mut search = ComponentSearch::new(self.definitions.len(), dependencies);
+        for definition in 0..self.definitions.len() {
+            if search.indices[definition].is_none() {
+                search.visit(definition);
+            }
+        }
+        search.components
+    }
+}
+
+struct ComponentSearch {
+    callees: Vec<Vec<usize>>,
+    next_index: usize,
+    indices: Vec<Option<usize>>,
+    lowlinks: Vec<usize>,
+    stack: Vec<usize>,
+    on_stack: Vec<bool>,
+    components: Vec<DefinitionComponent>,
+}
+
+impl ComponentSearch {
+    fn new(definitions: usize, dependencies: Vec<DefinitionDependency>) -> Self {
+        let mut callees = vec![Vec::new(); definitions];
+        for edge in dependencies {
+            callees[edge.caller].push(edge.callee);
+        }
+        Self {
+            callees,
+            next_index: 0,
+            indices: vec![None; definitions],
+            lowlinks: vec![0; definitions],
+            stack: Vec::new(),
+            on_stack: vec![false; definitions],
+            components: Vec::new(),
+        }
+    }
+
+    fn visit(&mut self, caller: usize) {
+        let index = self.next_index;
+        self.next_index += 1;
+        self.indices[caller] = Some(index);
+        self.lowlinks[caller] = index;
+        self.stack.push(caller);
+        self.on_stack[caller] = true;
+
+        let callees = self.callees[caller].clone();
+        for callee in callees {
+            if self.indices[callee].is_none() {
+                self.visit(callee);
+                self.lowlinks[caller] = self.lowlinks[caller].min(self.lowlinks[callee]);
+            } else if self.on_stack[callee] {
+                self.lowlinks[caller] = self.lowlinks[caller].min(self.indices[callee].unwrap());
+            }
+        }
+
+        if self.lowlinks[caller] != index {
+            return;
+        }
+        let mut members = Vec::new();
+        loop {
+            let member = self.stack.pop().expect("component root is on the stack");
+            self.on_stack[member] = false;
+            members.push(member);
+            if member == caller {
+                break;
+            }
+        }
+        members.sort_unstable();
+        let recursive = members.len() > 1 || self.callees[caller].contains(&caller);
+        self.components
+            .push(DefinitionComponent { members, recursive });
     }
 }
 
@@ -592,6 +679,39 @@ mod tests {
                 DefinitionDependency {
                     caller: 1,
                     callee: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn components_are_dependency_first_and_identify_mutual_recursion() {
+        type Expr = CoreExpr<&'static str, (), ()>;
+        let call = |name| Expr::Apply {
+            operator: Box::new(Expr::Variable(name)),
+            arguments: Vec::new(),
+        };
+        let definitions = DefinitionGroup::new(vec![
+            Definition::fixed("entry", Vec::new(), call("even")),
+            Definition::fixed("even", Vec::new(), call("odd")),
+            Definition::fixed("odd", Vec::new(), call("even")),
+            Definition::fixed("constant", Vec::new(), Expr::Truth(true)),
+        ])
+        .unwrap();
+        assert_eq!(
+            definitions.components(),
+            vec![
+                DefinitionComponent {
+                    members: vec![1, 2],
+                    recursive: true,
+                },
+                DefinitionComponent {
+                    members: vec![0],
+                    recursive: false,
+                },
+                DefinitionComponent {
+                    members: vec![3],
+                    recursive: false,
                 },
             ]
         );

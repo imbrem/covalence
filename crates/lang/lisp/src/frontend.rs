@@ -14,46 +14,18 @@ use std::str::FromStr;
 use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
     Definition as LispDefinition, DefinitionGroup, ExecutionError, HostConfiguration,
-    HostEnvironment, HostValue, LispEnvironment, LispMachine, LispRuntime, LispValue,
-    MachineConfiguration, MayEval, PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding,
+    HostEnvironment, HostValue, LispAtom, LispEnvironment, LispMachine, LispPrimitive, LispRuntime,
+    LispValue, MachineConfiguration, MayEval, PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding,
     RuntimeValueView, TopLevelDefinition, execute, import_core,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
-/// Atoms supported by the common proof-free frontend realization.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum CoreAtom {
-    Symbol(Vec<u8>),
-    String { format: String, bytes: Vec<u8> },
-    Integer(Int),
-}
+/// Default exact atom specialization used by the current frontends.
+pub type CoreAtom = LispAtom<Int>;
 
-impl CoreAtom {
-    pub fn symbol(name: impl AsRef<[u8]>) -> Self {
-        Self::Symbol(name.as_ref().to_vec())
-    }
-}
-
-/// Primitive vocabulary shared by the initial Lisp-family frontends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Primitive {
-    Cons,
-    Car,
-    Cdr,
-    Atom,
-    Consp,
-    Null,
-    Integer,
-    Equal,
-    Add,
-    Subtract,
-    Multiply,
-    LessEqual,
-    Append,
-    Read,
-    Write,
-}
+/// Current frontend spelling of the common applicative primitive vocabulary.
+pub type Primitive = LispPrimitive;
 
 /// Concrete surface dialects targeting the common core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -286,7 +286,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 356,
+      "words": 362,
       "updated": 0
     },
     {
@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37822,
+      "words": 37837,
       "updated": 0
     },
     {
@@ -9488,6 +9488,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/inductive_stack.rs",
+      "kind": "file",
+      "title": "inductive_stack.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/inductive_stack.rs",
+      "words": 159,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/io.rs",
       "kind": "file",
       "title": "io.rs",
@@ -9502,7 +9511,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 107,
+      "words": 111,
       "updated": 0
     },
     {
@@ -11311,7 +11320,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1873,
+      "words": 1845,
       "updated": 0
     },
     {
@@ -15955,7 +15964,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37822,
+      "words": 37837,
       "updated": 0
     },
     {
@@ -17233,7 +17242,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 87,
+      "words": 90,
       "updated": 0
     },
     {
@@ -19339,8 +19348,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 448,
-      "updated": 1784675621
+      "words": 472,
+      "updated": 1784676092
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -26653,6 +26662,12 @@
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/inductive_runtime.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/inductive_stack.rs",
       "detail": null
     },
     {
@@ -37424,8 +37439,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "4adca8356482057a5463169508db25faa8e013dd",
-      "committedAt": 1784675621
+      "commit": "cdb4294a19a27d6d26a978dc937e8d74affb34d2",
+      "committedAt": 1784676092
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

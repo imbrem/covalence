@@ -24,11 +24,13 @@
 pub mod admission;
 pub mod applicative_effect;
 pub mod arena;
+pub mod atom;
 pub mod effect;
 pub mod host;
 pub mod inductive_runtime;
 pub mod inductive_stack;
 pub mod io;
+pub mod primitive;
 pub mod relation;
 pub mod resource;
 pub mod runtime;
@@ -52,6 +54,7 @@ pub use arena::{
     ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaExpr, ArenaRuntime,
     ArenaRuntimeError, ArenaSyntax, ArenaValue, ArenaValues,
 };
+pub use atom::LispAtom;
 pub use effect::{
     EffectHandler, EffectReplay, EffectReplayError, EffectRequest, EffectResume, EffectRunError,
     EffectState, EffectSuspension, EffectSyntax, HandledEffect, HandledRun, HandledRunCheckError,
@@ -73,6 +76,7 @@ pub use inductive_stack::{
     InductiveStackValue, InductiveStackValueError, InductiveStackValues, StackValueExternal,
 };
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
+pub use primitive::LispPrimitive;
 pub use relation::{
     CheckedClassifiedTrace, CheckedTrace, ClassifiedStep, ClassifiedStepRelation,
     DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError, Exploration,

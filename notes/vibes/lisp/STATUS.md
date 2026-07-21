@@ -29,7 +29,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 
 - `covalence-kernel-lisp` owns backend-neutral `CoreExpr`, evaluation strategy,
   CEK transitions, finite traces, bounded relational exploration, effects, and
-  admission capability interfaces.
+  admission capability interfaces. Its shared `LispAtom<I>` keeps exact
+  integer representation abstract while preserving symbol and string bytes;
+  `LispPrimitive` supplies stable applicative primitive identifiers without
+  fixing their implementation.
 - The same CEK transition code runs over direct Rust values, opaque resource
   arenas, and an inductive S-expression realization.
 - Scheme supports lexical closures, recursive definitions, first-class

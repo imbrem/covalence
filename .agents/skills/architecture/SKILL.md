@@ -106,6 +106,12 @@ disable-model-invocation: true
     representation-neutral transition algorithm for lexical closures,
     bindings, resolution, and continuations; a frontend supplies an observable
     instruction backend and WIT-shaped primitive dictionary.
+    `kernel/lisp::LispAtom<I>` is the common symbol/string/exact-integer
+    vocabulary; `I` stays generic so the waist does not choose a numeric
+    representation. `LispPrimitive` owns stable applicative primitive IDs;
+    their meanings remain a dictionary capability. `lang/lisp::CoreAtom` is
+    the current `Int` specialization. Forsp retains its distinct concatenative
+    primitive vocabulary.
     `kernel/lisp::StackEffectMachine` likewise owns the generic
     suspend/resume loop; the frontend policy maps effects plus an operand list
     to requests and maps responses back to operands. Forsp `read`/`print` and

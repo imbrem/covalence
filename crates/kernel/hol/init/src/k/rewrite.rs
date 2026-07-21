@@ -20,12 +20,13 @@
 
 use std::collections::BTreeMap;
 
+use covalence_computation::TransitionSystem;
 use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_k::fragment::RewriteRule;
 
 use super::encode::{app_combinator, collect_metavars, encode_pattern, metavar_name, phi};
-use crate::metalogic::rewrite::{Innermost, Matcher, RewriteRelation, Rule};
+use crate::metalogic::rewrite::{Innermost, Matcher, RewriteRelation, Rule, StepThm};
 
 /// The default truth constructor a `requires` condition must reduce to. K's
 /// canonical `Bool` truth is `true`; the demos also use `tt`.
@@ -164,11 +165,40 @@ impl KReducer {
         let encoded = encode_pattern(config)?;
         self.reduce(&encoded, fuel)
     }
+
+    /// Find and certify the next whole-configuration step.
+    pub fn next_step(&self, config: &Term) -> Result<Option<StepThm>> {
+        self.matcher
+            .find(&self.rel, config)
+            .map(|redex| self.rel.prove_step(config, &redex))
+            .transpose()
+    }
+}
+
+impl TransitionSystem for KReducer {
+    type State = Term;
+    type Outcome = Term;
+    type Error = covalence_core::Error;
+
+    fn halted(&self, state: &Term) -> Result<Option<Term>> {
+        Ok(self
+            .matcher
+            .find(&self.rel, state)
+            .is_none()
+            .then(|| state.clone()))
+    }
+
+    fn transition(&self, state: Term) -> Result<Term> {
+        self.next_step(&state)?
+            .map(|step| step.to)
+            .ok_or_else(|| covalence_core::Error::ConnectiveRule("k reducer is halted".into()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_computation::{Trace, trace};
     use covalence_k::ast::{Pattern, Sort};
 
     fn assert_genuine(thm: &Thm) {
@@ -248,6 +278,33 @@ mod tests {
             .unwrap();
         assert_genuine(&thm2);
         assert_eq!(nf2, encode_pattern(&app("Apple", vec![])).unwrap());
+    }
+
+    #[test]
+    fn generic_trace_agrees_with_certified_reduction() {
+        let rules = vec![rule(
+            app("colorOf", vec![app("Banana", vec![])]),
+            app("Yellow", vec![]),
+        )];
+        let reducer = KReducer::new(&rules);
+        let start = encode_pattern(&app("colorOf", vec![app("Banana", vec![])])).unwrap();
+        let Trace {
+            states,
+            steps,
+            outcome,
+        } = trace(&reducer, start.clone(), 4).unwrap();
+        let (normal_form, theorem) = reducer.reduce(&start, 4).unwrap();
+
+        assert_eq!(steps, 1);
+        assert_eq!(states.last(), Some(&normal_form));
+        assert_eq!(outcome, Some(normal_form.clone()));
+        assert_eq!(
+            theorem.concl(),
+            &reducer
+                .relation()
+                .reduces_prop(&start, &normal_form)
+                .unwrap()
+        );
     }
 
     /// PEANO recursion + congruence: plus(s(s(z)), s(z)) →* s(s(s(z))).

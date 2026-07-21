@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37531,
+      "words": 37571,
       "updated": 0
     },
     {
@@ -8422,7 +8422,7 @@
       "title": "rewrite.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/k/rewrite.rs",
-      "words": 303,
+      "words": 360,
       "updated": 0
     },
     {
@@ -9475,7 +9475,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
-      "words": 599,
+      "words": 601,
       "updated": 0
     },
     {
@@ -15874,7 +15874,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37531,
+      "words": 37571,
       "updated": 0
     },
     {
@@ -15991,7 +15991,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3859,
+      "words": 3869,
       "updated": 0
     },
     {
@@ -18900,6 +18900,15 @@
       "path": "notes/vibes/audits/inductive-api-audit.md",
       "words": 2235,
       "updated": 1784479471
+    },
+    {
+      "id": "note:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "kind": "note",
+      "title": "K/Lisp transition deduplication",
+      "status": "draft",
+      "path": "notes/vibes/audits/k-lisp-transition-dedup.md",
+      "words": 351,
+      "updated": 1784673949
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -23497,6 +23506,15 @@
       "title": "Offline vendored corpus is a subset: assets/opentheory/gilith/std/ is",
       "status": "minor",
       "path": "crates/proof/opentheory/open_work.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:semantics.shared-transition-waist",
+      "kind": "todo",
+      "title": "Extract the proof-free deterministic transition and checked-trace vocabulary shared with covalence-computation::execution into a neutral kernel crate, leaving Lisp's nondeterministic exploration and theorem replay as extension traits.",
+      "status": "major",
+      "path": "crates/kernel/lisp/src/relation.rs",
       "words": 0,
       "updated": 0
     },
@@ -29518,6 +29536,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/build/buck2-experiment.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -35014,6 +35038,12 @@
       "stableId": "N005I",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "stableId": "N005J",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -35604,6 +35634,16 @@
       "contributedAt": "2026-07-18T23:51:27+01:00",
       "source": "codex-development-wave",
       "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "k-lisp-rule-dedup",
+      "agent": "codex",
       "harness": "codex",
       "ordinal": 0
     },

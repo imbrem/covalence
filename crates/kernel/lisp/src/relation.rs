@@ -1,5 +1,7 @@
 //! One-step relations, finite executions, and proof-producing replay seams.
 
+// TODO(cov:semantics.shared-transition-waist, major): Extract the proof-free deterministic transition and checked-trace vocabulary shared with `covalence-computation::execution` into a neutral kernel crate, leaving Lisp's nondeterministic exploration and theorem replay as extension traits.
+
 use core::fmt::{Debug, Display, Formatter};
 use std::collections::VecDeque;
 

@@ -37,7 +37,8 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   arenas, and an inductive S-expression realization.
 - Scheme supports lexical closures, recursive definitions, first-class
   `apply`, sequential and named `let`, short-circuit `and`/`or`, Scheme `cond`
-  test-value, `=>`, and sequence clauses, atomic
+  test-value, `=>`, and sequence clauses, nested quasiquotation with unquote
+  and list splicing, atomic
   duplicate-checked definition groups, and handled I/O in the host/runtime
   path. Derived forms lower hygienically to the common core and run unchanged
   over direct, resource-handle, and inductive values. Top-level values and

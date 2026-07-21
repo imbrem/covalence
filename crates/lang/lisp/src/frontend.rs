@@ -320,6 +320,10 @@ impl Frontend {
                 self.exact_arity("quote", items, 2)?;
                 Ok(CoreExpr::Quote(self.quote(&items[1])?))
             }
+            Some("quasiquote") if self.dialect == SurfaceDialect::Scheme => {
+                self.exact_arity("quasiquote", items, 2)?;
+                self.lower_quasiquote(&items[1], 1, false)
+            }
             Some("if") => {
                 self.exact_arity("if", items, 4)?;
                 Ok(CoreExpr::If {
@@ -388,6 +392,82 @@ impl Frontend {
             rest: formals.rest,
             body: Box::new(self.lower_body("lambda", &items[2..])?),
         })
+    }
+
+    fn lower_quasiquote(
+        &self,
+        template: &SExpr,
+        depth: usize,
+        splice_position: bool,
+    ) -> Result<FrontendExpr, LowerError> {
+        let Some(items) = template.as_list() else {
+            return Ok(CoreExpr::Quote(self.quote(template)?));
+        };
+        if let Some(name @ ("unquote" | "unquote-splicing" | "quasiquote")) =
+            items.first().and_then(SExpr::as_symbol)
+        {
+            if items.len() != 2 {
+                return Err(LowerError::Malformed {
+                    form: "quasiquote",
+                    detail: format!("{name} requires exactly one operand"),
+                });
+            }
+            match name {
+                "unquote" if depth == 1 => return self.lower(&items[1]),
+                "unquote-splicing" if depth == 1 && splice_position => {
+                    return self.lower(&items[1]);
+                }
+                "unquote-splicing" if depth == 1 => {
+                    return Err(LowerError::Malformed {
+                        form: "quasiquote",
+                        detail: "unquote-splicing is only valid in list position".to_owned(),
+                    });
+                }
+                "quasiquote" => {
+                    let operand = self.lower_quasiquote(&items[1], depth + 1, false)?;
+                    return Ok(self.quasiquote_syntax(name, operand));
+                }
+                "unquote" | "unquote-splicing" => {
+                    let operand = self.lower_quasiquote(&items[1], depth - 1, false)?;
+                    return Ok(self.quasiquote_syntax(name, operand));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        let mut result = CoreExpr::Quote(Datum::Nil);
+        for item in items.iter().rev() {
+            let splice = item.as_list().is_some_and(|form| {
+                form.first().and_then(SExpr::as_symbol) == Some("unquote-splicing")
+            });
+            if splice && depth == 1 {
+                let value = self.lower_quasiquote(item, depth, true)?;
+                result = CoreExpr::Primitive {
+                    operator: Primitive::Append,
+                    arguments: vec![value, result],
+                };
+            } else {
+                let value = self.lower_quasiquote(item, depth, false)?;
+                result = CoreExpr::Primitive {
+                    operator: Primitive::Cons,
+                    arguments: vec![value, result],
+                };
+            }
+        }
+        Ok(result)
+    }
+
+    fn quasiquote_syntax(&self, name: &str, operand: FrontendExpr) -> FrontendExpr {
+        CoreExpr::Primitive {
+            operator: Primitive::Cons,
+            arguments: vec![
+                CoreExpr::Quote(Datum::Atom(CoreAtom::symbol(name))),
+                CoreExpr::Primitive {
+                    operator: Primitive::Cons,
+                    arguments: vec![operand, CoreExpr::Quote(Datum::Nil)],
+                },
+            ],
+        }
     }
 
     fn lower_sequence(
@@ -1876,6 +1956,39 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("duplicate binding `x`"), "{error}");
+    }
+
+    #[test]
+    fn scheme_quasiquote_tracks_depth_and_splices_lists() {
+        let source = "(let ((x 2) (xs (quote (3 4))))
+                        (equal
+                          (quasiquote (1 (unquote x) (unquote-splicing xs) 5))
+                          (quote (1 2 3 4 5))))";
+        let truth = CoreAtom::symbol("t");
+        assert_eq!(
+            run(SurfaceDialect::Scheme, source),
+            HostValue::datum(Datum::Atom(truth.clone()))
+        );
+        assert_eq!(run_arena(source), truth.clone());
+        assert_eq!(run_inductive(source), truth);
+
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(let ((x 7))
+                   (equal
+                     (quasiquote
+                       (outer (quasiquote (inner (unquote x))) (unquote x)))
+                     (quote (outer (quasiquote (inner (unquote x))) 7))))"
+            ),
+            HostValue::datum(Datum::Atom(CoreAtom::symbol("t")))
+        );
+
+        let error = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one("(quasiquote (unquote-splicing xs))"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("only valid in list position"), "{error}");
     }
 
     #[test]

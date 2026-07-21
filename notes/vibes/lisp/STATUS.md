@@ -35,8 +35,8 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 - Scheme supports lexical closures, recursive definitions, first-class
   `apply`, atomic duplicate-checked definition groups, and handled I/O in the
   host/runtime path. Groups expose lexical call dependencies. ACL2 consumes
-  the same lowered `Definition` boundary and checks its source recursion scan
-  against that graph.
+  the same lowered `Definition` boundary and applies structural-decrease policy
+  to its shared recursive-call analysis.
 - Forsp uses the separate generic stack-machine capability because its
   concatenative semantics is not CEK application in disguise.
 - The HOL frontend has equational and relational adapters. Concrete checked

@@ -123,7 +123,7 @@ use covalence_init::init::inductive::determinacy::graph_det;
 use covalence_init::init::inductive::existence::graph_total;
 use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, DefinitionGroup, Evaluation,
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
     EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
     MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
 };
@@ -133,7 +133,8 @@ use covalence_types::Int;
 
 use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{
-    Frontend, FrontendExpr, HostFrontendRuntime, HostSession, RuntimeEvaluation, SurfaceDialect,
+    Frontend, FrontendExpr, HostFrontendRuntime, HostSession, Primitive, RuntimeEvaluation,
+    SurfaceDialect,
 };
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -1092,15 +1093,6 @@ impl Acl2Session {
             body.clone(),
         );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
-        let core_recursive = !DefinitionGroup::new(vec![definition.core.clone()])
-            .expect("a singleton definition group has unique binders")
-            .dependencies()
-            .is_empty();
-        if core_recursive != (admission.recursive_calls > 0) {
-            return Err(inadmissible(
-                "surface and lowered-core recursion analyses disagree".into(),
-            ));
-        }
         let mut operational = self.operational.clone();
         operational
             .define_core(definition.core.clone())
@@ -1136,14 +1128,10 @@ impl Acl2Session {
 
     /// The syntactic admissibility check (see the module docs for the exact
     /// criterion). Errors carry a human-readable reason.
-    fn check_admissible(
-        &self,
-        name: &str,
-        params: &[String],
-        body: &SExpr,
-    ) -> Result<Acl2Admission, String> {
-        let mut calls: Vec<&[SExpr]> = Vec::new();
-        self.check_body(name, params, body, &mut calls)?;
+    fn check_admissible(&self, definition: &Acl2Definition) -> Result<Acl2Admission, String> {
+        let name = &definition.core.name;
+        let params = &definition.core.parameters;
+        let calls = definition.core.recursive_calls();
         if calls.is_empty() {
             return Ok(Acl2Admission {
                 recursive_calls: 0,
@@ -1153,7 +1141,7 @@ impl Acl2Session {
         let decreasing_parameter = (0..params.len()).find(|&i| {
             calls
                 .iter()
-                .all(|args| is_proper_projection(&args[i], &params[i]))
+                .all(|call| is_core_projection(&call.arguments[i], &params[i]))
         });
         if let Some(decreasing_parameter) = decreasing_parameter {
             Ok(Acl2Admission {
@@ -1167,84 +1155,6 @@ impl Acl2Session {
                  same formal in that formal's position (general measures / \
                  termination proofs are future work)"
             ))
-        }
-    }
-
-    /// Walk a `defun` body: validate every head and atom, collecting the
-    /// argument lists of recursive calls.
-    fn check_body<'a>(
-        &self,
-        name: &str,
-        params: &[String],
-        e: &'a SExpr,
-        calls: &mut Vec<&'a [SExpr]>,
-    ) -> Result<(), String> {
-        match e {
-            SExpr::Atom(Atom::Str { .. }) => Ok(()),
-            SExpr::Atom(Atom::Symbol(s)) => {
-                let s = s.as_str();
-                if s == "t"
-                    || s == "nil"
-                    || params.iter().any(|p| p == s)
-                    || s.parse::<Int>().is_ok()
-                {
-                    Ok(())
-                } else {
-                    Err(format!("unbound variable `{s}` in the body"))
-                }
-            }
-            SExpr::List(items) => {
-                let Some((head, args)) = items.split_first() else {
-                    return Err("empty application `()`".into());
-                };
-                let Some(h) = head.as_symbol() else {
-                    return Err("application head is not a symbol (no higher-order \
-                                forms in the ACL2 slice)"
-                        .into());
-                };
-                if h == "quote" {
-                    return if args.len() == 1 {
-                        Ok(()) // quoted data: no code inside
-                    } else {
-                        Err("quote takes exactly one argument".into())
-                    };
-                }
-                if let Some(ops) = composed_accessor(h) {
-                    if args.len() != 1 {
-                        return Err(format!("`{h}` expects 1 argument, got {}", args.len()));
-                    }
-                    self.check_body(name, params, &args[0], calls)?;
-                    // The expansion is a car/cdr chain, so no additional
-                    // callable heads need validation.
-                    debug_assert!(!ops.is_empty());
-                    return Ok(());
-                }
-                let expected = if let Some(arity) = int_op_arity(h) {
-                    arity
-                } else if let Some(arity) = reserved_head(h) {
-                    arity
-                } else if h == name {
-                    calls.push(args);
-                    params.len()
-                } else if let Some(def) = self.defs.get(h) {
-                    def.params.len()
-                } else {
-                    return Err(format!(
-                        "call to undefined function `{h}` — ACL2 requires \
-                         definition before use"
-                    ));
-                };
-                if args.len() != expected {
-                    return Err(format!(
-                        "`{h}` expects {expected} argument(s), got {}",
-                        args.len()
-                    ));
-                }
-                for a in args {
-                    self.check_body(name, params, a, calls)?;
-                }
-                Ok(())
-            }
         }
     }
 
@@ -1593,11 +1503,7 @@ impl AdmissionPolicy<Acl2Definition> for Acl2Session {
     type Error = String;
 
     fn inspect(&self, definition: &Acl2Definition) -> Result<Self::Certificate, Self::Error> {
-        self.check_admissible(
-            &definition.core.name,
-            &definition.core.parameters,
-            &definition.source_body,
-        )
+        self.check_admissible(definition)
     }
 }
 
@@ -2323,21 +2229,17 @@ fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String
     }
 }
 
-/// Is `e` a **non-empty** `car`/`cdr` chain applied to exactly the formal
-/// `formal`? (`(cdr x)`, `(car (cdr x))`, … — the structural-descent shape.)
-fn is_proper_projection(e: &SExpr, formal: &str) -> bool {
-    fn depth(e: &SExpr, formal: &str) -> Option<usize> {
-        match e {
-            SExpr::Atom(Atom::Symbol(s)) if s.as_str() == formal => Some(0),
-            SExpr::List(items) if items.len() == 2 => match items[0].as_symbol() {
-                Some("car") | Some("cdr") => depth(&items[1], formal).map(|d| d + 1),
-                Some(h) if composed_accessor(h).is_some() => {
-                    depth(&items[1], formal).map(|d| d + composed_accessor(h).unwrap().len())
-                }
-                _ => None,
-            },
+/// Is this a non-empty `car`/`cdr` chain rooted at `formal`?
+fn is_core_projection(expression: &FrontendExpr, formal: &str) -> bool {
+    fn depth(expression: &FrontendExpr, formal: &str) -> Option<usize> {
+        match expression {
+            covalence_kernel_lisp::CoreExpr::Variable(name) if name == formal => Some(0),
+            covalence_kernel_lisp::CoreExpr::Primitive {
+                operator: Primitive::Car | Primitive::Cdr,
+                arguments,
+            } if arguments.len() == 1 => depth(&arguments[0], formal).map(|value| value + 1),
             _ => None,
         }
     }
-    depth(e, formal).is_some_and(|d| d >= 1)
+    depth(expression, formal).is_some_and(|value| value > 0)
 }

@@ -87,8 +87,9 @@ disable-model-invocation: true
     declaration cannot degrade into dead metadata.
     `DefinitionGroup` is the frontend-neutral atomic mutual-recursion unit;
     it rejects duplicate binders before a runtime allocates a generation and
-    derives lexical direct-call dependencies from the lowered core. ACL2
-    cross-checks its source admission scan against that common graph.
+    derives lexical direct-call dependencies from the lowered core. Individual
+    definitions expose shadowing-aware recursive calls with their arguments;
+    ACL2 applies its structural-decrease policy to that common analysis.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated

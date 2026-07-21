@@ -131,28 +131,48 @@ impl<S: Clone + PartialEq, D, P> DefinitionGroup<S, CoreExpr<S, D, P>> {
         for (caller, definition) in self.definitions.iter().enumerate() {
             let mut bound = definition.parameters.clone();
             bound.extend(definition.rest.iter().cloned());
-            collect_dependencies(
-                &definition.body,
-                &names,
-                &mut bound,
-                caller,
-                &mut dependencies,
-            );
+            collect_calls(&definition.body, &mut bound, &mut |callee, _| {
+                if let Some(callee) = names.iter().position(|candidate| candidate == callee) {
+                    let dependency = DefinitionDependency { caller, callee };
+                    if !dependencies.contains(&dependency) {
+                        dependencies.push(dependency);
+                    }
+                }
+            });
         }
         dependencies
     }
 }
 
-fn collect_dependencies<S: Clone + PartialEq, D, P>(
+impl<S: Clone + PartialEq, D: Clone, P> Definition<S, CoreExpr<S, D, P>> {
+    /// Direct recursive calls in the lowered core, including their arguments.
+    pub fn recursive_calls(&self) -> Vec<RecursiveCall<S, CoreExpr<S, D, P>>>
+    where
+        P: Clone,
+    {
+        let mut bound = self.parameters.clone();
+        bound.extend(self.rest.iter().cloned());
+        let mut calls = Vec::new();
+        collect_calls(&self.body, &mut bound, &mut |callee, arguments| {
+            if callee == &self.name {
+                calls.push(RecursiveCall {
+                    callee: callee.clone(),
+                    arguments: arguments.to_vec(),
+                });
+            }
+        });
+        calls
+    }
+}
+
+fn collect_calls<S: Clone + PartialEq, D, P>(
     expression: &CoreExpr<S, D, P>,
-    group_names: &[S],
     bound: &mut Vec<S>,
-    caller: usize,
-    output: &mut Vec<DefinitionDependency>,
+    observe: &mut impl FnMut(&S, &[CoreExpr<S, D, P>]),
 ) {
     macro_rules! visit {
         ($child:expr) => {
-            collect_dependencies($child, group_names, bound, caller, output)
+            collect_calls($child, bound, observe)
         };
     }
     match expression {
@@ -207,12 +227,8 @@ fn collect_dependencies<S: Clone + PartialEq, D, P>(
         } => {
             if let CoreExpr::Variable(name) = operator.as_ref()
                 && !bound.contains(name)
-                && let Some(callee) = group_names.iter().position(|candidate| candidate == name)
             {
-                let dependency = DefinitionDependency { caller, callee };
-                if !output.contains(&dependency) {
-                    output.push(dependency);
-                }
+                observe(name, arguments);
             }
             visit!(operator);
             for argument in arguments {
@@ -502,6 +518,39 @@ mod tests {
                     callee: 1,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn recursive_calls_retain_arguments_but_ignore_shadowed_names() {
+        type Expr = CoreExpr<&'static str, (), ()>;
+        let recursive = Expr::Apply {
+            operator: Box::new(Expr::Variable("walk")),
+            arguments: vec![Expr::Variable("tail")],
+        };
+        let shadowed = Expr::Lambda {
+            name: None,
+            parameters: vec![Parameter::new("walk")],
+            rest: None,
+            body: Box::new(Expr::Apply {
+                operator: Box::new(Expr::Variable("walk")),
+                arguments: Vec::new(),
+            }),
+        };
+        let definition = Definition::fixed(
+            "walk",
+            vec!["tail"],
+            Expr::Sequence {
+                first: Box::new(recursive.clone()),
+                rest: vec![shadowed],
+            },
+        );
+        assert_eq!(
+            definition.recursive_calls(),
+            vec![RecursiveCall {
+                callee: "walk",
+                arguments: vec![Expr::Variable("tail")],
+            }]
         );
     }
 

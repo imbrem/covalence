@@ -89,7 +89,9 @@ disable-model-invocation: true
     it rejects duplicate binders before a runtime allocates a generation and
     derives lexical direct-call dependencies from the lowered core. Individual
     definitions expose shadowing-aware recursive calls with their arguments;
-    ACL2 applies its structural-decrease policy to that common analysis.
+    `check_structural_recursion` derives a reusable plain certificate from a
+    language-supplied descent predicate. ACL2 supplies only its `car`/`cdr`
+    projection policy.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated

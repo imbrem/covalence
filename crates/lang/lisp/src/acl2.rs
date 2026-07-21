@@ -125,7 +125,8 @@ use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
     AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
     EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
-    MayEvalTransport, SourcedDefinition, TraceReplay, evaluate,
+    MayEvalTransport, SourcedDefinition, StructuralRecursion, StructuralRecursionError,
+    TraceReplay, check_structural_recursion, evaluate,
 };
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -314,11 +315,7 @@ pub struct Acl2Theorem {
 /// This records what the surface checker established. It is not a theorem and
 /// cannot totalize the function; the deep ACL2/HOL layer must replay suitable
 /// evidence before gaining theorem authority.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Acl2Admission {
-    pub recursive_calls: usize,
-    pub decreasing_parameter: Option<usize>,
-}
+pub type Acl2Admission = StructuralRecursion;
 
 /// One ACL2 definition with source provenance and shared operational core.
 pub type Acl2Definition = SourcedDefinition<String, SExpr, FrontendExpr>;
@@ -1126,38 +1123,6 @@ impl Acl2Session {
         }
     }
 
-    /// The syntactic admissibility check (see the module docs for the exact
-    /// criterion). Errors carry a human-readable reason.
-    fn check_admissible(&self, definition: &Acl2Definition) -> Result<Acl2Admission, String> {
-        let name = &definition.core.name;
-        let params = &definition.core.parameters;
-        let calls = definition.core.recursive_calls();
-        if calls.is_empty() {
-            return Ok(Acl2Admission {
-                recursive_calls: 0,
-                decreasing_parameter: None,
-            });
-        }
-        let decreasing_parameter = (0..params.len()).find(|&i| {
-            calls
-                .iter()
-                .all(|call| is_core_projection(&call.arguments[i], &params[i]))
-        });
-        if let Some(decreasing_parameter) = decreasing_parameter {
-            Ok(Acl2Admission {
-                recursive_calls: calls.len(),
-                decreasing_parameter: Some(decreasing_parameter),
-            })
-        } else {
-            Err(format!(
-                "not structurally recursive: no formal position decreases — every \
-                 recursive call to `{name}` must pass a car/cdr-projection of the \
-                 same formal in that formal's position (general measures / \
-                 termination proofs are future work)"
-            ))
-        }
-    }
-
     /// Install an admissible lowered definition as an assumed equation.
     fn install(
         &mut self,
@@ -1503,7 +1468,25 @@ impl AdmissionPolicy<Acl2Definition> for Acl2Session {
     type Error = String;
 
     fn inspect(&self, definition: &Acl2Definition) -> Result<Self::Certificate, Self::Error> {
-        self.check_admissible(definition)
+        check_structural_recursion(&definition.core, |argument, formal| {
+            is_core_projection(argument, formal)
+        })
+        .map_err(|error| match error {
+            StructuralRecursionError::RecursiveArity {
+                call,
+                expected,
+                actual,
+            } => format!(
+                "recursive call {call} to `{}` has arity {actual}, expected {expected}",
+                definition.core.name
+            ),
+            StructuralRecursionError::NoDecreasingParameter => format!(
+                "not structurally recursive: no formal position decreases — every recursive \
+                     call to `{}` must pass a car/cdr-projection of the same formal in that \
+                     formal's position (general measures / termination proofs are future work)",
+                definition.core.name
+            ),
+        })
     }
 }
 

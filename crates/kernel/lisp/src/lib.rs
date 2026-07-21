@@ -43,7 +43,8 @@ pub use admission::{
     AdmissionPipelineError, AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition,
     DefinitionDependency, DefinitionGroup, DuplicateDefinition, EvaluationExistence,
     EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
-    SourcedDefinition, TerminationCertificate, TotalAdmission, Totalization, admit_total,
+    SourcedDefinition, StructuralRecursion, StructuralRecursionError, TerminationCertificate,
+    TotalAdmission, Totalization, admit_total, check_structural_recursion,
 };
 pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{

@@ -288,6 +288,66 @@ pub struct RecursiveCall<S, E> {
     pub arguments: Vec<E>,
 }
 
+/// Plain evidence that every recursive call decreases at one formal position.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructuralRecursion {
+    pub recursive_calls: usize,
+    pub decreasing_parameter: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StructuralRecursionError {
+    RecursiveArity {
+        call: usize,
+        expected: usize,
+        actual: usize,
+    },
+    NoDecreasingParameter,
+}
+
+/// Check uniform structural descent over the common lowered Lisp core.
+///
+/// `decreases(argument, formal)` is language policy: ACL2 uses non-empty
+/// `car`/`cdr` projections, while another admitted Lisp may use a different
+/// well-founded constructor relation. The result is certificate data only.
+pub fn check_structural_recursion<S, D, P>(
+    definition: &Definition<S, CoreExpr<S, D, P>>,
+    mut decreases: impl FnMut(&CoreExpr<S, D, P>, &S) -> bool,
+) -> Result<StructuralRecursion, StructuralRecursionError>
+where
+    S: Clone + PartialEq,
+    D: Clone,
+    P: Clone,
+{
+    let calls = definition.recursive_calls();
+    for (call, recursive) in calls.iter().enumerate() {
+        if recursive.arguments.len() != definition.parameters.len() {
+            return Err(StructuralRecursionError::RecursiveArity {
+                call,
+                expected: definition.parameters.len(),
+                actual: recursive.arguments.len(),
+            });
+        }
+    }
+    if calls.is_empty() {
+        return Ok(StructuralRecursion {
+            recursive_calls: 0,
+            decreasing_parameter: None,
+        });
+    }
+    let decreasing_parameter = (0..definition.parameters.len()).find(|&position| {
+        calls
+            .iter()
+            .all(|call| decreases(&call.arguments[position], &definition.parameters[position]))
+    });
+    decreasing_parameter
+        .map(|decreasing_parameter| StructuralRecursion {
+            recursive_calls: calls.len(),
+            decreasing_parameter: Some(decreasing_parameter),
+        })
+        .ok_or(StructuralRecursionError::NoDecreasingParameter)
+}
+
 /// Plain termination-certificate data.
 ///
 /// `M` describes the measure/order and `W` is the witness format accepted by
@@ -552,6 +612,35 @@ mod tests {
                 arguments: vec![Expr::Variable("tail")],
             }]
         );
+    }
+
+    #[test]
+    fn structural_recursion_is_parameterized_by_descent_policy() {
+        type Expr = CoreExpr<&'static str, (), &'static str>;
+        let definition = Definition::fixed(
+            "walk",
+            vec!["tree", "acc"],
+            Expr::Apply {
+                operator: Box::new(Expr::Variable("walk")),
+                arguments: vec![
+                    Expr::Primitive {
+                        operator: "child",
+                        arguments: vec![Expr::Variable("tree")],
+                    },
+                    Expr::Variable("acc"),
+                ],
+            },
+        );
+        let certificate = check_structural_recursion(&definition, |argument, formal| {
+            matches!(
+                argument,
+                Expr::Primitive { operator: "child", arguments }
+                    if arguments == &[Expr::Variable(*formal)]
+            )
+        })
+        .unwrap();
+        assert_eq!(certificate.recursive_calls, 1);
+        assert_eq!(certificate.decreasing_parameter, Some(0));
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]

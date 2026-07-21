@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37571,
+      "words": 37798,
       "updated": 0
     },
     {
@@ -7094,11 +7094,29 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/acl2",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/acl2",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/acl2",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/acl2/",
       "kind": "file",
       "title": "crates/kernel/hol/init/src/init/acl2/",
       "status": null,
       "path": "crates/kernel/hol/init/src/init/acl2/",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/acl2/README.md",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/acl2/README.md",
+      "status": "missing",
+      "path": "crates/kernel/hol/init/src/init/acl2/README.md",
       "words": 0,
       "updated": 0
     },
@@ -8372,6 +8390,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/k/README.md",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/k/README.md",
+      "status": "missing",
+      "path": "crates/kernel/hol/init/src/k/README.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/k/encode.rs",
       "kind": "file",
       "title": "encode.rs",
@@ -9368,6 +9395,15 @@
       "status": "tracked",
       "path": "crates/kernel/lisp/sexpr/Cargo.toml",
       "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr/README.md",
+      "kind": "file",
+      "title": "crates/kernel/lisp/sexpr/README.md",
+      "status": "missing",
+      "path": "crates/kernel/lisp/sexpr/README.md",
+      "words": 0,
       "updated": 0
     },
     {
@@ -10829,6 +10865,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/k/README.md",
+      "kind": "file",
+      "title": "crates/lang/k/README.md",
+      "status": "missing",
+      "path": "crates/lang/k/README.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/k/examples/counter.kore",
       "kind": "file",
       "title": "counter.kore",
@@ -10843,6 +10888,15 @@
       "title": "crates/lang/k/examples/k-demo/",
       "status": null,
       "path": "crates/lang/k/examples/k-demo/",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/k/examples/k-demo/README.md",
+      "kind": "file",
+      "title": "crates/lang/k/examples/k-demo/README.md",
+      "status": "missing",
+      "path": "crates/lang/k/examples/k-demo/README.md",
       "words": 0,
       "updated": 0
     },
@@ -11180,12 +11234,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lisp/src",
+      "kind": "file",
+      "title": "crates/lang/lisp/src",
+      "status": null,
+      "path": "crates/lang/lisp/src",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/README.md",
+      "kind": "file",
+      "title": "crates/lang/lisp/src/README.md",
+      "status": "missing",
+      "path": "crates/lang/lisp/src/README.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp/src/acl2.rs",
       "kind": "file",
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 2340,
+      "words": 2335,
       "updated": 0
     },
     {
@@ -11212,7 +11284,7 @@
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/carrier.rs",
-      "words": 786,
+      "words": 790,
       "updated": 0
     },
     {
@@ -11239,7 +11311,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1795,
+      "words": 1805,
       "updated": 0
     },
     {
@@ -11320,7 +11392,7 @@
       "title": "session.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/session.rs",
-      "words": 806,
+      "words": 740,
       "updated": 0
     },
     {
@@ -11681,6 +11753,15 @@
       "status": "tracked",
       "path": "crates/lang/lisp/tests/dialects.rs",
       "words": 390,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/exact_datum.rs",
+      "kind": "file",
+      "title": "exact_datum.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/exact_datum.rs",
+      "words": 53,
       "updated": 0
     },
     {
@@ -15874,7 +15955,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37571,
+      "words": 37798,
       "updated": 0
     },
     {
@@ -16670,12 +16751,21 @@
       "updated": 0
     },
     {
+      "id": "file:notes/projects/k-framework.toml",
+      "kind": "file",
+      "title": "k-framework.toml",
+      "status": "tracked",
+      "path": "notes/projects/k-framework.toml",
+      "words": 22,
+      "updated": 0
+    },
+    {
       "id": "file:notes/projects/lisp-foundation.toml",
       "kind": "file",
       "title": "lisp-foundation.toml",
       "status": "tracked",
       "path": "notes/projects/lisp-foundation.toml",
-      "words": 25,
+      "words": 27,
       "updated": 0
     },
     {
@@ -16778,6 +16868,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "kind": "file",
+      "title": "k-lisp-transition-dedup.md",
+      "status": "tracked",
+      "path": "notes/vibes/audits/k-lisp-transition-dedup.md",
+      "words": 63,
+      "updated": 0
+    },
+    {
       "id": "file:notes/vibes/build/buck2-experiment.md",
       "kind": "file",
       "title": "buck2-experiment.md",
@@ -16855,7 +16954,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/k/README.md",
-      "words": 45,
+      "words": 79,
       "updated": 0
     },
     {
@@ -17125,7 +17224,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/README.md",
-      "words": 73,
+      "words": 90,
       "updated": 0
     },
     {
@@ -17134,7 +17233,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 135,
+      "words": 81,
       "updated": 0
     },
     {
@@ -18908,7 +19007,7 @@
       "status": "draft",
       "path": "notes/vibes/audits/k-lisp-transition-dedup.md",
       "words": 351,
-      "updated": 1784673949
+      "updated": 1784674221
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -18967,10 +19066,10 @@
     {
       "id": "note:notes/vibes/k/README.md",
       "kind": "note",
-      "title": "notes/vibes/k/ — the K-framework corpus",
+      "title": "K",
       "status": "draft",
       "path": "notes/vibes/k/README.md",
-      "words": 315,
+      "words": 287,
       "updated": 1784416010
     },
     {
@@ -19228,19 +19327,19 @@
     {
       "id": "note:notes/vibes/lisp/README.md",
       "kind": "note",
-      "title": "Lisp — the `SExpr → Reduction → Lisp → ACL2` tower",
+      "title": "Lisp and ACL2",
       "status": "draft",
       "path": "notes/vibes/lisp/README.md",
-      "words": 493,
+      "words": 404,
       "updated": 1784473467
     },
     {
       "id": "note:notes/vibes/lisp/STATUS.md",
       "kind": "note",
-      "title": "Lisp demo — STATUS",
+      "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 923,
+      "words": 397,
       "updated": 1784416010
     },
     {
@@ -20095,6 +20194,15 @@
       "title": "Express JSON through composed inductive functors",
       "status": "planned",
       "path": "notes/projects/json-inductive-composition.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:k-framework",
+      "kind": "task",
+      "title": "K ingestion and checked rewriting",
+      "status": "active",
+      "path": "notes/projects/k-framework.toml",
       "words": 0,
       "updated": 0
     },
@@ -29717,6 +29825,18 @@
     },
     {
       "source": "note:notes/vibes/k/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "editor"
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/k",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
       "predicate": "documents",
       "target": "file:crates/lang/k",
       "detail": null
@@ -29724,8 +29844,26 @@
     {
       "source": "note:notes/vibes/k/README.md",
       "predicate": "links-to",
-      "target": "note:notes/design/k-frontend.md",
-      "detail": null
+      "target": "file:crates/kernel/hol/init/src/k/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/k/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/k/examples/k-demo/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/k/research/README.md",
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/k/README.md",
@@ -29736,37 +29874,7 @@
     {
       "source": "note:notes/vibes/k/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/backends-and-smt.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/k-framework-today.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/kore-ir.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/proof-generation.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/semantics-ecosystem.md",
+      "target": "note:notes/vibes/lisp/README.md",
       "detail": null
     },
     {
@@ -30659,14 +30767,122 @@
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "editor"
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/acl2",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/lisp/sexpr",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/lisp/src",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "documents",
+      "target": "file:notes/projects/lisp-foundation.toml",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "file:notes/vibes/lisp/initial-ideas/README.md",
+      "target": "file:crates/kernel/hol/init/src/init/acl2/README.md",
       "detail": "missing"
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "file:notes/vibes/lisp/minimal-spec/lisp.wit",
+      "target": "file:crates/kernel/lisp/sexpr/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/arena.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/host.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/inductive_runtime.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/runtime.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/lisp/src/syntax.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/lisp/src/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/lisp/src/acl2.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/lisp/src/book.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/lisp/src/world.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/projects/lisp-foundation.toml",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/k/README.md",
       "detail": null
     },
     {
@@ -30690,85 +30906,19 @@
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-book-frontend.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-dialect.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-fidelity.md",
       "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-full-plan.md",
+      "target": "note:notes/vibes/lisp/acl2-green-islands.md",
       "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-premise-builder.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-s5-design.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
+      "target": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
       "detail": null
     },
     {
@@ -30779,38 +30929,14 @@
     },
     {
       "source": "note:notes/vibes/lisp/STATUS.md",
-      "predicate": "documents",
-      "target": "file:crates/kernel/web/src/lib.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/STATUS.md",
-      "predicate": "documents",
-      "target": "file:crates/lang/lisp",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/STATUS.md",
-      "predicate": "documents",
-      "target": "file:crates/lib/repl-core",
-      "detail": null
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "editor"
     },
     {
       "source": "note:notes/vibes/lisp/STATUS.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/README.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/STATUS.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/STATUS.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "detail": null
     },
     {
@@ -33826,6 +33952,84 @@
       "detail": null
     },
     {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:kernel.hol.init.src.k.guarded-rewriting-is-stratified-sound-incomplete",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:kernel.hol.init.src.k.no-builtin-hooks-f1",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:kernel.hol.init.src.k.no-cells-ksequence-heating-cooling",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:kernel.hol.init.src.k.no-substitution-binders",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:lang.k.claims-reachability-layer-unconsumed",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "contains",
+      "target": "todo:lang.k.no-k-kore-bridge",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "depends-on",
+      "target": "task:logic-relations",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/k/README.md",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/k/reduction-demo-scope.md",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/vision/k-framework-vision.md",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/k",
+      "detail": null
+    },
+    {
+      "source": "task:k-framework",
+      "predicate": "touches",
+      "target": "file:crates/lang/k",
+      "detail": null
+    },
+    {
       "source": "task:lisp-foundation",
       "predicate": "contains",
       "target": "todo:lisp.acl2.admission-layer",
@@ -33888,6 +34092,12 @@
     {
       "source": "task:lisp-foundation",
       "predicate": "described-by",
+      "target": "note:notes/vibes/lisp/README.md",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "described-by",
       "target": "note:notes/vibes/lisp/STATUS.md",
       "detail": null
     },
@@ -33907,6 +34117,12 @@
       "source": "task:lisp-foundation",
       "predicate": "touches",
       "target": "file:crates/kernel/data/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/acl2",
       "detail": null
     },
     {
@@ -35718,6 +35934,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/k/README.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "editor",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "lisp-docs-index",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 1
+    },
+    {
       "noteId": "note:notes/vibes/k/reduction-demo-scope.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -36008,6 +36234,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/lisp/README.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "editor",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "lisp-docs-index",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 1
+    },
+    {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -36016,6 +36252,16 @@
       "agent": "claude",
       "harness": "claude",
       "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/STATUS.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "editor",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "lisp-docs-index",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 1
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -36990,6 +37236,11 @@
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
       "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
       "committedAt": 1784479471
+    },
+    {
+      "noteId": "note:notes/vibes/audits/k-lisp-transition-dedup.md",
+      "commit": "efbf9118b5e6c5d17d57bf86677ce4559995c1bc",
+      "committedAt": 1784674221
     },
     {
       "noteId": "note:notes/vibes/build/buck2-experiment.md",

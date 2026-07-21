@@ -13,6 +13,7 @@ todos = [
   "lisp.scheme.letrec-hol",
 ]
 notes = [
+  "notes/vibes/lisp/README.md",
   "notes/vibes/lisp/lisp-first-acl2-redirect.md",
   "notes/vibes/lisp/abstract-sexpr-api.md",
   "notes/vibes/lisp/STATUS.md",
@@ -20,5 +21,6 @@ notes = [
 files = [
   "crates/kernel/lisp",
   "crates/lang/lisp",
+  "crates/kernel/hol/init/src/init/acl2",
   "crates/kernel/data/inductive",
 ]

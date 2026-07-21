@@ -10,35 +10,69 @@ at = "2026-07-14T19:57:49+01:00"
 source = "legacy"
 agent = "claude"
 harness = "claude"
+
+[[contributions]]
+role = "editor"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-21T00:00:00+01:00"
+source = "lisp-docs-index"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
-# notes/vibes/k/ — the K-framework corpus
+# K
 
-Everything behind the K frontend: the sourced research surveys and their
-synthesis. The north star lives in
-[`../vision/k-framework-vision.md`](../vision/k-framework-vision.md); the
-actionable decision record is
-[`../../design/k-frontend.md`](../../design/k-frontend.md) (input surface =
-KORE, the fragment ladder F0–F4, the sublanguage ladder). First code slice:
-`crates/lang/k` (`covalence-k`).
+This is the entry point for K surface/KORE ingestion and checked HOL
+rewriting. Query the project and stable TODOs before starting work:
 
-**Resume here:** [`reduction-demo-scope.md`](./reduction-demo-scope.md) — the
-detailed scope + layered-API architecture + roadmap for the medium-term north
-star (*demo the basic K tutorial languages end-to-end*; K a first-class IR on
-par with Metamath). Target = Lesson 1.2 `colorOf`/`contentsOfJar` + a PEANO
-demo; the four missing pieces (matcher, congruence, driver, `.k` rule reader);
-the `KSession`-as-`MmSession`-peer framing.
+```sh
+bun run notes -- --task k-framework
+bun run todos -- --list --search lang.k
+bun run todos -- --list --search kernel.hol.init.src.k
+```
 
-## `research/` — sourced surveys (researched 2026-07-13)
+## Implemented path
 
-Web-researched from primary sources with an independent verification pass;
-every claim carries a certainty tag and rot-prone facts carry staleness notes.
+```text
+.k tutorial fragment ─┐
+                     ├→ rewrite rules → matcher/driver → checked KStep/KReduces
+textual KORE ─────────┘
+```
 
-| Doc | What it covers |
-|---|---|
-| [`research/k-framework-today.md`](./research/k-framework-today.md) | K in 2026: repo/version/license state, anatomy of a `.k` definition, kompile, KAST vs KORE, pyk, tutorials. |
-| [`research/kore-ir.md`](./research/kore-ir.md) | KORE — the kompiled matching-logic IR: grammar, axiom shapes, attributes, JSON encodings, stability; why it's our ingestion surface. |
-| [`research/backends-and-smt.md`](./research/backends-and-smt.md) | LLVM + Haskell backends, the KORE-RPC protocol, exactly where Z3 sits (QF_LIA+UF side conditions), kprove/KCFG — and the absence of proof objects. |
-| [`research/semantics-ecosystem.md`](./research/semantics-ecosystem.md) | The semantics to import, by tier: KEVM/Kontrol, KWasm, KMIR, RISC-V (active) · KPlutus/KAVM/IELE (dormant) · c-semantics, x86-64 (frozen, legacy-K). Licenses + K-pins. |
-| [`research/proof-generation.md`](./research/proof-generation.md) | RV's proof-certificate line: CAV'21 Metamath pipeline, OOPSLA'23 reachability certificates, the Pi Squared pivot, LLVM-backend proof hints — the opening Covalence fills. |
-| [`research/reachability-and-matching-logic.md`](./research/reachability-and-matching-logic.md) | The theory: AML / matching μ-logic vs the RL papers' FOL fragment, the all-path proof system, why Circularity is inductively (step-indexed) sound, prior embeddings to crib. |
+- [`crates/lang/k`](../../../crates/lang/k/) is untrusted parsing and data:
+  textual KORE, a `.k` tutorial fragment, fragment classification, grammar
+  lowering, and S-expression rendering.
+- [`crates/kernel/hol/init/src/k`](../../../crates/kernel/hol/init/src/k/) owns
+  HOL encoding, matching, congruence, rule replay, reflexive-transitive
+  reduction, and sessions.
+- [`examples/k-demo`](../../../crates/lang/k/examples/k-demo/) exercises Peano,
+  boolean simplification, and the K tutorial color example.
+
+## Open gates
+
+The next semantic layers are recorded beside the implementation:
+
+- builtin hooks and guarded rewriting:
+  `kernel.hol.init.src.k.no-builtin-hooks-f1` and
+  `kernel.hol.init.src.k.guarded-rewriting-is-stratified-sound-incomplete`;
+- cells, KSequence, and heating/cooling:
+  `kernel.hol.init.src.k.no-cells-ksequence-heating-cooling`;
+- capture-avoiding substitution and binders:
+  `kernel.hol.init.src.k.no-substitution-binders`;
+- KORE claims and frontend parity:
+  `lang.k.claims-reachability-layer-unconsumed`,
+  `lang.k.no-k-kore-bridge`, and the remaining `lang.k.*` ingestion markers.
+
+[`reduction-demo-scope.md`](./reduction-demo-scope.md) is the detailed design
+and implementation history. [`../vision/k-framework-vision.md`](../vision/k-framework-vision.md)
+states the longer-term role. The files in [`research/`](./research/) are sourced
+background, not implementation status.
+
+## Reuse boundary with Lisp
+
+K rewriting and Lisp evaluation share closure and replay concepts, but not
+machine state or rule policy. A common abstraction is justified only where it
+removes duplicate relation-closure or theorem-replay code while preserving the
+distinct K matcher/congruence and Lisp environment/continuation semantics. See
+the [`Lisp index`](../lisp/README.md) and keep such extraction below both
+frontends.

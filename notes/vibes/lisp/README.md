@@ -10,63 +10,80 @@ at = "2026-07-13T21:25:20+01:00"
 source = "legacy"
 agent = "claude"
 harness = "claude"
+
+[[contributions]]
+role = "editor"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-21T00:00:00+01:00"
+source = "lisp-docs-index"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
-# Lisp — the `SExpr → Reduction → Lisp → ACL2` tower
+# Lisp and ACL2
 
-The Lisp frontend is built as a **tower**, each layer a clean, tested API the next sits on:
+This is the entry point for the reusable Lisp foundation and the ACL2 layer
+above it. For current implementation facts, read [`STATUS.md`](./STATUS.md).
+For concrete work, query the `lisp-foundation` project and its stable TODOs:
 
-| Layer | What it is | Crates |
-|---|---|---|
-| **SExpr** | the S-expression API — read/print/build/hash + the kernel S-expression datatype and its computation laws. **The foundation.** | `covalence-sexp` (surface tree + reader/printer/visitor), the kernel `sexpr` type (`init/inductive/`) |
-| **Reduction** | parametric certified reduction — a `Reduces` step relation, generic in *representation × semantics × strategy* ([`initial-ideas/parametric-reduction.md`](./initial-ideas/parametric-reduction.md)). Print only after a kernel `Thm`. | `covalence-repl` (traits), `covalence-lisp` (impls) |
-| **Lisp** | a dialect over the reduction layer: reader → resolve (symbols/numbers/strings) → reduce → print; the REPL + `/lisp` endpoint | `covalence-lisp` |
-| **ACL2** | ACL2 as a dialect + discipline (mandatory measures, the-method) on the Lisp | later |
+```sh
+bun run notes -- --task lisp-foundation
+bun run todos -- --list --search lisp
+bun run todos -- --list --search acl2
+```
 
-Peers on the concatenative axis (`/forsp`, `/forth`) ride the same reduction layer;
-`covalence-forsp` already exists.
+## Layering
 
-## This push: polish the foundation
+```text
+S-expression data
+  → backend-neutral syntax, values, environments, and partial execution
+  → Scheme, Sector, and Forsp frontend policy
+  → ACL2 terms, events, admissible worlds, and checked derivations
+  → HOL transport
+```
 
-The S-expression API is load-bearing for everything above, so this push **cleans, tests,
-and polishes it thoroughly** — including dropping the `carved` jargon in favor of plain
-**S-expression** naming *in the code*, not just the docs.
+Generic Lisp permits divergence and stuck states. ACL2 adds checked termination,
+uniqueness, admission, and proof rules; it must not make the generic layer
+total. [`lisp-first-acl2-redirect.md`](./lisp-first-acl2-redirect.md) records
+this boundary.
 
-**Rename (do it as we build, test-gated):** `CarvedSExpr → SExpr`-family naming
-(bundle/accessor/file/backend), `carved.rs → sexpr.rs`, `carved() → sexpr…()`,
-`carved_backend() → sexpr…_backend()`. The HOL datatype stays `sexpr`. Naming decision to
-lock: the kernel bundle name must not clash with `covalence_sexp::SExpr` (the surface
-tree) — candidates `SExprTheory` / `HolSExpr` / `SExprHol` (bundle) + `sexpr_theory()`.
-Coordinate the rename with the `covalence-lisp` build so the kernel and its first consumer
-move together and `cargo test` stays green throughout.
+## Source map
 
-**Polish/test targets for the S-expression API:**
-- `covalence-sexp`: round-trip (parse ∘ print = id) property tests across dialects; the
-  event/`SExpBuilder` path; the deparse gap ([`initial-ideas/parsing-relations.md`](./initial-ideas/parsing-relations.md)).
-- kernel `sexpr`: the computation laws (`car`/`cdr`/`cons`/`consp`/`atom?`/`eq`) exercised
-  as kernel theorems; the recursor/induction; a clean, documented lowering `SExpr → sexpr`.
+| Concern | Source |
+|---|---|
+| Abstract S-expressions | [`crates/kernel/lisp/sexpr`](../../../crates/kernel/lisp/sexpr/) |
+| Core syntax and strategies | [`kernel/lisp/src/syntax.rs`](../../../crates/kernel/lisp/src/syntax.rs) |
+| CEK machine and transition labels | [`kernel/lisp/src/host.rs`](../../../crates/kernel/lisp/src/host.rs) |
+| Runtime/value capabilities | [`kernel/lisp/src/runtime.rs`](../../../crates/kernel/lisp/src/runtime.rs) |
+| Trace, exploration, and replay APIs | [`kernel/lisp/src/relation.rs`](../../../crates/kernel/lisp/src/relation.rs) |
+| Direct, resource, and inductive runtimes | [`host.rs`](../../../crates/kernel/lisp/src/host.rs), [`arena.rs`](../../../crates/kernel/lisp/src/arena.rs), [`inductive_runtime.rs`](../../../crates/kernel/lisp/src/inductive_runtime.rs) |
+| Scheme/Sector/Forsp frontends | [`crates/lang/lisp/src`](../../../crates/lang/lisp/src/) |
+| ACL2 frontend, worlds, and books | [`acl2.rs`](../../../crates/lang/lisp/src/acl2.rs), [`world.rs`](../../../crates/lang/lisp/src/world.rs), [`book.rs`](../../../crates/lang/lisp/src/book.rs) |
+| ACL2 proof model | [`crates/kernel/hol/init/src/init/acl2`](../../../crates/kernel/hol/init/src/init/acl2/) |
 
-## Map
+The shared API is tagged `A0022` in
+[`kernel/lisp/src/lib.rs`](../../../crates/kernel/lisp/src/lib.rs). The project
+manifest is [`notes/projects/lisp-foundation.toml`](../../projects/lisp-foundation.toml).
 
-- [`minimal-spec/`](./minimal-spec/) — the buildable spec: [`README.md`](./minimal-spec/README.md), [`implementation-plan.md`](./minimal-spec/implementation-plan.md), [`lisp.wit`](./minimal-spec/lisp.wit).
-- [`initial-ideas/`](./initial-ideas/) — the design corpus: parametric-reduction, reduction-relations-and-state, generic-repl-trait, lisp-dialects-and-order, parsing-relations, content-addressing-sexpr, lisp-frontend-sketch, lisp-acl2-answers, acl2-lisp.
-- [`abstract-sexpr-api.md`](./abstract-sexpr-api.md) — reusable-API design: the
-  `AbstractSExpr` carrier trait (carved `sexpr` / ACL2 `A` / surface `SExpr` as
-  impls) + the abstract reduction axes (equational / relational / certificate
-  shapes, `Composer` split, `CertifiedEval`, transport exit) with a sliced
-  migration plan.
-- Status report: [`STATUS.md`](./STATUS.md) once the first build lands.
-- ACL2: [`acl2-full-plan.md`](./acl2-full-plan.md) (the governing S0–S12 plan),
-  [`acl2-x86isa-roadmap.md`](./acl2-x86isa-roadmap.md) (corpus-derived gates
-  from book loading to full x86 development),
-  [`acl2-s7-s12-plan.md`](./acl2-s7-s12-plan.md) (remaining stages, concretely),
-  [`acl2-fidelity.md`](./acl2-fidelity.md) (assumptions/deviations ledger),
-  [`acl2-agent-guide.md`](./acl2-agent-guide.md) (agent orientation: module map, patterns, gotchas, process),
-  stage designs [`acl2-s0-s3-design.md`](./acl2-s0-s3-design.md) /
-  [`acl2-s4-s6-design.md`](./acl2-s4-s6-design.md) /
-  [`acl2-s5-design.md`](./acl2-s5-design.md) (each with implementation reports),
-  [`acl2-book-frontend.md`](./acl2-book-frontend.md) (book import pipeline),
-  [`acl2-premise-builder.md`](./acl2-premise-builder.md) (generic induction
-  premise builder: object-level simplifier + IH splicing — the
-  surface-defthm → S6-kernel-path design),
-  [`acl2-dialect.md`](./acl2-dialect.md) (slice-1 dialect notes).
+## Read by task
+
+- Architecture and current gaps: [`STATUS.md`](./STATUS.md).
+- Lisp/ACL2 semantic boundary: [`lisp-first-acl2-redirect.md`](./lisp-first-acl2-redirect.md).
+- Representation boundary: [`abstract-sexpr-api.md`](./abstract-sexpr-api.md).
+- ACL2 behavior deviations: [`acl2-fidelity.md`](./acl2-fidelity.md).
+- Corpus milestone and commands: [`acl2-green-islands.md`](./acl2-green-islands.md).
+- ACL2 implementation orientation: [`acl2-agent-guide.md`](./acl2-agent-guide.md).
+
+The `acl2-s*` plans and `initial-ideas/` explain how the present code arose.
+They are historical design material, not current task lists. Branch handoffs are
+temporary evidence and should be deleted after their facts reach this index,
+the fidelity ledger, or source-local TODOs.
+
+## Shared reduction work
+
+Lisp and K both need checked finite reduction evidence, but their semantics are
+not one API: Lisp uses environments, closures, continuations, and effects; K
+uses matching and congruence over rewrite rules. Reuse should occur below those
+policies—in relation closure, trace evidence, rule replay, and theorem
+transport—only when the proof obligations coincide. See the
+[`K index`](../k/README.md) before extracting a common layer.

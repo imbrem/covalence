@@ -1,0 +1,21 @@
+id = "k-framework"
+title = "K ingestion and checked rewriting"
+status = "active"
+depends_on = ["logic-relations", "inductive-datatypes"]
+todos = [
+  "kernel.hol.init.src.k.no-builtin-hooks-f1",
+  "kernel.hol.init.src.k.guarded-rewriting-is-stratified-sound-incomplete",
+  "kernel.hol.init.src.k.no-cells-ksequence-heating-cooling",
+  "kernel.hol.init.src.k.no-substitution-binders",
+  "lang.k.claims-reachability-layer-unconsumed",
+  "lang.k.no-k-kore-bridge",
+]
+notes = [
+  "notes/vibes/k/README.md",
+  "notes/vibes/k/reduction-demo-scope.md",
+  "notes/vibes/vision/k-framework-vision.md",
+]
+files = [
+  "crates/lang/k",
+  "crates/kernel/hol/init/src/k",
+]

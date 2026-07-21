@@ -38,8 +38,9 @@ propose rows in an untrusted database, never directly change trust.
 Only explicitly interpreted tables and columns participate in logical state.
 The logical SQLite model covers storage classes, `NULL`, affinity, strictness,
 relevant constraints, keys/rowid, and rows; indices are physical and generated
-columns are deferred. Trusted queries must preserve the meaning of
-schema-indexed expressions and their `Col<Name, Repr>` decoders.
+columns are deferred. Trusted queries preserve table interpretations: their
+bindings from expression slots to columns, partial decoders, and quantified
+row predicates. See [`N005I`](./substrate-expressions.md).
 
 ## Database classes
 

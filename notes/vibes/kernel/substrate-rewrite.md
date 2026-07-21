@@ -122,11 +122,10 @@ completeness declarations
 row/field projections
 ```
 
-`N005H` makes schemas part of logical indexing, not just persistence metadata.
-An expression mentioning `Col(name, repr)` is well-typed relative to a schema;
-an expression without columns may be schema-polymorphic. The first API sketch
-should test an `Expr` with an associated `Schema` and both static and dynamic
-variable/column-use analysis, without yet committing to a Rust encoding.
+`N005H` makes physical schema requirements part of checking a table
+interpretation. The expression itself refers to typed slots; the interpretation
+binds those slots to columns through partial representations. Closed expressions
+have an empty context and no schema dependency.
 
 A table interpretation is a predicate on rows. Its basic positive theorem is
 `All(rows, interpretation)`; `Any`, `Not(All)`, and `Not(Any)` are useful dual
@@ -141,6 +140,12 @@ representation. Reusing a key with changed defining fields requires a proof
 that the meanings agree, or atomic removal of the old definition and all
 invalidated dependents. `USE<T>` names its defining source. The same physical
 column interpreted at different types creates independent maps.
+
+The focused expression plan is [`N005I`](./substrate-expressions.md). It reserves
+**schema** for SQLite structure, calls expression inputs a **context**, and
+moves column binding into a **table interpretation**. Its dynamic expression
+tree is the durable reference semantics; a Rust associated-type API is a
+checked façade over that representation. Use that vocabulary below.
 
 Application relations—terms, typing, implications, blob observations,
 executions, derivations, signatures, and roots—are then ordinary instances of
@@ -242,7 +247,7 @@ lookup or database row “mints” a theorem is superseded by this design.
 
 ```text
 S0 terminology + invariants
- ├─ S1 SQLite model + schema-indexed expressions
+ ├─ S1 SQLite model + context-indexed expressions
  ├─ S2 table interpretation + Set/Relation/MThm API
  └─ S3 high-level API inventory and compatibility harness
        ↓
@@ -269,14 +274,14 @@ S12 audit, benchmark, then replace old substrate
 Acceptance: one glossary, explicit authority boundary, and removal or clear
 supersession of contradictory notes. This document is the initial artifact.
 
-### S1 — SQLite model and schema-indexed expressions
+### S1 — SQLite model and context-indexed expressions
 
 Model only SQLite features with logical significance: storage classes, `NULL`,
 affinity, strictness, columns, relevant constraints, keys/rowid, and rows.
-Exclude indices and defer generated columns. Specify schema-indexed `Expr`,
-`Col<Name, Repr>`, partial decoding, and static plus dynamic variable/column-use
-analysis. Initially choose fail-closed schema validation over epsilon
-totalization for malformed and nullable values.
+Exclude indices and defer generated columns. Specify context-indexed `Expr`,
+partial representations, table bindings from slots to columns, and dynamic
+input analysis. Initially choose fail-closed validation over epsilon
+totalization. Add static input analysis only after the dynamic semantics works.
 
 ### S2 — table interpretation and relational paper API
 
@@ -413,7 +418,8 @@ Before production implementation, resolve:
   insertion and deletion affect each;
 - the representation-failure and `NULL` policy after the first prototype;
 - the scope of a `DEF` mapping and the transaction required for key reuse;
-- the Rust and dynamic forms of schema-indexed expressions and variable sets;
+- the ergonomic Rust form of context-indexed expressions (the dynamic form and
+  its authoritative input set are fixed by `N005I`);
 - whether sums/dependent table sources are primitive or compiled to monomorphic
   relations;
 - in-memory term identity and lifetime model;

@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37310,
+      "words": 37397,
       "updated": 0
     },
     {
@@ -15865,7 +15865,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37310,
+      "words": 37397,
       "updated": 0
     },
     {
@@ -16481,6 +16481,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/plans/covalence_substrate_design.md",
+      "kind": "file",
+      "title": "covalence_substrate_design.md",
+      "status": "tracked",
+      "path": "notes/plans/covalence_substrate_design.md",
+      "words": 230,
+      "updated": 0
+    },
+    {
       "id": "file:notes/plans/next-stage.md",
       "kind": "file",
       "title": "next-stage.md",
@@ -16738,7 +16747,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/README.md",
-      "words": 69,
+      "words": 71,
       "updated": 0
     },
     {
@@ -17035,7 +17044,7 @@
       "title": "substrate-rewrite.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 433,
+      "words": 439,
       "updated": 0
     },
     {
@@ -17071,7 +17080,7 @@
       "title": "trusted-database-algebra.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/trusted-database-algebra.md",
-      "words": 212,
+      "words": 213,
       "updated": 0
     },
     {
@@ -17638,7 +17647,7 @@
       "title": "current-program.md",
       "status": "tracked",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 85,
+      "words": 86,
       "updated": 0
     },
     {
@@ -17782,7 +17791,7 @@
       "title": "neel-meeting-synthesis.md",
       "status": "tracked",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 232,
+      "words": 233,
       "updated": 0
     },
     {
@@ -18809,7 +18818,7 @@
       "status": "draft",
       "path": "notes/plans/covalence_substrate_design.md",
       "words": 1902,
-      "updated": 1784668330
+      "updated": 1784668737
     },
     {
       "id": "note:notes/plans/next-stage.md",
@@ -18853,8 +18862,8 @@
       "title": "Design corpus",
       "status": "draft",
       "path": "notes/vibes/README.md",
-      "words": 357,
-      "updated": 1784585472
+      "words": 367,
+      "updated": 1784668737
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -19118,13 +19127,22 @@
       "updated": 1784580813
     },
     {
+      "id": "note:notes/vibes/kernel/substrate-expressions.md",
+      "kind": "note",
+      "title": "Substrate expressions",
+      "status": "draft",
+      "path": "notes/vibes/kernel/substrate-expressions.md",
+      "words": 1201,
+      "updated": 1784669184
+    },
+    {
       "id": "note:notes/vibes/kernel/substrate-rewrite.md",
       "kind": "note",
       "title": "Substrate rewrite: SQLite-backed nucleus",
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 2801,
-      "updated": 1784584541
+      "words": 2847,
+      "updated": 1784668737
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -19159,8 +19177,8 @@
       "title": "Trusted database algebra",
       "status": "draft",
       "path": "notes/vibes/kernel/trusted-database-algebra.md",
-      "words": 1426,
-      "updated": 1784584541
+      "words": 1432,
+      "updated": 1784668737
     },
     {
       "id": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -19699,8 +19717,8 @@
       "title": "Current program",
       "status": "draft",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 335,
-      "updated": 1784584541
+      "words": 337,
+      "updated": 1784668737
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -19843,8 +19861,8 @@
       "title": "Neel meeting: current vision and concrete proposals",
       "status": "draft",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 1459,
-      "updated": 1784584541
+      "words": 1465,
+      "updated": 1784668737
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
@@ -29331,6 +29349,12 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-expressions.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/kernel/substrate-rewrite.md",
       "detail": null
     },
@@ -30307,6 +30331,24 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/kernel/substrate-expressions.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/substrate-expressions.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/covalence_substrate_design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/substrate-expressions.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/relational-design.md",
+      "detail": null
+    },
+    {
       "source": "note:notes/vibes/kernel/substrate-rewrite.md",
       "predicate": "contributed-by",
       "target": "actor:agent:gpt-5.6-sol",
@@ -30352,6 +30394,12 @@
       "source": "note:notes/vibes/kernel/substrate-rewrite.md",
       "predicate": "links-to",
       "target": "note:notes/plans/relational-design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-expressions.md",
       "detail": null
     },
     {
@@ -30515,6 +30563,12 @@
       "predicate": "contributed-by",
       "target": "actor:agent:gpt-5.6-sol",
       "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/trusted-database-algebra.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-expressions.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -32235,6 +32289,12 @@
     {
       "source": "note:notes/vibes/plans/current-program.md",
       "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-expressions.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/current-program.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/kernel/substrate-rewrite.md",
       "detail": null
     },
@@ -32878,6 +32938,12 @@
       "source": "note:notes/vibes/vision/neel-meeting-synthesis.md",
       "predicate": "links-to",
       "target": "note:notes/plans/covalence_substrate_design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/vision/neel-meeting-synthesis.md",
+      "predicate": "links-to",
+      "target": "note:notes/vibes/kernel/substrate-expressions.md",
       "detail": null
     },
     {
@@ -34813,6 +34879,12 @@
       "stableId": "N005H",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/substrate-expressions.md",
+      "stableId": "N005I",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -35684,6 +35756,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/substrate-expressions.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "substrate-expression-consolidation",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -36706,6 +36788,11 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/plans/covalence_substrate_design.md",
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
+    },
+    {
       "noteId": "note:notes/plans/next-stage.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -36727,8 +36814,8 @@
     },
     {
       "noteId": "note:notes/vibes/README.md",
-      "commit": "0790bd60af875fbb848406034237e045445eea40",
-      "committedAt": 1784585472
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -36877,8 +36964,8 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/substrate-rewrite.md",
-      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
-      "committedAt": 1784584541
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -36897,8 +36984,8 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/trusted-database-algebra.md",
-      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
-      "committedAt": 1784584541
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
     },
     {
       "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -37197,8 +37284,8 @@
     },
     {
       "noteId": "note:notes/vibes/plans/current-program.md",
-      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
-      "committedAt": 1784584541
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
     },
     {
       "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -37277,8 +37364,8 @@
     },
     {
       "noteId": "note:notes/vibes/vision/neel-meeting-synthesis.md",
-      "commit": "8baa1eed99d9bf1715d50e80ed980714f39ccb70",
-      "committedAt": 1784584541
+      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
+      "committedAt": 1784668737
     },
     {
       "noteId": "note:notes/vibes/vision/project-map.md",

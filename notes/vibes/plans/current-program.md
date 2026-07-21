@@ -23,7 +23,8 @@ from this directory remain available in Git.
 1. **Specify the relational substrate.** Start from maintainer designs
    [`N0056`](../../plans/relational-design.md) and
    [`N005H`](../../plans/covalence_substrate_design.md). Settle the partial
-   SQLite model, schema-indexed expressions and decoding, table quantifiers,
+   SQLite model, context-indexed expressions and decoding from
+   [`N005I`](../kernel/substrate-expressions.md), table quantifiers,
    `Set`/`Relation`/`MThm`, and `DEF`/`USE` mutation semantics. Then build
    matching in-memory and SQLite witnesses. Specify the query/multi-DB algebra in
    [`N0057`](../kernel/trusted-database-algebra.md) before general replay.

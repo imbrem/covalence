@@ -95,10 +95,11 @@ tables are one realization of those witnesses. This interface, rather than a
 fixed theorem-record schema, is the prospective thin waist.
 
 The maintainer's follow-up design [`N005H`](../../plans/covalence_substrate_design.md)
-makes this concrete: expressions are indexed by the schema needed to interpret
-their columns, tables denote predicates on rows, and positive, existential, and
-negative table claims require different evidence. `DEF` and `USE` govern
-identity-preserving mutation, not merely serialization layout.
+makes this concrete. The focused refinement [`N005I`](../kernel/substrate-expressions.md)
+separates expression contexts from SQLite schemas: table interpretations bind
+typed expression slots to physical columns. Tables denote predicates on rows,
+and positive, existential, and negative claims require different evidence.
+`DEF` and `USE` govern identity-preserving mutation, not merely layout.
 
 Higher formats are identified by a decoder/interpreter plus bytes. Higher
 content-addressed objects lower to hashed blobs and interpretations rather than

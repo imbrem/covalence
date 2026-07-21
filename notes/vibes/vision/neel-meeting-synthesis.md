@@ -94,6 +94,12 @@ are projectable sets; `MThm` certifies membership using a witness; and SQLite
 tables are one realization of those witnesses. This interface, rather than a
 fixed theorem-record schema, is the prospective thin waist.
 
+The maintainer's follow-up design [`N005H`](../../plans/covalence_substrate_design.md)
+makes this concrete: expressions are indexed by the schema needed to interpret
+their columns, tables denote predicates on rows, and positive, existential, and
+negative table claims require different evidence. `DEF` and `USE` govern
+identity-preserving mutation, not merely serialization layout.
+
 Higher formats are identified by a decoder/interpreter plus bytes. Higher
 content-addressed objects lower to hashed blobs and interpretations rather than
 adding special object kinds to the trusted floor.

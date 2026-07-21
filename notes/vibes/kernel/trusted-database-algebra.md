@@ -35,6 +35,12 @@ Do not accept user SQL as a trusted rule. Expose a typed relational-algebra AST
 and compile its closed variants to prepared SQL templates. Arbitrary SQL may
 propose rows in an untrusted database, never directly change trust.
 
+Only explicitly interpreted tables and columns participate in logical state.
+The logical SQLite model covers storage classes, `NULL`, affinity, strictness,
+relevant constraints, keys/rowid, and rows; indices are physical and generated
+columns are deferred. Trusted queries must preserve the meaning of
+schema-indexed expressions and their `Col<Name, Repr>` decoders.
+
 ## Database classes
 
 - **trusted**: accepted nucleus state under a named execution/grounding TCB;
@@ -76,6 +82,13 @@ Projection, filtering, and subdatabase extraction preserve positive facts but
 usually destroy completeness. A `COMPLETE` claim is copied only when a checked
 side condition proves that the operation preserved its quantified domain.
 
+Deletion preserves an `All` fact but may destroy `Any`; insertion may preserve
+`Any` but requires the interpretation obligation for `All`. `NotAny` and
+`NotAll` require completeness or counterexample evidence. Schema constraints
+form a small decidable validation layer: they can discharge representation and
+range obligations, but are not an unrestricted theorem language. Malformed or
+`NULL` values in referenced columns fail validation in the first prototype.
+
 ## Core nucleus operations
 
 ### Read trusted state
@@ -105,6 +118,11 @@ trusted state. Before union:
 
 This is not raw `ATTACH; INSERT ... SELECT *`; it is a checked `merge`
 transition implemented by a small family of such queries.
+
+A `DEF<T>` collision is semantic, not merely a duplicate SQL key. Reuse is
+valid only when checked equality relates the erased values denoted by the old
+and new rows, or an atomic replacement removes invalidated dependents. A
+`USE<T>` carries the defining table/column scope needed to check this.
 
 ### Compare trusted and untrusted states
 
@@ -174,6 +192,8 @@ trusted database, and root-reachable subdatabase extraction.
 Run each operation through SQLite and a tiny independent in-memory interpreter,
 then compare canonical row sets and trust manifests. This is the first TCB
 consilience test and should precede use of recursive SQL or complex query plans.
+Include a STRICT table, nullable and invalid candidate rows, and a temporary
+result table whose admitted rows become checked theorem witnesses.
 
 ## Open decisions
 
@@ -189,4 +209,3 @@ consilience test and should precede use of recursive SQL or complex query plans.
   log?
 - How are SQL planner/version/configuration details represented in the
   execution TCB?
-

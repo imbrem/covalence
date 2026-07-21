@@ -66,8 +66,9 @@ unless referring to a concrete existing crate.
 
 ## Conceptual state
 
-The maintainer's live relational sketch is
-[`N0056`](../../plans/relational-design.md). Its initial API direction is
+The maintainer's live relational sketch is [`N0056`](../../plans/relational-design.md),
+refined by the concrete SQLite design in
+[`N005H`](../../plans/covalence_substrate_design.md). Its initial API direction is
 stronger than merely persisting theorem records:
 
 - everything, including `MThm`, should have a relational interpretation;
@@ -120,6 +121,26 @@ relation/table groundings and their TCB
 completeness declarations
 row/field projections
 ```
+
+`N005H` makes schemas part of logical indexing, not just persistence metadata.
+An expression mentioning `Col(name, repr)` is well-typed relative to a schema;
+an expression without columns may be schema-polymorphic. The first API sketch
+should test an `Expr` with an associated `Schema` and both static and dynamic
+variable/column-use analysis, without yet committing to a Rust encoding.
+
+A table interpretation is a predicate on rows. Its basic positive theorem is
+`All(rows, interpretation)`; `Any`, `Not(All)`, and `Not(Any)` are useful dual
+forms with distinct witness or completeness requirements. Translation of
+SQLite values through a representation is partial. Initially require schema
+validation proving referenced values decode; do not make epsilon fallback the
+default meaning of malformed or `NULL` data.
+
+`DEF` and `USE` are mutation disciplines. A `DEF<T>` column maps each distinct
+physical key to an erased value of `T`, scoped at least by table, column, and
+representation. Reusing a key with changed defining fields requires a proof
+that the meanings agree, or atomic removal of the old definition and all
+invalidated dependents. `USE<T>` names its defining source. The same physical
+column interpreted at different types creates independent maps.
 
 Application relations—terms, typing, implications, blob observations,
 executions, derivations, signatures, and roots—are then ordinary instances of
@@ -221,11 +242,11 @@ lookup or database row “mints” a theorem is superseded by this design.
 
 ```text
 S0 terminology + invariants
- ├─ S1 Set/Relation/Witness/MThm paper API
- ├─ S2 schema + grounding metamodel
+ ├─ S1 SQLite model + schema-indexed expressions
+ ├─ S2 table interpretation + Set/Relation/MThm API
  └─ S3 high-level API inventory and compatibility harness
        ↓
-S4 dual in-memory/SQLite witness spike
+S4 DEF/USE mutation model + dual witness spike
        ↓
 S5 trusted query + multi-DB algebra
        ↓
@@ -248,23 +269,23 @@ S12 audit, benchmark, then replace old substrate
 Acceptance: one glossary, explicit authority boundary, and removal or clear
 supersession of contradictory notes. This document is the initial artifact.
 
-### S1 — relational paper API
+### S1 — SQLite model and schema-indexed expressions
 
-Specify `Set`, `Relation`, witness types, projections, and `MThm` independently
-of Rust layout and SQLite. State precisely what an `MThm<S>` certifies about a
-witness, how products/projections work, how the same logical element can have
-multiple witnesses, and which operations require completeness. Give a dynamic
-language rendition alongside the Rust-shaped API to prevent accidental
-dependence on Rust traits.
+Model only SQLite features with logical significance: storage classes, `NULL`,
+affinity, strictness, columns, relevant constraints, keys/rowid, and rows.
+Exclude indices and defer generated columns. Specify schema-indexed `Expr`,
+`Col<Name, Repr>`, partial decoding, and static plus dynamic variable/column-use
+analysis. Initially choose fail-closed schema validation over epsilon
+totalization for malformed and nullable values.
 
-### S2 — schema and grounding metamodel
+### S2 — table interpretation and relational paper API
 
-Specify substrate types; `DEF`, `USE`, `NAME`, data, and metadata roles; optional
-columns; row identity; field projection; foreign keys; duplicates; sums; and
-scoped completeness. Define partial groundings from schemas/relations to Rust
-and other hosts, each identified by a TCB and manifest. Include range checks for
-SQLite `INTEGER`: mathematical integers and unsigned 64-bit values must not
-silently lower through SQLite's signed 64-bit storage class.
+Specify table predicates and `All`, `Any`, `NotAll`, and `NotAny`; then `Set`,
+`Relation`, witnesses, projections, and `MThm` independently of Rust layout.
+State which forms require row witnesses or completeness. Add substrate types;
+`DEF`, `USE`, `NAME`, data and metadata roles; row identity; duplicates; sums;
+named and generic table variables; and partial host groundings. Include SQLite
+`INTEGER` range checks and a dynamic rendition beside the Rust-shaped API.
 
 ### S3 — freeze consumers, not representations
 
@@ -274,14 +295,15 @@ conformance suites. Record latency, allocation, database size, and replay cost
 for representative workloads. Do not add a compatibility method merely because
 the current kernel exposes it.
 
-### S4 — dual witness spike
+### S4 — definition discipline and dual witness spike
 
 Implement one term relation and one typing relation twice: direct in-memory
 witnesses and SQLite rows. Demonstrate construction, projection, foreign-key
 validation, open-world membership, one scoped completeness claim, and checked
 conversion preserving the same `MThm` statement. Measure prepared-query and
 allocation costs; discard the implementation if its types distort the paper
-API.
+API. Exercise `DEF` key reuse with both a proved-equal replacement and a
+rejected conflict, and include nullable or malformed candidate rows.
 
 ### S5 — trusted query and multi-database algebra
 
@@ -387,6 +409,11 @@ Before production implementation, resolve:
 - whether `DEF` identities denote opaque chosen values, witness identities, or
   both through separate projections;
 - the precise semantics and trusted checks for `COMPLETE`;
+- whether the four table propositions are primitive or derived, and how
+  insertion and deletion affect each;
+- the representation-failure and `NULL` policy after the first prototype;
+- the scope of a `DEF` mapping and the transaction required for key reuse;
+- the Rust and dynamic forms of schema-indexed expressions and variable sets;
 - whether sums/dependent table sources are primitive or compiled to monomorphic
   relations;
 - in-memory term identity and lifetime model;
@@ -399,7 +426,7 @@ Before production implementation, resolve:
 - which well-known O256 namespaces are specification-derived and which permit
   random freshness.
 
-The unfinished key/object idea in `N0056` should be completed before the schema
-is frozen. In particular, decide whether a key identifies a logical object, a
-witness row, a content-addressed blob, or a typed reference connecting those
-layers.
+The unfinished key/object ideas in `N0056` and `N005H` should be completed
+before the schema is frozen. In particular, decide whether a key identifies a
+logical object, a witness row, a content-addressed blob, or a typed reference
+connecting those layers.

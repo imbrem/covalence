@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37255,
+      "words": 37310,
       "updated": 0
     },
     {
@@ -15865,7 +15865,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37255,
+      "words": 37310,
       "updated": 0
     },
     {
@@ -16738,7 +16738,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/README.md",
-      "words": 67,
+      "words": 69,
       "updated": 0
     },
     {
@@ -17035,7 +17035,7 @@
       "title": "substrate-rewrite.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 406,
+      "words": 433,
       "updated": 0
     },
     {
@@ -17071,7 +17071,7 @@
       "title": "trusted-database-algebra.md",
       "status": "tracked",
       "path": "notes/vibes/kernel/trusted-database-algebra.md",
-      "words": 193,
+      "words": 212,
       "updated": 0
     },
     {
@@ -17638,7 +17638,7 @@
       "title": "current-program.md",
       "status": "tracked",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 83,
+      "words": 85,
       "updated": 0
     },
     {
@@ -17782,7 +17782,7 @@
       "title": "neel-meeting-synthesis.md",
       "status": "tracked",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 226,
+      "words": 232,
       "updated": 0
     },
     {
@@ -18803,6 +18803,15 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/plans/covalence_substrate_design.md",
+      "kind": "note",
+      "title": "covalence substrate design",
+      "status": "draft",
+      "path": "notes/plans/covalence_substrate_design.md",
+      "words": 1902,
+      "updated": 1784668330
+    },
+    {
       "id": "note:notes/plans/next-stage.md",
       "kind": "note",
       "title": "Notes, Documentation, and Skills",
@@ -18844,7 +18853,7 @@
       "title": "Design corpus",
       "status": "draft",
       "path": "notes/vibes/README.md",
-      "words": 348,
+      "words": 357,
       "updated": 1784585472
     },
     {
@@ -19114,7 +19123,7 @@
       "title": "Substrate rewrite: SQLite-backed nucleus",
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
-      "words": 2526,
+      "words": 2801,
       "updated": 1784584541
     },
     {
@@ -19150,7 +19159,7 @@
       "title": "Trusted database algebra",
       "status": "draft",
       "path": "notes/vibes/kernel/trusted-database-algebra.md",
-      "words": 1248,
+      "words": 1426,
       "updated": 1784584541
     },
     {
@@ -19690,7 +19699,7 @@
       "title": "Current program",
       "status": "draft",
       "path": "notes/vibes/plans/current-program.md",
-      "words": 323,
+      "words": 335,
       "updated": 1784584541
     },
     {
@@ -19834,7 +19843,7 @@
       "title": "Neel meeting: current vision and concrete proposals",
       "status": "draft",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
-      "words": 1415,
+      "words": 1459,
       "updated": 1784584541
     },
     {
@@ -29254,6 +29263,12 @@
       "detail": "author"
     },
     {
+      "source": "note:notes/plans/covalence_substrate_design.md",
+      "predicate": "contributed-by",
+      "target": "actor:human:tekne",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/plans/next-stage.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -29299,6 +29314,12 @@
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
       "target": "note:notes/history/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/covalence_substrate_design.md",
       "detail": null
     },
     {
@@ -30319,6 +30340,12 @@
       "source": "note:notes/vibes/kernel/substrate-rewrite.md",
       "predicate": "documents",
       "target": "file:crates/vcs/object",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/substrate-rewrite.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/covalence_substrate_design.md",
       "detail": null
     },
     {
@@ -32196,6 +32223,12 @@
     {
       "source": "note:notes/vibes/plans/current-program.md",
       "predicate": "links-to",
+      "target": "note:notes/plans/covalence_substrate_design.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/current-program.md",
+      "predicate": "links-to",
       "target": "note:notes/plans/relational-design.md",
       "detail": null
     },
@@ -32840,6 +32873,12 @@
       "predicate": "links-to",
       "target": "file:chats/neel_meeting_1.md",
       "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/vision/neel-meeting-synthesis.md",
+      "predicate": "links-to",
+      "target": "note:notes/plans/covalence_substrate_design.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
@@ -34768,6 +34807,12 @@
       "stableId": "N005G",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/plans/covalence_substrate_design.md",
+      "stableId": "N005H",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -35289,6 +35334,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/plans/covalence_substrate_design.md",
+      "actorId": "human:tekne",
+      "role": "author",
+      "contributedAt": "2026-07-21T00:00:00+01:00",
+      "source": "human-authored",
+      "agent": "none",
+      "harness": "editor",
       "ordinal": 0
     },
     {

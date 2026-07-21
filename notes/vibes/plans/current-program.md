@@ -20,10 +20,12 @@ from this directory remain available in Git.
 
 ## Priority order
 
-1. **Specify the relational substrate.** Settle `Set`, `Relation`, witness,
-   projection, `MThm`, schema-grounding, and completeness semantics from
-   [`N0056`](../../plans/relational-design.md), then build matching in-memory
-   and SQLite witnesses. Specify the trusted query/multi-database algebra in
+1. **Specify the relational substrate.** Start from maintainer designs
+   [`N0056`](../../plans/relational-design.md) and
+   [`N005H`](../../plans/covalence_substrate_design.md). Settle the partial
+   SQLite model, schema-indexed expressions and decoding, table quantifiers,
+   `Set`/`Relation`/`MThm`, and `DEF`/`USE` mutation semantics. Then build
+   matching in-memory and SQLite witnesses. Specify the query/multi-DB algebra in
    [`N0057`](../kernel/trusted-database-algebra.md) before general replay.
 2. **Stabilize consumer APIs.** Logic/relations, data/numerics, inductives,
    parsing, Lisp, graphs, and JSON must have capability-sized interfaces and
@@ -48,10 +50,10 @@ compatibility suites            │
       │                         │
       ├──────────────┬──────────┘
       ↓              ↓
-relational API    schema/grounding model
+table logic       SQLite/schema/Expr model
       └──────┬───────┘
              ↓
-      dual witness prototype
+      DEF/USE + dual witness prototype
              ↓
       trusted query + multi-DB algebra
              ↓

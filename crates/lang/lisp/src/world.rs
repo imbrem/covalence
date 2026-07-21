@@ -10,6 +10,7 @@ use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::acl2_api::{Acl2EventWorld, Acl2WorldView, WorldEventStatus};
+use crate::quasiquote::{Quasiquote, QuasiquoteItem, analyze as analyze_quasiquote};
 
 /// A small ACL2 value universe sufficient for ordered read-time constants.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1301,24 +1302,36 @@ impl Acl2World {
         expr: &SExpr,
         locals: &BTreeMap<String, WorldValue>,
     ) -> Result<WorldValue, WorldError> {
-        if let Some(items) = list(expr) {
-            if items.first().and_then(symbol) == Some("unquote") && items.len() == 2 {
-                return self.eval(&items[1], locals);
-            }
-            let mut values = Vec::new();
-            for item in items {
-                if let Some(splice) = list(item)
-                    && splice.first().and_then(symbol) == Some("unquote-splicing")
-                    && splice.len() == 2
-                {
-                    values.extend(proper_list(self.eval(&splice[1], locals)?)?);
-                } else {
-                    values.push(self.quasiquote(item, locals)?);
+        let template = analyze_quasiquote(expr).map_err(|_| WorldError::Malformed("quasiquote"))?;
+        self.eval_quasiquote(&template, locals)
+    }
+
+    fn eval_quasiquote(
+        &mut self,
+        template: &Quasiquote<'_>,
+        locals: &BTreeMap<String, WorldValue>,
+    ) -> Result<WorldValue, WorldError> {
+        match template {
+            Quasiquote::Literal(expression) => quote(expression),
+            Quasiquote::Evaluate(expression) => self.eval(expression, locals),
+            Quasiquote::Syntax { name, operand } => Ok(WorldValue::list([
+                WorldValue::Symbol((*name).into()),
+                self.eval_quasiquote(operand, locals)?,
+            ])),
+            Quasiquote::List(items) => {
+                let mut values = Vec::new();
+                for item in items {
+                    match item {
+                        QuasiquoteItem::Value(value) => {
+                            values.push(self.eval_quasiquote(value, locals)?);
+                        }
+                        QuasiquoteItem::Splice(expression) => {
+                            values.extend(proper_list(self.eval(expression, locals)?)?);
+                        }
+                    }
                 }
+                Ok(WorldValue::list(values))
             }
-            Ok(WorldValue::list(values.into_iter()))
-        } else {
-            quote(expr)
         }
     }
 
@@ -4642,6 +4655,24 @@ mod tests {
         assert_eq!(
             expanded,
             read_book("(defconst *pair* (list 16 20 30))")
+                .unwrap()
+                .remove(0)
+        );
+    }
+
+    #[test]
+    fn quasiquoted_macros_share_nested_depth_analysis() {
+        let forms = read_book(
+            "(defmacro nested (x)
+                `(outer `(inner ,x) ,x))
+             (nested 7)",
+        )
+        .unwrap();
+        let mut world = Acl2World::new();
+        assert!(world.process_event(&forms[0]).unwrap());
+        assert_eq!(
+            world.expand_macro_call(&forms[1]).unwrap().unwrap(),
+            read_book("(outer (quasiquote (inner (unquote x))) 7)")
                 .unwrap()
                 .remove(0)
         );

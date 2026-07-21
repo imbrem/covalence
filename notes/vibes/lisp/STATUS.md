@@ -58,7 +58,9 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   than conflating every non-cons atom with the false value.
 - ACL2 has readers, event/world handling, book linking, a checked derivation
   path, corpus reporting, and concrete operational evidence through the common
-  Lisp runtime.
+  Lisp runtime. Scheme lowering and ACL2 event-time macros now consume the
+  same depth-checked quasiquote plan, while interpreting evaluations in their
+  respective runtimes.
 
 The narrow regression commands are:
 

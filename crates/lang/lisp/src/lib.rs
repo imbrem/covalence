@@ -67,6 +67,7 @@ pub mod book;
 
 #[cfg(feature = "hol")]
 pub mod progress;
+pub mod quasiquote;
 
 #[cfg(feature = "hol")]
 pub mod world;

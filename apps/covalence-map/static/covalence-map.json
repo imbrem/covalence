@@ -281,6 +281,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0028",
+      "kind": "api",
+      "title": "Lisp quasiquote templates",
+      "status": "experimental",
+      "path": "crates/lang/lisp/src/quasiquote.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -736,7 +745,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37858,
+      "words": 37906,
       "updated": 0
     },
     {
@@ -11338,7 +11347,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 2262,
+      "words": 2242,
       "updated": 0
     },
     {
@@ -11365,7 +11374,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 177,
+      "words": 178,
       "updated": 0
     },
     {
@@ -11375,6 +11384,15 @@
       "status": "tracked",
       "path": "crates/lang/lisp/src/progress.rs",
       "words": 1762,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/quasiquote.rs",
+      "kind": "file",
+      "title": "quasiquote.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/quasiquote.rs",
+      "words": 129,
       "updated": 0
     },
     {
@@ -11428,7 +11446,7 @@
       "title": "world.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/world.rs",
-      "words": 4801,
+      "words": 4832,
       "updated": 0
     },
     {
@@ -15982,7 +16000,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37858,
+      "words": 37906,
       "updated": 0
     },
     {
@@ -17260,7 +17278,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 98,
+      "words": 100,
       "updated": 0
     },
     {
@@ -19366,8 +19384,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 541,
-      "updated": 1784677306
+      "words": 561,
+      "updated": 1784677445
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -24268,6 +24286,24 @@
       "detail": null
     },
     {
+      "source": "api:A0028",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/lisp/src/quasiquote.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0028",
+      "predicate": "depends-on",
+      "target": "api:A0015",
+      "detail": null
+    },
+    {
+      "source": "api:A0028",
+      "predicate": "depends-on",
+      "target": "api:A0022",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -27313,6 +27349,12 @@
       "source": "file:crates/lang/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/lisp/src/progress.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/quasiquote.rs",
       "detail": null
     },
     {
@@ -35460,6 +35502,12 @@
       "title": "General parser combinators",
       "status": "experimental",
       "path": "crates/lang/combinator-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0028",
+      "title": "Lisp quasiquote templates",
+      "status": "experimental",
+      "path": "crates/lang/lisp/src/quasiquote.rs"
     }
   ],
   "apiImplementations": [
@@ -37460,8 +37508,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "982548935a84782afa726636df9f24467296103f",
-      "committedAt": 1784677306
+      "commit": "b9760277bf58b4d630834e6c8d64d23e790bb63d",
+      "committedAt": 1784677445
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

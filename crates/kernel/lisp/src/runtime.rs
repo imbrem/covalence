@@ -61,6 +61,31 @@ impl RuntimeValueCase {
             Self::ApplyListProcedure => "apply-list-procedure",
         }
     }
+
+    /// Declaration-order position in [`runtime_value_fixpoint`].
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Atom => 0,
+            Self::Nil => 1,
+            Self::Cons => 2,
+            Self::Closure => 3,
+            Self::Primitive => 4,
+            Self::ApplyListProcedure => 5,
+        }
+    }
+
+    /// Recover a case from its checked polynomial position.
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Atom),
+            1 => Some(Self::Nil),
+            2 => Some(Self::Cons),
+            3 => Some(Self::Closure),
+            4 => Some(Self::Primitive),
+            5 => Some(Self::ApplyListProcedure),
+            _ => None,
+        }
+    }
 }
 
 /// The canonical polynomial declaration of Lisp runtime values.

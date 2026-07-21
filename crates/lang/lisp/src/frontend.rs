@@ -1248,7 +1248,7 @@ impl RuntimeSession<ArenaFrontendRuntime> {
 mod tests {
     use super::*;
     use covalence_kernel_lisp::{
-        EffectHandler, EffectState, LispEffectMachine, handle_to_completion,
+        EffectHandler, EffectState, InductiveRuntimeValues, LispEffectMachine, handle_to_completion,
     };
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1364,6 +1364,41 @@ mod tests {
             ),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
+    }
+
+    #[test]
+    fn scheme_primitives_are_parametric_over_the_inductive_value_backend() {
+        let values = InductiveRuntimeValues::<CoreAtom, u32, Primitive>::new();
+        let twenty = values.atom(CoreAtom::Integer(Int::from(20))).unwrap();
+        let twenty_two = values.atom(CoreAtom::Integer(Int::from(22))).unwrap();
+        let sum = match StandardPrimitives
+            .apply(&values, &Primitive::Add, vec![twenty, twenty_two])
+            .unwrap()
+        {
+            PrimitiveOutcome::Value(value) => value,
+            PrimitiveOutcome::Request(never) => match never {},
+        };
+        assert_eq!(
+            values.view(&sum).unwrap(),
+            RuntimeValueView::Atom(CoreAtom::Integer(Int::from(42)))
+        );
+
+        let tail = values.nil();
+        let list = match StandardPrimitives
+            .apply(
+                &values,
+                &Primitive::Cons,
+                vec![values.atom(CoreAtom::symbol("head")).unwrap(), tail],
+            )
+            .unwrap()
+        {
+            PrimitiveOutcome::Value(value) => value,
+            PrimitiveOutcome::Request(never) => match never {},
+        };
+        assert!(matches!(
+            values.view(&list).unwrap(),
+            RuntimeValueView::Cons { .. }
+        ));
     }
 
     #[test]

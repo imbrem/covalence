@@ -26,6 +26,7 @@ pub mod applicative_effect;
 pub mod arena;
 pub mod effect;
 pub mod host;
+pub mod inductive_runtime;
 pub mod io;
 pub mod relation;
 pub mod resource;
@@ -60,6 +61,9 @@ pub use host::{
     HostRuntime, HostValue, HostValues, LispConfiguration, LispMachine, LispMachineError,
     LispMachineStep, MachineApplicationPart, MachineApplicationPosition, MachineConfiguration,
     MachineControl, MachineFrame,
+};
+pub use inductive_runtime::{
+    InductiveRuntimeError, InductiveRuntimeValue, InductiveRuntimeValues, RuntimeExternal,
 };
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{

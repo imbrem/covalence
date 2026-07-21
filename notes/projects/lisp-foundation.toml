@@ -1,0 +1,24 @@
+id = "lisp-foundation"
+title = "Reusable Lisp semantic foundation"
+status = "active"
+depends_on = ["inductive-datatypes", "sexpr-proof-capabilities"]
+todos = [
+  "lisp.frontends.scheme-forsp",
+  "lisp.acl2.admission-layer",
+  "lisp.hol.apply-list",
+  "lisp.hol.first-class-primitives",
+  "lisp.hol.numeric-datum-sum",
+  "lisp.hol.strict-sequence",
+  "lisp.hol.variadic-closures",
+  "lisp.scheme.letrec-hol",
+]
+notes = [
+  "notes/vibes/lisp/lisp-first-acl2-redirect.md",
+  "notes/vibes/lisp/abstract-sexpr-api.md",
+  "notes/vibes/lisp/STATUS.md",
+]
+files = [
+  "crates/kernel/lisp",
+  "crates/lang/lisp",
+  "crates/kernel/data/inductive",
+]

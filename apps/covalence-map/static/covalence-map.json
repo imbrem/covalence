@@ -286,7 +286,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 337,
+      "words": 345,
       "updated": 0
     },
     {
@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37397,
+      "words": 37507,
       "updated": 0
     },
     {
@@ -9457,7 +9457,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 95,
+      "words": 99,
       "updated": 0
     },
     {
@@ -9484,7 +9484,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 704,
+      "words": 729,
       "updated": 0
     },
     {
@@ -11167,7 +11167,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/open_work.rs",
-      "words": 18,
+      "words": 17,
       "updated": 0
     },
     {
@@ -11230,7 +11230,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1697,
+      "words": 1732,
       "updated": 0
     },
     {
@@ -15865,7 +15865,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37397,
+      "words": 37507,
       "updated": 0
     },
     {
@@ -15982,7 +15982,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3869,
+      "words": 3859,
       "updated": 0
     },
     {
@@ -17036,6 +17036,15 @@
       "status": "tracked",
       "path": "notes/vibes/kernel/pure-design.md",
       "words": 225,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/kernel/substrate-expressions.md",
+      "kind": "file",
+      "title": "substrate-expressions.md",
+      "status": "tracked",
+      "path": "notes/vibes/kernel/substrate-expressions.md",
+      "words": 227,
       "updated": 0
     },
     {
@@ -18863,7 +18872,7 @@
       "status": "draft",
       "path": "notes/vibes/README.md",
       "words": 367,
-      "updated": 1784668737
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -19133,7 +19142,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-expressions.md",
       "words": 1201,
-      "updated": 1784669184
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/kernel/substrate-rewrite.md",
@@ -19142,7 +19151,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/substrate-rewrite.md",
       "words": 2847,
-      "updated": 1784668737
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -19178,7 +19187,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/trusted-database-algebra.md",
       "words": 1432,
-      "updated": 1784668737
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -19718,7 +19727,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/current-program.md",
       "words": 337,
-      "updated": 1784668737
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -19862,7 +19871,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/neel-meeting-synthesis.md",
       "words": 1465,
-      "updated": 1784668737
+      "updated": 1784669233
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
@@ -20059,6 +20068,15 @@
       "title": "Express JSON through composed inductive functors",
       "status": "planned",
       "path": "notes/projects/json-inductive-composition.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:lisp-foundation",
+      "kind": "task",
+      "title": "Reusable Lisp semantic foundation",
+      "status": "active",
+      "path": "notes/projects/lisp-foundation.toml",
       "words": 0,
       "updated": 0
     },
@@ -22938,15 +22956,6 @@
       "kind": "todo",
       "title": "Relational recursion / more #langs: The lisp/sector dialects are the",
       "status": "minor",
-      "path": "crates/lang/lisp/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lang.lisp.the-repl-bypasses-the-reductionstrategy-seam",
-      "kind": "todo",
-      "title": "The REPL bypasses the ReductionStrategy seam: (legacy hol.rs)",
-      "status": "severe",
       "path": "crates/lang/lisp/open_work.rs",
       "words": 0,
       "updated": 0
@@ -33769,6 +33778,102 @@
       "detail": null
     },
     {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.acl2.admission-layer",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.frontends.scheme-forsp",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.hol.apply-list",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.hol.first-class-primitives",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.hol.numeric-datum-sum",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.hol.strict-sequence",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.hol.variadic-closures",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "contains",
+      "target": "todo:lisp.scheme.letrec-hol",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "depends-on",
+      "target": "task:sexpr-proof-capabilities",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/lisp/STATUS.md",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/lisp/abstract-sexpr-api.md",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/lisp/lisp-first-acl2-redirect.md",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "touches",
+      "target": "file:crates/kernel/data/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "touches",
+      "target": "file:crates/kernel/lisp",
+      "detail": null
+    },
+    {
+      "source": "task:lisp-foundation",
+      "predicate": "touches",
+      "target": "file:crates/lang/lisp",
+      "detail": null
+    },
+    {
       "source": "task:logic-relations",
       "predicate": "described-by",
       "target": "note:notes/design/api-extraction-audit.md",
@@ -36814,8 +36919,8 @@
     },
     {
       "noteId": "note:notes/vibes/README.md",
-      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
-      "committedAt": 1784668737
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -36963,9 +37068,14 @@
       "committedAt": 1784580813
     },
     {
+      "noteId": "note:notes/vibes/kernel/substrate-expressions.md",
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
+    },
+    {
       "noteId": "note:notes/vibes/kernel/substrate-rewrite.md",
-      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
-      "committedAt": 1784668737
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -36984,8 +37094,8 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/trusted-database-algebra.md",
-      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
-      "committedAt": 1784668737
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
     },
     {
       "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -37284,8 +37394,8 @@
     },
     {
       "noteId": "note:notes/vibes/plans/current-program.md",
-      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
-      "committedAt": 1784668737
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
     },
     {
       "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -37364,8 +37474,8 @@
     },
     {
       "noteId": "note:notes/vibes/vision/neel-meeting-synthesis.md",
-      "commit": "9804101bd7b6e449966fb60e84807a972640d2bf",
-      "committedAt": 1784668737
+      "commit": "46d27cc1bce92eb6287190ed08a063431e263be0",
+      "committedAt": 1784669233
     },
     {
       "noteId": "note:notes/vibes/vision/project-map.md",

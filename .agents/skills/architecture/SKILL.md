@@ -75,6 +75,14 @@ disable-model-invocation: true
     suspend/request/resume API: pure machines never perform host actions;
     proof-free handlers return responses and retain auditable transcripts,
     while theorem authority requires a separate replay capability.
+  - Runtime values are the checked polynomial declared by
+    `runtime_value_fixpoint`. `HostValues` is the direct enum realization,
+    `ArenaValues` is the opaque-resource realization, and
+    `InductiveRuntimeValues` is the representation-stress realization built
+    through `data/inductive`. Primitive dictionaries must remain generic over
+    `LispValue`; conformance tests exercise Scheme primitives on the inductive
+    realization so the polynomial declaration cannot degrade into dead
+    metadata.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated

@@ -11401,7 +11401,7 @@
       "title": "reader.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/reader.rs",
-      "words": 556,
+      "words": 621,
       "updated": 0
     },
     {
@@ -11428,7 +11428,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1771,
+      "words": 1855,
       "updated": 0
     },
     {
@@ -11437,7 +11437,7 @@
       "title": "session.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/session.rs",
-      "words": 740,
+      "words": 745,
       "updated": 0
     },
     {
@@ -11455,7 +11455,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 656,
+      "words": 657,
       "updated": 0
     },
     {
@@ -11797,7 +11797,7 @@
       "title": "dialects.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/dialects.rs",
-      "words": 390,
+      "words": 393,
       "updated": 0
     },
     {
@@ -17278,7 +17278,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 100,
+      "words": 102,
       "updated": 0
     },
     {
@@ -19384,8 +19384,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 561,
-      "updated": 1784677445
+      "words": 581,
+      "updated": 1784677703
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37508,8 +37508,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "b9760277bf58b4d630834e6c8d64d23e790bb63d",
-      "committedAt": 1784677445
+      "commit": "bd7c44107772728bdb5459fd38815eb67cd2cb60",
+      "committedAt": 1784677703
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

@@ -40,6 +40,12 @@ pub fn read(src: &str) -> Result<Vec<SExpr>, ParseError> {
     parse(src)
 }
 
+/// Parse Scheme source, expanding quote, quasiquote, and unquote reader forms.
+pub fn read_scheme(src: &str) -> Result<Vec<SExpr>, ParseError> {
+    let normalized = LispSurface::new(src, ReaderDialect::Scheme).normalize()?;
+    parse(&normalized)
+}
+
 /// Parse an **ACL2 book source** into its top-level forms.
 ///
 /// The ACL2 surface pass expands `'x` to `(quote x)`, skips nested `#|…|#`
@@ -48,23 +54,31 @@ pub fn read(src: &str) -> Result<Vec<SExpr>, ParseError> {
 /// The resulting source is parsed with the SMT-LIB trivia dialect, which also
 /// provides ACL2's single-`;` line comments.
 pub fn read_book(src: &str) -> Result<Vec<SExpr>, ParseError> {
-    let normalized = Acl2Surface::new(src).normalize()?;
+    let normalized = LispSurface::new(src, ReaderDialect::Acl2).normalize()?;
     covalence_sexp::parse_smt(&normalized)
 }
 
-/// ACL2 surface syntax that does not belong in the shared S-expression parser.
-struct Acl2Surface<'a> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReaderDialect {
+    Scheme,
+    Acl2,
+}
+
+/// Lisp reader syntax that does not belong in the shared S-expression parser.
+struct LispSurface<'a> {
     src: &'a str,
     pos: usize,
     out: String,
+    dialect: ReaderDialect,
 }
 
-impl<'a> Acl2Surface<'a> {
-    fn new(src: &'a str) -> Self {
+impl<'a> LispSurface<'a> {
+    fn new(src: &'a str, dialect: ReaderDialect) -> Self {
         Self {
             src,
             pos: 0,
             out: String::with_capacity(src.len()),
+            dialect,
         }
     }
 
@@ -81,10 +95,10 @@ impl<'a> Acl2Surface<'a> {
         let Some(byte) = self.peek() else {
             return Err(self.error("expected form"));
         };
-        if self.rest().starts_with("#\\") {
+        if self.dialect == ReaderDialect::Acl2 && self.rest().starts_with("#\\") {
             return self.character_literal();
         }
-        if self.rest().starts_with("#.") {
+        if self.dialect == ReaderDialect::Acl2 && self.rest().starts_with("#.") {
             self.reader_macro("sharp-dot", 2)?;
             return Ok(());
         }
@@ -230,11 +244,16 @@ impl<'a> Acl2Surface<'a> {
             self.advance_char();
         }
         let atom = &self.src[start..self.pos];
-        if let Some(decimal) = acl2_radix_integer(atom) {
-            self.out.push_str(&decimal);
-        } else {
-            for ch in atom.chars() {
-                self.out.extend(ch.to_lowercase());
+        match self.dialect {
+            ReaderDialect::Scheme => self.out.push_str(atom),
+            ReaderDialect::Acl2 => {
+                if let Some(decimal) = acl2_radix_integer(atom) {
+                    self.out.push_str(&decimal);
+                } else {
+                    for ch in atom.chars() {
+                        self.out.extend(ch.to_lowercase());
+                    }
+                }
             }
         }
     }
@@ -254,7 +273,10 @@ impl<'a> Acl2Surface<'a> {
                         message: "unterminated escape".into(),
                     });
                 };
-                if delimiter == b'"' && !matches!(next, '"' | '\\') {
+                if self.dialect == ReaderDialect::Acl2
+                    && delimiter == b'"'
+                    && !matches!(next, '"' | '\\')
+                {
                     // Common Lisp's backslash quotes exactly the next
                     // character.  Do not pass it through to the shared
                     // string parser, where e.g. `\0` starts a hex escape and
@@ -363,7 +385,20 @@ fn acl2_radix_integer(atom: &str) -> Option<String> {
 
 /// Parse `src` expecting exactly one top-level S-expression (one REPL cell).
 pub fn read_one(src: &str) -> Result<SExpr, ReadError> {
-    let mut forms = parse(src).map_err(ReadError::Parse)?;
+    exactly_one(read(src).map_err(ReadError::Parse)?)
+}
+
+/// Read exactly one Scheme form with standard quote reader abbreviations.
+pub fn read_scheme_one(src: &str) -> Result<SExpr, ReadError> {
+    exactly_one(read_scheme(src).map_err(ReadError::Parse)?)
+}
+
+/// Read exactly one ACL2 form with Common Lisp reader normalization.
+pub fn read_book_one(src: &str) -> Result<SExpr, ReadError> {
+    exactly_one(read_book(src).map_err(ReadError::Parse)?)
+}
+
+fn exactly_one(mut forms: Vec<SExpr>) -> Result<SExpr, ReadError> {
     match forms.len() {
         1 => Ok(forms.pop().expect("len checked")),
         n => Err(ReadError::Arity(n)),
@@ -408,6 +443,36 @@ mod tests {
                     Box::new(FreeSExpr::Nil),
                 )),
             )
+        );
+    }
+
+    #[test]
+    fn scheme_reader_expands_quote_family_without_acl2_case_folding() {
+        assert_eq!(
+            read_scheme_one("`(Keep ,value ,@rest)").unwrap(),
+            SExpr::list(vec![
+                SExpr::symbol("quasiquote"),
+                SExpr::list(vec![
+                    SExpr::symbol("Keep"),
+                    SExpr::list(vec![SExpr::symbol("unquote"), SExpr::symbol("value")]),
+                    SExpr::list(vec![
+                        SExpr::symbol("unquote-splicing"),
+                        SExpr::symbol("rest"),
+                    ]),
+                ]),
+            ])
+        );
+        assert_eq!(
+            read_scheme_one("'MixedCase").unwrap(),
+            SExpr::list(vec![SExpr::symbol("quote"), SExpr::symbol("MixedCase")])
+        );
+    }
+
+    #[test]
+    fn one_form_acl2_reader_applies_book_normalization() {
+        assert_eq!(
+            read_book_one("'MixedCase").unwrap(),
+            SExpr::list(vec![SExpr::symbol("quote"), SExpr::symbol("mixedcase")])
         );
     }
 

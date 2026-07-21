@@ -167,6 +167,9 @@ fn scheme_recursion_works() {
     );
     s.eval_cell(LAT).unwrap();
     assert_eq!(s.eval_cell("(lat? (quote (a b c)))").unwrap(), "t");
+    assert_eq!(s.eval_cell("(lat? '(a b c))").unwrap(), "t");
+    assert_eq!(s.eval_cell("(null? '(a))").unwrap(), "nil");
+    assert_eq!(s.eval_cell("(null? '())").unwrap(), "t");
 }
 
 #[test]

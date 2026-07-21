@@ -205,6 +205,7 @@ fn defun_persists_across_cells() {
     let mut s = session();
     s.eval_cell(APP).unwrap();
     assert_eq!(s.eval_cell("(app (quote ()) (quote (q)))").unwrap(), "(q)");
+    assert_eq!(s.eval_cell("(app '() '(q))").unwrap(), "(q)");
     assert_eq!(
         s.eval_cell("(app (quote (a b)) (app (quote (c)) (quote (d))))")
             .unwrap(),

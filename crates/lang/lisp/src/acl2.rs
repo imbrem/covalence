@@ -138,7 +138,7 @@ use crate::frontend::{
     SurfaceDialect,
 };
 use crate::hol::HolError;
-use crate::reader::{ReadError, read_one};
+use crate::reader::{ReadError, read_book_one};
 use crate::relation::{LispMayEvalEvidence, LispRel};
 use crate::semantics::{EquationalHostMayEvalEvidence, LispRepr, LispSemantics, ValueKind};
 
@@ -853,7 +853,7 @@ impl Acl2Session {
     /// ACL2 convention); an expression returns its value, read off the
     /// backing theorem's RHS.
     pub fn eval_cell(&mut self, src: &str) -> Result<String, Acl2Error> {
-        let form = read_one(src.trim()).map_err(Acl2Error::Read)?;
+        let form = read_book_one(src.trim()).map_err(Acl2Error::Read)?;
         if let Some(name) = self.try_event(&form)? {
             return Ok(name);
         }

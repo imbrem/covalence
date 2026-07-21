@@ -85,6 +85,30 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
     HolError::Kernel(e.to_string())
 }
 
+fn eqf_intro(not_proposition: Thm) -> Result<Thm, HolError> {
+    let proposition = not_proposition
+        .concl()
+        .as_app()
+        .ok_or_else(|| HolError::Kernel("expected negated proposition".into()))?
+        .1
+        .clone();
+    let proposition_to_false = covalence_hol_eval::fal_to_lit(
+        not_proposition
+            .not_elim(Thm::assume(proposition.clone()).map_err(kernel_err)?)
+            .map_err(kernel_err)?,
+    )
+    .map_err(kernel_err)?;
+    let false_to_proposition = Thm::assume(covalence_hol_eval::mk_bool(false))
+        .map_err(kernel_err)?
+        .false_elim(proposition)
+        .map_err(kernel_err)?;
+    proposition_to_false
+        .deduct_antisym(false_to_proposition)
+        .map_err(kernel_err)?
+        .sym()
+        .map_err(kernel_err)
+}
+
 /// The value-kind of a normal form, for printing (mirrors the big-step
 /// evaluator's `ValueKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -909,13 +933,13 @@ impl LispSemantics {
         if let Some((alpha, c, x, y)) = self.as_cond(t) {
             return self.step_cond(&alpha, &c, &x, &y).map(Some);
         }
-        // An `eq?` redex `a = b : sexpr` whose operands are **both atom
-        // values** — decide it to `T`/`F` (a self-contained leaf step). If the
-        // operands are not yet values, fall through to the generic congruence,
-        // which reduces them first.
+        // A decidable S-expression equality leaf. Compound equality remains
+        // relational, but reflexivity, atom equality, and nil/cons
+        // distinctness are kernel-derived here.
         if let Some((a, b)) = self.as_eq_redex(t)
-            && self.as_atom(&a).is_some()
-            && self.as_atom(&b).is_some()
+            && (a == b
+                || (self.as_atom(&a).is_some() && self.as_atom(&b).is_some())
+                || (self.is_nil_cons_pair(&a, &b)))
         {
             return self.eval_eq_leaf(&a, &b).map(Some);
         }
@@ -1172,10 +1196,7 @@ impl LispSemantics {
         Ok(LispStep { to, thm: lifted })
     }
 
-    /// `eq?` on two atom-value operands `atom b₁`, `atom b₂` — decide the HOL
-    /// equation `(atom b₁ = atom b₂)` to `T`/`F`, as the self-contained step
-    /// `⊢ (atom b₁ = atom b₂) = ⌜b₁ == b₂⌝`. Composes into the reduction chain
-    /// (the step's LHS is the actual redex term).
+    /// Decide a supported S-expression equality leaf.
     ///
     /// Both the equal and distinct cases use only sound, hypothesis-free
     /// derived facts: `⊢ (atom b₁ = atom b₂) = (b₁ = b₂)` (the carved `atom`
@@ -1183,6 +1204,20 @@ impl LispSemantics {
     /// converse, combined by `deduct_antisym`), chained with the decided blob
     /// equality `⊢ (b₁ = b₂) = T|F` (from `reduce_consts`).
     fn eval_eq_leaf(&self, a: &Term, b: &Term) -> Result<LispStep, HolError> {
+        if a == b {
+            let thm = Thm::refl(a.clone())
+                .map_err(kernel_err)?
+                .eqt_intro()
+                .map_err(kernel_err)?;
+            let to = self.rhs(&thm)?;
+            return Ok(LispStep { to, thm });
+        }
+        if self.is_nil_cons_pair(a, b) {
+            let not_equal = self.prove_nil_ne_cons(a, b)?;
+            let thm = eqf_intro(not_equal)?;
+            let to = self.rhs(&thm)?;
+            return Ok(LispStep { to, thm });
+        }
         let b1 = self
             .as_atom(a)
             .ok_or_else(|| HolError::Stuck("eq? left operand is not an atom".into()))?;
@@ -1215,6 +1250,55 @@ impl LispSemantics {
         };
         let to = self.rhs(&thm)?;
         Ok(LispStep { to, thm })
+    }
+
+    fn is_nil_cons_pair(&self, left: &Term, right: &Term) -> bool {
+        (*left == self.cs.snil && self.as_scons(right).is_some())
+            || (*right == self.cs.snil && self.as_scons(left).is_some())
+    }
+
+    fn prove_nil_ne_cons(&self, left: &Term, right: &Term) -> Result<Thm, HolError> {
+        let equality = left.clone().equals(right.clone()).map_err(kernel_err)?;
+        let assumed = Thm::assume(equality.clone()).map_err(kernel_err)?;
+        let congruence = assumed.cong_arg(self.l.consp.clone()).map_err(kernel_err)?;
+        let law = |value: &Term| {
+            if *value == self.cs.snil {
+                self.l.consp_nil().map_err(kernel_err)
+            } else if let Some((head, tail)) = self.as_scons(value) {
+                self.l.consp_scons(&head, &tail).map_err(kernel_err)
+            } else {
+                Err(HolError::Stuck("expected nil or cons value".into()))
+            }
+        };
+        let left_law = law(left)?;
+        let right_law = law(right)?;
+        let unequal_bools = left_law
+            .sym()
+            .map_err(kernel_err)?
+            .trans(congruence)
+            .map_err(kernel_err)?
+            .trans(right_law)
+            .map_err(kernel_err)?;
+        let true_to_false = if unequal_bools
+            .concl()
+            .as_eq()
+            .is_some_and(|(lhs, _)| lhs.as_bool() == Some(true))
+        {
+            unequal_bools
+        } else {
+            unequal_bools.sym().map_err(kernel_err)?
+        };
+        let contradiction = covalence_hol_eval::fal_from_lit(
+            true_to_false
+                .eq_mp(covalence_init::init::logic::truth())
+                .map_err(kernel_err)?,
+        )
+        .map_err(kernel_err)?;
+        contradiction
+            .imp_intro(&equality)
+            .map_err(kernel_err)?
+            .not_intro()
+            .map_err(kernel_err)
     }
 
     /// `⊢ (atom b₁ = atom b₂) = (b₁ = b₂)` — `atom` injectivity (forward) and

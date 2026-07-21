@@ -60,7 +60,9 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   path, corpus reporting, and concrete operational evidence through the common
   Lisp runtime. Scheme lowering and ACL2 event-time macros now consume the
   same depth-checked quasiquote plan, while interpreting evaluations in their
-  respective runtimes.
+  respective runtimes. Their quote-family reader abbreviations share one
+  scanner, parameterized by Scheme versus ACL2 case, string, character, radix,
+  block-comment, and sharp-dot policy.
 
 The narrow regression commands are:
 

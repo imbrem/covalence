@@ -44,7 +44,7 @@ use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Proof, Acl2Session, Acl2ValueKind}
 use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
-use crate::reader::{ReadError, read_one};
+use crate::reader::{ReadError, read_one, read_scheme_one};
 use crate::relation::{Dialect, IntFlavour, LispRel};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 
@@ -375,7 +375,12 @@ impl Session {
         if self.lang == Lang::Acl2 {
             return self.acl2.eval_cell(src).map_err(CellError::Acl2);
         }
-        let form = read_one(src).map_err(CellError::Read)?;
+        let form = if self.lang == Lang::Scheme {
+            read_scheme_one(src)
+        } else {
+            read_one(src)
+        }
+        .map_err(CellError::Read)?;
         // A `defun` / `define` adds an assumption and returns an ack (no value)
         // — only in the value semantics (`scheme`); the relational dialects have
         // no `defun` recursion yet, so a `(defun …)` there is an ordinary

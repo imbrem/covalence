@@ -13,9 +13,10 @@ use std::str::FromStr;
 
 use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
-    Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
-    LispEnvironment, LispMachine, LispRuntime, LispValue, MachineConfiguration, MayEval,
-    PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute, import_core,
+    Definition as LispDefinition, DefinitionGroup, ExecutionError, HostConfiguration,
+    HostEnvironment, HostValue, LispEnvironment, LispMachine, LispRuntime, LispValue,
+    MachineConfiguration, MayEval, PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding,
+    RuntimeValueView, execute, import_core,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -967,6 +968,7 @@ pub enum SessionError<M, V, E> {
     Execute(ExecutionError<M>),
     Machine(M),
     ExpectedDefinition { index: usize },
+    DuplicateDefinition { first: usize, duplicate: usize },
     DefinitionDidNotProduceClosure,
 }
 
@@ -980,6 +982,10 @@ impl<M: Display, V: Debug, E: Debug> Display for SessionError<M, V, E> {
             Self::ExpectedDefinition { index } => {
                 write!(f, "form {index} is not a Lisp definition")
             }
+            Self::DuplicateDefinition { first, duplicate } => write!(
+                f,
+                "definition {duplicate} duplicates the binder at definition {first}"
+            ),
             Self::DefinitionDidNotProduceClosure => {
                 f.write_str("definition did not evaluate to a closure")
             }
@@ -1108,16 +1114,14 @@ where
     }
 
     pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R, P>> {
-        let Some((name, expression)) = self
+        let Some(definition) = self
             .frontend
-            .definition(form)
+            .lower_definition(form)
             .map_err(SessionError::Lower)?
         else {
             return Ok(None);
         };
-        let value = self.evaluate_core(&expression)?;
-        self.bind_value(name.clone(), value)?;
-        Ok(Some(name))
+        self.define_core(definition).map(Some)
     }
 
     /// Install an already-lowered recursive definition into the partial
@@ -1131,12 +1135,32 @@ where
         definition: LispDefinition<String, FrontendExpr>,
     ) -> Result<String, RuntimeSessionError<R, P>> {
         let name = definition.name.clone();
-        let expression = self.import_expression(&definition.into_recursive_lambda())?;
+        self.define_core_group(vec![definition])?;
+        Ok(name)
+    }
+
+    /// Install an already-lowered atomic recursive definition group.
+    pub fn define_core_group(
+        &mut self,
+        definitions: Vec<LispDefinition<String, FrontendExpr>>,
+    ) -> Result<Vec<String>, RuntimeSessionError<R, P>> {
+        let group = DefinitionGroup::new(definitions).map_err(|error| {
+            SessionError::DuplicateDefinition {
+                first: error.first,
+                duplicate: error.duplicate,
+            }
+        })?;
+        let mut names = Vec::with_capacity(group.definitions().len());
+        let mut bindings = Vec::with_capacity(group.definitions().len());
+        for (name, expression) in group.into_recursive_bindings() {
+            names.push(name.clone());
+            bindings.push((name, self.import_expression(&expression)?));
+        }
         self.environment = self
             .machine
-            .bind_recursive(&self.environment, vec![(name.clone(), expression)])
+            .bind_recursive(&self.environment, bindings)
             .map_err(SessionError::Machine)?;
-        Ok(name)
+        Ok(names)
     }
 
     /// Atomically install a mutually recursive group of `define`, `label`, or
@@ -1148,24 +1172,18 @@ where
         &mut self,
         forms: &[SExpr],
     ) -> Result<Vec<String>, RuntimeSessionError<R, P>> {
-        let mut names = Vec::with_capacity(forms.len());
-        let mut bindings = Vec::with_capacity(forms.len());
+        let mut definitions = Vec::with_capacity(forms.len());
         for (index, form) in forms.iter().enumerate() {
-            let Some((name, expression)) = self
+            let Some(definition) = self
                 .frontend
-                .definition(form)
+                .lower_definition(form)
                 .map_err(SessionError::Lower)?
             else {
                 return Err(SessionError::ExpectedDefinition { index });
             };
-            names.push(name.clone());
-            bindings.push((name, self.import_expression(&expression)?));
+            definitions.push(definition);
         }
-        self.environment = self
-            .machine
-            .bind_recursive(&self.environment, bindings)
-            .map_err(SessionError::Machine)?;
-        Ok(names)
+        self.define_core_group(definitions)
     }
 
     /// Evaluate already-lowered shared Lisp syntax.
@@ -1715,6 +1733,19 @@ mod tests {
             session.evaluate(&one("(first (quote value))")).unwrap(),
             HostValue::datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
         );
+    }
+
+    #[test]
+    fn definition_groups_reject_duplicate_binders_atomically() {
+        let mut session = HostSession::new(SurfaceDialect::Scheme, 64);
+        let forms = crate::reader::read(
+            "(define (same x) x)
+             (define (same x) (cons x (quote ())))",
+        )
+        .unwrap();
+        let error = session.define_group(&forms).unwrap_err().to_string();
+        assert!(error.contains("duplicates the binder"), "{error}");
+        assert!(session.evaluate(&one("(same (quote value))")).is_err());
     }
 
     #[test]

@@ -33,7 +33,8 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 - The same CEK transition code runs over direct Rust values, opaque resource
   arenas, and an inductive S-expression realization.
 - Scheme supports lexical closures, recursive definitions, first-class
-  `apply`, definition groups, and handled I/O in the host/runtime path.
+  `apply`, atomic duplicate-checked definition groups, and handled I/O in the
+  host/runtime path. ACL2 consumes the same lowered `Definition` boundary.
 - Forsp uses the separate generic stack-machine capability because its
   concatenative semantics is not CEK application in disguise.
 - The HOL frontend has equational and relational adapters. Concrete checked

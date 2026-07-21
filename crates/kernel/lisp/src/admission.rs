@@ -54,6 +54,64 @@ impl<S, D, P> Definition<S, CoreExpr<S, D, P>> {
     }
 }
 
+/// An atomic mutually recursive definition group.
+///
+/// A group rejects duplicate binders before any backend allocates an
+/// environment generation. It carries no termination or totality claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefinitionGroup<S, E> {
+    definitions: Vec<Definition<S, E>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DuplicateDefinition<S> {
+    pub name: S,
+    pub first: usize,
+    pub duplicate: usize,
+}
+
+impl<S: PartialEq, E> DefinitionGroup<S, E> {
+    pub fn new(definitions: Vec<Definition<S, E>>) -> Result<Self, DuplicateDefinition<S>>
+    where
+        S: Clone,
+    {
+        for duplicate in 0..definitions.len() {
+            if let Some(first) = definitions[..duplicate]
+                .iter()
+                .position(|definition| definition.name == definitions[duplicate].name)
+            {
+                return Err(DuplicateDefinition {
+                    name: definitions[duplicate].name.clone(),
+                    first,
+                    duplicate,
+                });
+            }
+        }
+        Ok(Self { definitions })
+    }
+
+    pub fn definitions(&self) -> &[Definition<S, E>] {
+        &self.definitions
+    }
+
+    pub fn into_definitions(self) -> Vec<Definition<S, E>> {
+        self.definitions
+    }
+}
+
+impl<S: Clone, D, P> DefinitionGroup<S, CoreExpr<S, D, P>> {
+    /// Consume the group as named recursive closure expressions.
+    pub fn into_recursive_bindings(self) -> Vec<(S, CoreExpr<S, D, P>)> {
+        self.definitions
+            .into_iter()
+            .map(|definition| {
+                let name = definition.name.clone();
+                (name, definition.into_recursive_lambda())
+            })
+            .collect()
+    }
+}
+
 /// A canonical lowered definition paired with its source-body provenance.
 ///
 /// Names and formals occur only in `core`, preventing source and lowered
@@ -259,6 +317,23 @@ mod tests {
     use core::cell::Cell;
 
     use super::*;
+
+    #[test]
+    fn definition_group_rejects_duplicate_binders() {
+        let definitions = vec![
+            Definition::fixed("even", vec!["n"], "body-a"),
+            Definition::fixed("odd", vec!["n"], "body-b"),
+            Definition::fixed("even", vec!["n"], "body-c"),
+        ];
+        assert_eq!(
+            DefinitionGroup::new(definitions),
+            Err(DuplicateDefinition {
+                name: "even",
+                first: 0,
+                duplicate: 2,
+            })
+        );
+    }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TerminationProof(&'static str);

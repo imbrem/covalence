@@ -736,7 +736,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37798,
+      "words": 37822,
       "updated": 0
     },
     {
@@ -15955,7 +15955,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37798,
+      "words": 37822,
       "updated": 0
     },
     {
@@ -19070,7 +19070,7 @@
       "status": "draft",
       "path": "notes/vibes/k/README.md",
       "words": 287,
-      "updated": 1784416010
+      "updated": 1784674239
     },
     {
       "id": "note:notes/vibes/k/reduction-demo-scope.md",
@@ -19331,7 +19331,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/README.md",
       "words": 404,
-      "updated": 1784473467
+      "updated": 1784674239
     },
     {
       "id": "note:notes/vibes/lisp/STATUS.md",
@@ -19340,7 +19340,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
       "words": 397,
-      "updated": 1784416010
+      "updated": 1784674239
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37274,8 +37274,8 @@
     },
     {
       "noteId": "note:notes/vibes/k/README.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "27331abb86a546f1dad9f9478e659d54d3caa65f",
+      "committedAt": 1784674239
     },
     {
       "noteId": "note:notes/vibes/k/reduction-demo-scope.md",
@@ -37419,13 +37419,13 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/README.md",
-      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
-      "committedAt": 1784473467
+      "commit": "27331abb86a546f1dad9f9478e659d54d3caa65f",
+      "committedAt": 1784674239
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "27331abb86a546f1dad9f9478e659d54d3caa65f",
+      "committedAt": 1784674239
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

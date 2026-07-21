@@ -16,7 +16,7 @@ use covalence_kernel_lisp::{
     Definition as LispDefinition, DefinitionGroup, ExecutionError, HostConfiguration,
     HostEnvironment, HostValue, LispEnvironment, LispMachine, LispRuntime, LispValue,
     MachineConfiguration, MayEval, PrimitiveOutcome, PrimitiveSemantics, RuntimeBinding,
-    RuntimeValueView, execute, import_core,
+    RuntimeValueView, TopLevelDefinition, execute, import_core,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -267,13 +267,43 @@ impl Frontend {
         }))
     }
 
-    /// Compatibility view of [`Self::lower_definition`] as a named recursive
-    /// closure expression.
+    /// Lower a top-level binding without conflating values with zero-argument
+    /// procedures.
+    pub fn lower_top_level_definition(
+        &self,
+        form: &SExpr,
+    ) -> Result<Option<TopLevelDefinition<String, FrontendExpr>>, LowerError> {
+        if self.dialect == SurfaceDialect::Scheme
+            && let Some(items) = form.as_list()
+            && items.len() == 3
+            && items[0].as_symbol() == Some("define")
+            && items[1].as_symbol().is_some()
+            && !items[2]
+                .as_list()
+                .is_some_and(|value| value.first().and_then(SExpr::as_symbol) == Some("lambda"))
+        {
+            return Ok(Some(TopLevelDefinition::Value {
+                name: self.symbol(&items[1], "define", "name")?,
+                expression: self.lower(&items[2])?,
+            }));
+        }
+        Ok(self
+            .lower_definition(form)?
+            .map(TopLevelDefinition::Procedure))
+    }
+
+    /// Compatibility view of [`Self::lower_top_level_definition`] as a
+    /// binding expression.
     pub fn definition(&self, form: &SExpr) -> Result<Option<(String, FrontendExpr)>, LowerError> {
-        Ok(self.lower_definition(form)?.map(|definition| {
-            let name = definition.name.clone();
-            (name, definition.into_recursive_lambda())
-        }))
+        Ok(self
+            .lower_top_level_definition(form)?
+            .map(|definition| match definition {
+                TopLevelDefinition::Value { name, expression } => (name, expression),
+                TopLevelDefinition::Procedure(definition) => {
+                    let name = definition.name.clone();
+                    (name, definition.into_recursive_lambda())
+                }
+            }))
     }
 
     fn datum_atom(&self, atom: &Atom) -> CoreAtom {
@@ -1116,12 +1146,19 @@ where
     pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R, P>> {
         let Some(definition) = self
             .frontend
-            .lower_definition(form)
+            .lower_top_level_definition(form)
             .map_err(SessionError::Lower)?
         else {
             return Ok(None);
         };
-        self.define_core(definition).map(Some)
+        match definition {
+            TopLevelDefinition::Value { name, expression } => {
+                let value = self.evaluate_core(&expression)?;
+                self.bind_value(name.clone(), value)?;
+                Ok(Some(name))
+            }
+            TopLevelDefinition::Procedure(definition) => self.define_core(definition).map(Some),
+        }
     }
 
     /// Install an already-lowered recursive definition into the partial

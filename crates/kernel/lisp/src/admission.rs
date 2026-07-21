@@ -18,6 +18,22 @@ pub struct Definition<S, E> {
     pub body: E,
 }
 
+/// A top-level value binding or recursive procedure definition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TopLevelDefinition<S, E> {
+    Value { name: S, expression: E },
+    Procedure(Definition<S, E>),
+}
+
+impl<S, E> TopLevelDefinition<S, E> {
+    pub fn name(&self) -> &S {
+        match self {
+            Self::Value { name, .. } => name,
+            Self::Procedure(definition) => &definition.name,
+        }
+    }
+}
+
 impl<S, E> Definition<S, E> {
     pub fn fixed(name: S, parameters: Vec<S>, body: E) -> Self {
         Self {

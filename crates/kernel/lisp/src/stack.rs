@@ -8,9 +8,70 @@
 //!
 //! @covalence-api {"id":"A0023","title":"Concatenative Lisp stack machines","status":"experimental","dependsOn":["A0022"]}
 
+use covalence_kernel_data::inductive::{
+    FieldSpec, FixpointSpec, PolynomialSpec, Position, Validated, VariantCase,
+};
 use covalence_sexpr_api::SExprView;
 
 use crate::runtime::LispEnvironment;
+
+/// External sorts of the concatenative runtime-value sum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StackValueParameter {
+    Datum,
+    Closure,
+}
+
+/// Constructors of `StackValue(D, C) = Datum(D) + Closure(C)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StackValueCase {
+    Datum,
+    Closure,
+}
+
+impl StackValueCase {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Datum => 0,
+            Self::Closure => 1,
+        }
+    }
+
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Datum),
+            1 => Some(Self::Closure),
+            _ => None,
+        }
+    }
+}
+
+/// Canonical polynomial declaration for concatenative Lisp values.
+pub fn stack_value_fixpoint() -> Validated<FixpointSpec<StackValueParameter>> {
+    Validated::try_from(FixpointSpec::new(
+        "lisp-stack-value",
+        PolynomialSpec::new(
+            "lisp-stack-value-f",
+            vec![
+                VariantCase::new(
+                    "datum",
+                    vec![FieldSpec::new(
+                        "datum",
+                        Position::Param(StackValueParameter::Datum),
+                    )],
+                ),
+                VariantCase::new(
+                    "closure",
+                    vec![FieldSpec::new(
+                        "closure",
+                        Position::Param(StackValueParameter::Closure),
+                    )],
+                ),
+            ],
+        ),
+    ))
+    .expect("canonical stack-value polynomial is valid")
+}
 
 /// A suspended caller for a lexical stack-machine closure.
 #[derive(Clone, Debug, PartialEq, Eq)]

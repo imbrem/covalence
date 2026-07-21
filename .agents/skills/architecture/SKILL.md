@@ -92,6 +92,8 @@ disable-model-invocation: true
     `check_structural_recursion` derives a reusable plain certificate from a
     language-supplied descent predicate. ACL2 supplies only its `car`/`cdr`
     projection policy.
+    `TopLevelDefinition` keeps evaluated value bindings distinct from recursive
+    procedures; never encode `(define x value)` as a zero-argument closure.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated
@@ -112,8 +114,8 @@ disable-model-invocation: true
     generic instruction layer, so it does not depend on the concrete
     instruction representation. Pure Forsp machines implement the
     common terminal-value observation and therefore produce checked `MayEval`
-    traces on both the direct and opaque-resource runtimes; effectful runs
-    retain the separate suspension/resume transcript.
+    traces on direct, opaque-resource, and `data/inductive` value runtimes;
+    effectful runs retain the separate suspension/resume transcript.
   - Applicative and concatenative primitive dictionaries both transfer owned
     finite value lists rather than borrowing Rust slices. This is intentional:
     it keeps primitive dispatch resource-safe and directly expressible as WIT.

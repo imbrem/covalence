@@ -286,7 +286,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 354,
+      "words": 356,
       "updated": 0
     },
     {
@@ -9439,7 +9439,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 799,
+      "words": 815,
       "updated": 0
     },
     {
@@ -9502,7 +9502,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 102,
+      "words": 107,
       "updated": 0
     },
     {
@@ -9538,7 +9538,7 @@
       "title": "stack.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/stack.rs",
-      "words": 296,
+      "words": 357,
       "updated": 0
     },
     {
@@ -11302,7 +11302,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 1788,
+      "words": 1915,
       "updated": 0
     },
     {
@@ -11311,7 +11311,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1836,
+      "words": 1873,
       "updated": 0
     },
     {
@@ -17233,7 +17233,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 84,
+      "words": 87,
       "updated": 0
     },
     {
@@ -19339,8 +19339,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 423,
-      "updated": 1784675498
+      "words": 448,
+      "updated": 1784675621
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37424,8 +37424,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "fcee8897df1c9c0577b820b34acabf1545a0f8c8",
-      "committedAt": 1784675498
+      "commit": "4adca8356482057a5463169508db25faa8e013dd",
+      "committedAt": 1784675621
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

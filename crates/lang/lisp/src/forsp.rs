@@ -14,8 +14,9 @@ use std::sync::Arc;
 use covalence_kernel_lisp::sexpr::{Free, ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_kernel_lisp::{
     Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
-    HostEnvironment, HostEnvironments, LispEnvironment, LispIoRequest, LispIoResponse,
-    StackClosure, StackClosureRecord, StackConfiguration, StackEffectMachine,
+    HostEnvironment, HostEnvironments, InductiveStackValue, InductiveStackValueError,
+    InductiveStackValues, LispEnvironment, LispIoRequest, LispIoResponse, Resource, ResourceError,
+    ResourceTable, StackClosure, StackClosureRecord, StackConfiguration, StackEffectMachine,
     StackEffectMachineError, StackEffectSemantics, StackInstructionLayer, StackInstructionSyntax,
     StackInstructionView, StackMachine, StackMachineError, StackMachineValue,
     StackPrimitiveSemantics, StackProgramSyntax, StackRuntime, StackValue, StackValueLayer,
@@ -241,6 +242,7 @@ impl StackRuntime for ForspRuntime {
 }
 
 pub enum ForspHandleValueKind {}
+#[derive(Clone, Debug)]
 pub enum ForspHandleClosureKind {}
 
 pub type ForspHandleValue = covalence_kernel_lisp::Resource<ForspHandleValueKind>;
@@ -329,18 +331,15 @@ impl StackMachineValue for ForspHandleValues {
 }
 
 #[derive(Clone, Debug)]
-pub struct ForspHandleClosures {
-    closures: covalence_kernel_lisp::ResourceTable<
-        ForspHandleClosureKind,
-        StackClosureRecord<ForspCode, ForspHandleEnvironment>,
-    >,
+pub struct ForspResourceClosures<K, V> {
+    closures: ResourceTable<K, StackClosureRecord<ForspCode, HostEnvironment<String, V>>>,
 }
 
-impl StackClosure for ForspHandleClosures {
+impl<K, V: Clone> StackClosure for ForspResourceClosures<K, V> {
     type Code = ForspCode;
-    type Environment = ForspHandleEnvironment;
-    type Closure = ForspHandleClosure;
-    type Error = ForspHandleError;
+    type Environment = HostEnvironment<String, V>;
+    type Closure = Resource<K>;
+    type Error = ResourceError;
 
     fn close(
         &self,
@@ -356,6 +355,8 @@ impl StackClosure for ForspHandleClosures {
         self.closures.get_cloned(*closure)
     }
 }
+
+pub type ForspHandleClosures = ForspResourceClosures<ForspHandleClosureKind, ForspHandleValue>;
 
 /// Opaque value/closure backend for the same Forsp machine.
 #[derive(Clone, Debug)]
@@ -436,6 +437,115 @@ impl StackRuntime for ForspHandleRuntime {
 
     fn closure_error(&self, error: ForspHandleError) -> Self::Error {
         error
+    }
+
+    fn environment_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ForspInductiveClosureKind {}
+
+pub type ForspInductiveClosure = Resource<ForspInductiveClosureKind>;
+pub type ForspInductiveValue = InductiveStackValue<Datum<CoreAtom>, ForspInductiveClosure>;
+pub type ForspInductiveEnvironment = HostEnvironment<String, ForspInductiveValue>;
+pub type ForspInductiveClosures =
+    ForspResourceClosures<ForspInductiveClosureKind, ForspInductiveValue>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ForspInductiveError {
+    Value(InductiveStackValueError),
+    Resource(ResourceError),
+}
+
+impl Display for ForspInductiveError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Value(error) => write!(f, "inductive Forsp value error: {error:?}"),
+            Self::Resource(error) => Display::fmt(error, f),
+        }
+    }
+}
+
+impl core::error::Error for ForspInductiveError {}
+
+/// Forsp runtime whose public values realize the shared inductive sum.
+#[derive(Clone, Debug)]
+pub struct ForspInductiveRuntime {
+    data: Free<CoreAtom>,
+    syntax: ForspSyntax,
+    values: InductiveStackValues<Datum<CoreAtom>, ForspInductiveClosure>,
+    closures: ForspInductiveClosures,
+    environments: HostEnvironments<String, ForspInductiveValue>,
+}
+
+impl Default for ForspInductiveRuntime {
+    fn default() -> Self {
+        let arena = covalence_kernel_lisp::ResourceArena::new();
+        Self {
+            data: Free::new(),
+            syntax: ForspSyntax,
+            values: InductiveStackValues::new(),
+            closures: ForspResourceClosures {
+                closures: arena.table("inductive Forsp closure"),
+            },
+            environments: HostEnvironments::default(),
+        }
+    }
+}
+
+impl StackRuntime for ForspInductiveRuntime {
+    type Symbol = String;
+    type Atom = CoreAtom;
+    type Datum = Datum<CoreAtom>;
+    type Primitive = ForspPrimitive;
+    type Instruction = ForspInstruction;
+    type Code = ForspCode;
+    type Value = ForspInductiveValue;
+    type Closure = ForspInductiveClosure;
+    type Environment = ForspInductiveEnvironment;
+    type Error = ForspInductiveError;
+    type Data = Free<CoreAtom>;
+    type Syntax = ForspSyntax;
+    type Values = InductiveStackValues<Datum<CoreAtom>, ForspInductiveClosure>;
+    type Closures = ForspInductiveClosures;
+    type Environments = HostEnvironments<String, ForspInductiveValue>;
+
+    fn data(&self) -> &Self::Data {
+        &self.data
+    }
+
+    fn syntax(&self) -> &Self::Syntax {
+        &self.syntax
+    }
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+
+    fn data_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn syntax_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn value_error(&self, error: InductiveStackValueError) -> Self::Error {
+        ForspInductiveError::Value(error)
+    }
+
+    fn closure_error(&self, error: ResourceError) -> Self::Error {
+        ForspInductiveError::Resource(error)
     }
 
     fn environment_error(&self, error: Infallible) -> Self::Error {
@@ -1561,15 +1671,24 @@ mod tests {
 
         let handles = RuntimeForspMachine::new(ForspHandleRuntime::default());
         let Evaluation::Value(handle_evaluation) =
-            evaluate(&handles, handles.initial(code), 64).unwrap()
+            evaluate(&handles, handles.initial(code.clone()), 64).unwrap()
         else {
             panic!("handle Forsp execution must return a stack")
         };
 
+        let inductive = RuntimeForspMachine::new(ForspInductiveRuntime::default());
+        let Evaluation::Value(inductive_evaluation) =
+            evaluate(&inductive, inductive.initial(code), 64).unwrap()
+        else {
+            panic!("inductive Forsp execution must return a stack")
+        };
+
         assert!(direct_evaluation.trace.steps() > 0);
         assert!(handle_evaluation.trace.steps() > 0);
+        assert!(inductive_evaluation.trace.steps() > 0);
         assert_eq!(direct_evaluation.value.operands.len(), 1);
         assert_eq!(handle_evaluation.value.operands.len(), 1);
+        assert_eq!(inductive_evaluation.value.operands.len(), 1);
         assert_eq!(
             direct
                 .runtime()
@@ -1584,6 +1703,14 @@ mod tests {
                 .runtime()
                 .values()
                 .view(&handle_evaluation.value.operands[0])
+                .unwrap(),
+            StackValueView::Datum(Datum::Atom(CoreAtom::Integer(Int::from(49))))
+        );
+        assert_eq!(
+            inductive
+                .runtime()
+                .values()
+                .view(&inductive_evaluation.value.operands[0])
                 .unwrap(),
             StackValueView::Datum(Datum::Atom(CoreAtom::Integer(Int::from(49))))
         );

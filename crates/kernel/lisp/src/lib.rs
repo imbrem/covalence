@@ -27,6 +27,7 @@ pub mod arena;
 pub mod effect;
 pub mod host;
 pub mod inductive_runtime;
+pub mod inductive_stack;
 pub mod io;
 pub mod relation;
 pub mod resource;
@@ -44,7 +45,7 @@ pub use admission::{
     DefinitionDependency, DefinitionGroup, DuplicateDefinition, EvaluationExistence,
     EvaluationUniqueness, ExecutionAdequacyReplay, ExistenceUniqueness, RecursiveCall,
     SourcedDefinition, StructuralRecursion, StructuralRecursionError, TerminationCertificate,
-    TotalAdmission, Totalization, admit_total, check_structural_recursion,
+    TopLevelDefinition, TotalAdmission, Totalization, admit_total, check_structural_recursion,
 };
 pub use applicative_effect::{LispEffectMachine, LispEffectState};
 pub use arena::{
@@ -68,6 +69,9 @@ pub use inductive_runtime::{
     InductiveLispRuntimeError, InductiveLispValue, InductiveRuntime, InductiveRuntimeError,
     InductiveRuntimeValue, InductiveRuntimeValues, RuntimeExternal,
 };
+pub use inductive_stack::{
+    InductiveStackValue, InductiveStackValueError, InductiveStackValues, StackValueExternal,
+};
 pub use io::{LispIo, LispIoHandler, LispIoRequest, LispIoResponse};
 pub use relation::{
     CheckedClassifiedTrace, CheckedTrace, ClassifiedStep, ClassifiedStepRelation,
@@ -85,7 +89,8 @@ pub use runtime::{
 pub use stack::{
     StackClosure, StackClosureRecord, StackConfiguration, StackContinuation, StackInstructionLayer,
     StackInstructionSyntax, StackInstructionView, StackMachineValue, StackPrimitiveSemantics,
-    StackProgramSyntax, StackRuntime, StackValue, StackValueLayer, StackValueView,
+    StackProgramSyntax, StackRuntime, StackValue, StackValueCase, StackValueLayer,
+    StackValueParameter, StackValueView, stack_value_fixpoint,
 };
 pub use stack_effect::{
     StackEffectMachine, StackEffectMachineError, StackEffectRuntimeError, StackEffectSemantics,

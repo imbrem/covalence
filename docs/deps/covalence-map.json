@@ -11338,7 +11338,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1953,
+      "words": 2038,
       "updated": 0
     },
     {
@@ -17260,7 +17260,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 95,
+      "words": 96,
       "updated": 0
     },
     {
@@ -19366,8 +19366,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 506,
-      "updated": 1784676607
+      "words": 513,
+      "updated": 1784676901
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37469,8 +37469,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "8f98389b8e99b2bf2ee35afe0be93e5c5d19df36",
-      "committedAt": 1784676607
+      "commit": "01f1cc670697bf8a49299da80dca2044912b5a49",
+      "committedAt": 1784676901
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

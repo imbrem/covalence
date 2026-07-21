@@ -336,6 +336,9 @@ impl Frontend {
             Some("begin") if self.dialect == SurfaceDialect::Scheme => {
                 self.lower_sequence("begin", &items[1..])
             }
+            Some("cond") if self.dialect == SurfaceDialect::Scheme => {
+                self.lower_scheme_cond(&items[1..])
+            }
             Some("cond") => Ok(CoreExpr::Cond {
                 clauses: self.lower_cond(&items[1..])?,
             }),
@@ -646,6 +649,66 @@ impl Frontend {
                 Ok((condition, self.lower(&pair[1])?))
             })
             .collect()
+    }
+
+    fn lower_scheme_cond(&self, clauses: &[SExpr]) -> Result<FrontendExpr, LowerError> {
+        let Some((clause, rest)) = clauses.split_first() else {
+            return Ok(CoreExpr::Truth(false));
+        };
+        let items = clause.as_list().ok_or_else(|| LowerError::Malformed {
+            form: "cond",
+            detail: "clause is not a list".to_owned(),
+        })?;
+        let Some(test) = items.first() else {
+            return Err(LowerError::Malformed {
+                form: "cond",
+                detail: "clause is empty".to_owned(),
+            });
+        };
+        if test.as_symbol() == Some("else") {
+            if !rest.is_empty() {
+                return Err(LowerError::Malformed {
+                    form: "cond",
+                    detail: "else must be the final clause".to_owned(),
+                });
+            }
+            return self.lower_body("cond", &items[1..]);
+        }
+
+        let alternative = self.lower_scheme_cond(rest)?;
+        if items.len() == 1 || items.get(1).and_then(SExpr::as_symbol) == Some("=>") {
+            if items.len() != 1 && items.len() != 3 {
+                return Err(LowerError::Malformed {
+                    form: "cond",
+                    detail: "=> clause requires exactly one receiver".to_owned(),
+                });
+            }
+            let temporary = fresh_symbol(clauses, "#%covalence-cond");
+            let consequent = if items.len() == 1 {
+                CoreExpr::Variable(temporary.clone())
+            } else {
+                CoreExpr::Apply {
+                    operator: Box::new(self.lower(&items[2])?),
+                    arguments: vec![CoreExpr::Variable(temporary.clone())],
+                }
+            };
+            return Ok(CoreExpr::Let {
+                bindings: vec![covalence_kernel_lisp::Binding::new(
+                    temporary.clone(),
+                    self.lower(test)?,
+                )],
+                body: Box::new(CoreExpr::If {
+                    condition: Box::new(CoreExpr::Variable(temporary)),
+                    consequent: Box::new(consequent),
+                    alternative: Box::new(alternative),
+                }),
+            });
+        }
+        Ok(CoreExpr::If {
+            condition: Box::new(self.lower(test)?),
+            consequent: Box::new(self.lower_body("cond", &items[1..])?),
+            alternative: Box::new(alternative),
+        })
     }
 
     fn exact_arity(
@@ -1905,6 +1968,28 @@ mod tests {
                 "(cond ((null? (quote (x))) 0) (else 1))"
             ),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(1))))
+        );
+    }
+
+    #[test]
+    fn scheme_cond_supports_value_arrow_and_sequence_clauses() {
+        let arrow = "(cond (nil 0)
+                           ((+ 20 1) => (lambda (x) (+ x x)))
+                           (else 0))";
+        let expected = CoreAtom::Integer(Int::from(42));
+        assert_eq!(
+            run(SurfaceDialect::Scheme, arrow),
+            HostValue::datum(Datum::Atom(expected.clone()))
+        );
+        assert_eq!(run_arena(arrow), expected);
+        assert_eq!(run_inductive(arrow), expected);
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(cond ((or nil 42)))"),
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(cond (t (+ 1 1) 42))"),
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
     }
 

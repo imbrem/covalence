@@ -29,16 +29,19 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 
 - `covalence-kernel-lisp` owns backend-neutral `CoreExpr`, evaluation strategy,
   CEK transitions, finite traces, bounded relational exploration, effects, and
-  admission capability interfaces. Its shared `LispAtom<I>` keeps exact
-  integer representation abstract while preserving symbol and string bytes;
-  `LispPrimitive` supplies stable applicative primitive identifiers without
-  fixing their implementation.
+  admission capability interfaces. Its shared `LispAtom<I, B, F>` independently
+  abstracts exact integers, text bytes, and string-format labels;
+  `LispPrimitive` supplies stable applicative primitive identifiers and
+  structural metadata without fixing their implementation.
 - The same CEK transition code runs over direct Rust values, opaque resource
   arenas, and an inductive S-expression realization.
 - Scheme supports lexical closures, recursive definitions, first-class
-  `apply`, atomic duplicate-checked definition groups, and handled I/O in the
-  host/runtime path. Top-level values and recursive procedures are distinct
-  in the shared API. Groups expose lexical call dependencies. ACL2 consumes
+  `apply`, sequential `let*`, short-circuit `and`/`or`, atomic
+  duplicate-checked definition groups, and handled I/O in the host/runtime
+  path. Derived forms lower hygienically to the common core and run unchanged
+  over direct, resource-handle, and inductive values. Top-level values and
+  recursive procedures are distinct in the shared API. Groups expose lexical
+  call dependencies. ACL2 consumes
   the same lowered `Definition` boundary; dependency-first recursive
   components identify definitions that must be admitted together. ACL2
   specializes the common structural recursion checker with its `car`/`cdr`

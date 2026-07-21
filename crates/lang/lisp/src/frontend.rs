@@ -329,7 +329,10 @@ impl Frontend {
             }
             Some("lambda") => self.lower_lambda(items),
             Some("let") => self.lower_let(items, false),
+            Some("let*") if self.dialect == SurfaceDialect::Scheme => self.lower_let_star(items),
             Some("letrec") if self.dialect == SurfaceDialect::Scheme => self.lower_let(items, true),
+            Some("and") if self.dialect == SurfaceDialect::Scheme => self.lower_and(&items[1..]),
+            Some("or") if self.dialect == SurfaceDialect::Scheme => self.lower_or(&items[1..]),
             Some("begin") if self.dialect == SurfaceDialect::Scheme => {
                 self.lower_sequence("begin", &items[1..])
             }
@@ -517,11 +520,44 @@ impl Frontend {
                 detail: "expected bindings and at least one body expression".to_owned(),
             });
         }
-        let bindings = items[1].as_list().ok_or_else(|| LowerError::Malformed {
-            form,
-            detail: "bindings are not a list".to_owned(),
-        })?;
-        let bindings = bindings
+        let bindings = self.lower_bindings(form, &items[1])?;
+        let body = Box::new(self.lower_body(form, &items[2..])?);
+        Ok(if recursive {
+            CoreExpr::LetRec { bindings, body }
+        } else {
+            CoreExpr::Let { bindings, body }
+        })
+    }
+
+    fn lower_let_star(&self, items: &[SExpr]) -> Result<FrontendExpr, LowerError> {
+        if items.len() < 3 {
+            return Err(LowerError::Malformed {
+                form: "let*",
+                detail: "expected bindings and at least one body expression".to_owned(),
+            });
+        }
+        let bindings = self.lower_bindings("let*", &items[1])?;
+        let mut body = self.lower_body("let*", &items[2..])?;
+        for binding in bindings.into_iter().rev() {
+            body = CoreExpr::Let {
+                bindings: vec![binding],
+                body: Box::new(body),
+            };
+        }
+        Ok(body)
+    }
+
+    fn lower_bindings(
+        &self,
+        form: &'static str,
+        expression: &SExpr,
+    ) -> Result<Vec<covalence_kernel_lisp::Binding<String, FrontendExpr>>, LowerError> {
+        expression
+            .as_list()
+            .ok_or_else(|| LowerError::Malformed {
+                form,
+                detail: "bindings are not a list".to_owned(),
+            })?
             .iter()
             .map(|binding| {
                 let pair = binding.as_list().ok_or_else(|| LowerError::Malformed {
@@ -534,24 +570,47 @@ impl Frontend {
                         detail: "binding must contain a name and expression".to_owned(),
                     });
                 }
-                let name = pair[0]
-                    .as_symbol()
-                    .ok_or_else(|| LowerError::Malformed {
-                        form,
-                        detail: "binding name is not a symbol".to_owned(),
-                    })?
-                    .to_owned();
+                let name = self.symbol(&pair[0], form, "binding name")?;
                 Ok(covalence_kernel_lisp::Binding::new(
                     name,
                     self.lower(&pair[1])?,
                 ))
             })
-            .collect::<Result<_, _>>()?;
-        let body = Box::new(self.lower_body(form, &items[2..])?);
-        Ok(if recursive {
-            CoreExpr::LetRec { bindings, body }
-        } else {
-            CoreExpr::Let { bindings, body }
+            .collect()
+    }
+
+    fn lower_and(&self, expressions: &[SExpr]) -> Result<FrontendExpr, LowerError> {
+        let Some((first, rest)) = expressions.split_first() else {
+            return Ok(CoreExpr::Truth(true));
+        };
+        if rest.is_empty() {
+            return self.lower(first);
+        }
+        Ok(CoreExpr::If {
+            condition: Box::new(self.lower(first)?),
+            consequent: Box::new(self.lower_and(rest)?),
+            alternative: Box::new(CoreExpr::Truth(false)),
+        })
+    }
+
+    fn lower_or(&self, expressions: &[SExpr]) -> Result<FrontendExpr, LowerError> {
+        let Some((first, rest)) = expressions.split_first() else {
+            return Ok(CoreExpr::Truth(false));
+        };
+        if rest.is_empty() {
+            return self.lower(first);
+        }
+        let temporary = fresh_symbol(expressions, "#%covalence-or");
+        Ok(CoreExpr::Let {
+            bindings: vec![covalence_kernel_lisp::Binding::new(
+                temporary.clone(),
+                self.lower(first)?,
+            )],
+            body: Box::new(CoreExpr::If {
+                condition: Box::new(CoreExpr::Variable(temporary.clone())),
+                consequent: Box::new(CoreExpr::Variable(temporary)),
+                alternative: Box::new(self.lower_or(rest)?),
+            }),
         })
     }
 
@@ -607,6 +666,27 @@ impl Frontend {
                 ),
             })
         }
+    }
+}
+
+fn fresh_symbol(expressions: &[SExpr], prefix: &str) -> String {
+    (0usize..)
+        .map(|index| format!("{prefix}-{index}"))
+        .find(|candidate| {
+            !expressions
+                .iter()
+                .any(|expression| contains_symbol(expression, candidate))
+        })
+        .expect("the finite source cannot contain every generated name")
+}
+
+fn contains_symbol(expression: &SExpr, candidate: &str) -> bool {
+    match expression {
+        SExpr::Atom(Atom::Symbol(symbol)) => symbol == candidate,
+        SExpr::Atom(Atom::Str { .. }) => false,
+        SExpr::List(items) => items
+            .iter()
+            .any(|expression| contains_symbol(expression, candidate)),
     }
 }
 
@@ -1594,6 +1674,34 @@ mod tests {
                 ..
             } if matches!(body.as_ref(), CoreExpr::Sequence { rest, .. } if rest.len() == 1)
         ));
+    }
+
+    #[test]
+    fn scheme_derived_binding_and_short_circuit_forms_share_backends() {
+        let source = "(let* ((x 20) (y (+ x 1)))
+                        (and (<= x y) (or nil (+ y y))))";
+        let expected = CoreAtom::Integer(Int::from(42));
+        assert_eq!(
+            run(SurfaceDialect::Scheme, source),
+            HostValue::datum(Datum::Atom(expected.clone()))
+        );
+        assert_eq!(run_arena(source), expected);
+        assert_eq!(run_inductive(source), expected);
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(and nil missing)"),
+            HostValue::datum(Datum::Nil)
+        );
+        assert_eq!(
+            run(SurfaceDialect::Scheme, "(and)"),
+            HostValue::datum(Datum::Atom(CoreAtom::symbol("t")))
+        );
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(let ((#%covalence-or-0 7)) (or nil #%covalence-or-0))"
+            ),
+            HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(7))))
+        );
     }
 
     #[test]

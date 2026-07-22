@@ -104,8 +104,6 @@ fn relational_append_exists_for_every_acl2_object() {
 }
 
 #[test]
-#[ignore = "generic graph determinacy does not yet align beta-equivalent constructor steps"]
-// TODO(cov:lisp.acl2.append-adequacy-beta-normalization, major): Make generic inductive graph determinacy accept beta-equivalent constructor-step propositions without perturbing recursor construction, then re-enable this universal ACL2 APPEND existence/uniqueness gate.
 fn reified_append_evaluation_exists_and_is_unique() {
     let s = session();
     let adequacy = replay_acl2_append_graph_adequacy(s.induction_env()).unwrap();

@@ -46,7 +46,7 @@ use super::data::Inductive;
 use super::graph;
 use super::sig::InductiveSig;
 use super::util::{and_all, discharge_conj, project, var_name};
-use crate::init::eq::{beta_expand, beta_nf_concl, beta_nf_expand};
+use crate::init::eq::{beta_nf_concl, beta_nf_expand};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::exists_intro;
 
@@ -284,7 +284,7 @@ fn good_clause<I: Inductive>(
         .iter()
         .map(|app| beta_nf_concl(Thm::assume(app.clone())?)?.and_elim_l())
         .collect::<Result<_>>()?;
-    let intro = super::existence::graph_intro(sig, steps, beta, j)?;
+    let intro = beta_nf_concl(super::existence::graph_intro(sig, steps, beta, j)?)?;
     let graph_conj = if graph_recs.is_empty() {
         intro
     } else {
@@ -300,7 +300,7 @@ fn good_clause<I: Inductive>(
 
     // `Good_i (Cⱼ y⃗)(fⱼ y⃗ d⃗)` = `Graph … ∧ wit_i …` (β-expanded), then
     // discharge the antecedents and ∀-close `y⃗ d⃗`.
-    let reduced = graph_conj.and_intro(wit_conj)?;
+    let reduced = beta_nf_concl(graph_conj.and_intro(wit_conj)?)?;
     let good_app = apply2(good, &inst_j.head, &inst_j.value)?;
     let consequent = beta_nf_expand(good_app, reduced)?;
     let discharged = discharge_conj(consequent, &good_apps)?;
@@ -320,7 +320,13 @@ fn good_closed<I: Inductive>(theory: &I, steps: &[Term], beta: &Type, i: usize) 
     let sig = theory.sig();
     let good = good_term(sig, steps, beta, i)?;
     let clauses: Vec<Thm> = (0..sig.arity())
-        .map(|j| good_clause(theory, steps, beta, i, j, &good))
+        .map(|j| {
+            good_clause(theory, steps, beta, i, j, &good).map_err(|error| {
+                covalence_core::Error::ConnectiveRule(format!(
+                    "closed-good clause {j} for target constructor {i}: {error}"
+                ))
+            })
+        })
         .collect::<Result<_>>()?;
     and_all(&clauses)
 }
@@ -340,9 +346,28 @@ pub fn graph_inv<I: Inductive>(theory: &I, steps: &[Term], beta: &Type, i: usize
 
     let gh = graph::graph(sig, steps, beta, inst.head.clone(), a.clone())?;
     // {GH} ⊢ Good_i (Cᵢ x⃗) a, β-reduce, take the `wit` conjunct.
-    let good_at = Thm::assume(gh.clone())?
-        .all_elim(good)?
-        .imp_elim(good_closed(theory, steps, beta, i)?)?;
+    let good_imp = Thm::assume(gh.clone())?.all_elim(good)?;
+    let implication = good_imp.concl();
+    let (f, _) = implication
+        .as_app()
+        .ok_or_else(|| covalence_core::Error::NotHolImp(implication.to_string()))?;
+    let (head, antecedent) = f
+        .as_app()
+        .ok_or_else(|| covalence_core::Error::NotHolImp(implication.to_string()))?;
+    if *head != covalence_core::defs::imp() {
+        return Err(covalence_core::Error::NotHolImp(implication.to_string()));
+    }
+    let closed_raw = good_closed(theory, steps, beta, i).map_err(|error| {
+        covalence_core::Error::ConnectiveRule(format!(
+            "construct closed-good theorem at constructor {i}: {error}"
+        ))
+    })?;
+    let closed = beta_nf_expand(antecedent.clone(), beta_nf_concl(closed_raw)?)?;
+    let good_at = good_imp.imp_elim(closed).map_err(|error| {
+        covalence_core::Error::ConnectiveRule(format!(
+            "graph inversion closed-good alignment at constructor {i}: {error}"
+        ))
+    })?;
     let wit_at = beta_nf_concl(good_at)?.and_elim_r()?; // {GH} ⊢ wit_i (Cᵢ x⃗) a
 
     // Specialise `wit` at the actual args `x⃗` (none for a nullary
@@ -387,7 +412,8 @@ fn intro_exists_rec(ex_term: &Term, witnesses: &[Term], body: Thm) -> Result<Thm
         let inner_ex = bc.concl().as_eq().unwrap().1.clone();
         intro_exists_rec(&inner_ex, &witnesses[1..], body)?
     };
-    let at = beta_expand(&pred, w.clone(), inner)?;
+    let applied = Term::app(pred.clone(), w.clone());
+    let at = beta_nf_expand(applied, beta_nf_concl(inner)?)?;
     exists_intro(pred, w.clone(), at)
 }
 

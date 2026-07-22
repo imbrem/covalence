@@ -408,6 +408,14 @@ mod tests {
     }
 
     #[test]
+    fn determinacy_accepts_beta_reducible_step_terms() {
+        let z = Term::abs(nat(), zero()).apply(zero()).unwrap();
+        let f = Term::abs(nat(), Term::abs(nat(), zero()));
+        let thm = graph_det(&z, &f).unwrap();
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
     fn recursion_theorem_is_axiom_free() {
         let rt = recursion_theorem().unwrap();
         assert!(rt.hyps().is_empty(), "∃r. P_rec r must be axiom-free");

@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 384,
-  "structured": 384,
+  "count": 383,
+  "structured": 383,
   "items": [
     {
       "id": "acl2.api.read-time-capability-split",
@@ -3305,23 +3305,13 @@
       "crate": "covalence-kernel-lisp"
     },
     {
-      "id": "lisp.acl2.append-adequacy-beta-normalization",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Make generic inductive graph determinacy accept beta-equivalent constructor-step propositions without perturbing recursor construction, then re-enable this universal ACL2 APPEND existence/uniqueness gate.",
-      "structured": true,
-      "path": "crates/lang/lisp/tests/acl2.rs",
-      "line": 108,
-      "crate": "covalence-lisp"
-    },
-    {
       "id": "lisp.acl2.induction-test-performance",
       "kind": "TODO",
       "severity": "major",
       "summary": "Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.",
       "structured": true,
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "line": 599,
+      "line": 597,
       "crate": "covalence-lisp"
     },
     {

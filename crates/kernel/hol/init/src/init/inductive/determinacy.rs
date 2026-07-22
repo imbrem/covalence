@@ -29,7 +29,7 @@ use super::graph::{self, CtorInstance};
 use super::sig::InductiveSig;
 use super::uniqueness::graph_inv;
 use super::util::discharge_conj;
-use crate::init::eq::{beta_expand, beta_reduce};
+use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::exists_elim;
 
@@ -145,7 +145,7 @@ fn det_step(
         // `cⱼ = dⱼ` by the IH `motive rⱼ`, for every recursive argument.
         let mut comp_eqs = Vec::with_capacity(k);
         for (j, rec) in recs.iter().enumerate() {
-            let ih = beta_reduce(Thm::assume(Term::app(motive.clone(), rec.clone()))?)?;
+            let ih = beta_nf_concl(Thm::assume(Term::app(motive.clone(), rec.clone()))?)?;
             let eq = ih
                 .all_elim(ca_vars[j].clone())?
                 .all_elim(cb_vars[j].clone())?
@@ -230,7 +230,13 @@ pub fn graph_det<I: Inductive>(theory: &I, steps: &[Term], beta: &Type) -> Resul
     let sig = theory.sig();
     let motive = det_motive(sig, steps, beta)?;
     let cases: Vec<Thm> = (0..sig.arity())
-        .map(|i| det_case(theory, steps, beta, &motive, i))
+        .map(|i| {
+            det_case(theory, steps, beta, &motive, i).map_err(|error| {
+                Error::ConnectiveRule(format!("graph determinacy case {i}: {error}"))
+            })
+        })
         .collect::<Result<_>>()?;
-    theory.induct(&motive, cases)
+    theory
+        .induct(&motive, cases)
+        .map_err(|error| Error::ConnectiveRule(format!("graph determinacy induction: {error}")))
 }

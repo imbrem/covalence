@@ -745,7 +745,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37889,
+      "words": 37898,
       "updated": 0
     },
     {
@@ -9448,7 +9448,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 935,
+      "words": 948,
       "updated": 0
     },
     {
@@ -11293,7 +11293,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 2231,
+      "words": 2248,
       "updated": 0
     },
     {
@@ -11455,7 +11455,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 656,
+      "words": 662,
       "updated": 0
     },
     {
@@ -15991,7 +15991,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37889,
+      "words": 37898,
       "updated": 0
     },
     {
@@ -16108,7 +16108,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3839,
+      "words": 3849,
       "updated": 0
     },
     {
@@ -17269,7 +17269,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 127,
+      "words": 133,
       "updated": 0
     },
     {
@@ -19375,8 +19375,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 806,
-      "updated": 1784681359
+      "words": 861,
+      "updated": 1784681638
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -23326,6 +23326,15 @@
       "title": "Connect checked definition-graph adequacy to reified common Lisp configurations, generalize it beyond APPEND, totalize only from honest MayEval existence/uniqueness, and retire shallow assumed equations.",
       "status": "severe",
       "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.acl2.append-adequacy-beta-normalization",
+      "kind": "todo",
+      "title": "Make generic inductive graph determinacy accept beta-equivalent constructor-step propositions without perturbing recursor construction, then re-enable this universal ACL2 APPEND existence/uniqueness gate.",
+      "status": "major",
+      "path": "crates/lang/lisp/tests/acl2.rs",
       "words": 0,
       "updated": 0
     },
@@ -37491,8 +37500,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "2c7fcdf817b72fbea77c60ced0bea62c475bd5db",
-      "committedAt": 1784681359
+      "commit": "556aa6544279ca2997e867c0ada97ec55d49fdf8",
+      "committedAt": 1784681638
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

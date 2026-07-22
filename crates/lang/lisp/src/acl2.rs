@@ -123,7 +123,7 @@ use covalence_init::init::inductive::determinacy::graph_det;
 use covalence_init::init::inductive::existence::graph_total;
 use covalence_init::init::inductive::graph;
 use covalence_kernel_lisp::{
-    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, Evaluation,
+    AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition as LispDefinition, Evaluation,
     EvaluationExistence, EvaluationUniqueness, ExistenceUniqueness, MayEvalReplay,
     MayEvalTransport, SourcedDefinition, StructuralRecursion, StructuralRecursionError,
     TraceReplay, check_structural_recursion, evaluate,
@@ -331,6 +331,18 @@ pub type Acl2Definition = SourcedDefinition<String, SExpr, FrontendExpr>;
 pub struct Acl2HolDefinition {
     pub model: Term,
     pub defining_equation: Thm,
+}
+
+/// One accepted ACL2 definition across the shared Lisp and deep HOL layers.
+///
+/// The generic [`AdmittedDefinition`] pairs source/core provenance with the
+/// checked structural certificate. `hol` is present only when the current
+/// conservative replay template succeeds; it does not claim execution
+/// adequacy or totalization through the common `MayEval` relation.
+#[derive(Clone)]
+pub struct Acl2AdmittedDefinition {
+    pub admitted: AdmittedDefinition<Acl2Definition, Acl2Admission>,
+    pub hol: Option<Acl2HolDefinition>,
 }
 
 /// Proof-producing replay against one deep ACL2/HOL environment generation.
@@ -695,9 +707,7 @@ impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {
 /// theorems, retrievable via [`theorem`](Acl2Session::theorem)).
 pub struct Acl2Session {
     defs: Defs,
-    admissions: BTreeMap<String, Acl2Admission>,
-    definitions: BTreeMap<String, Acl2Definition>,
-    hol_definitions: BTreeMap<String, Acl2HolDefinition>,
+    admitted: BTreeMap<String, Acl2AdmittedDefinition>,
     /// The same definitions in the shared partial Lisp relation. Checked
     /// finite traces from this session carry no totality claim; they are the
     /// operational side of the future execution-adequacy theorem.
@@ -721,9 +731,7 @@ impl Acl2Session {
         let cache = shadow_cache(&env).map_err(kernel_err)?;
         Ok(Acl2Session {
             defs: Defs::new(),
-            admissions: BTreeMap::new(),
-            definitions: BTreeMap::new(),
-            hol_definitions: BTreeMap::new(),
+            admitted: BTreeMap::new(),
             operational: HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
@@ -738,18 +746,27 @@ impl Acl2Session {
     }
 
     pub fn admission(&self, name: &str) -> Option<&Acl2Admission> {
-        self.admissions.get(name)
+        self.admitted
+            .get(name)
+            .map(|record| &record.admitted.certificate)
     }
 
     /// Source provenance and shared lowered operational definition.
     pub fn definition(&self, name: &str) -> Option<&Acl2Definition> {
-        self.definitions.get(name)
+        self.admitted
+            .get(name)
+            .map(|record| &record.admitted.definition)
+    }
+
+    /// The canonical retained record for an accepted definition.
+    pub fn admitted_definition(&self, name: &str) -> Option<&Acl2AdmittedDefinition> {
+        self.admitted.get(name)
     }
 
     /// The conservatively defined deep-HOL model, when this definition lies
     /// in the deep replay layer's currently supported template.
     pub fn hol_definition(&self, name: &str) -> Option<&Acl2HolDefinition> {
-        self.hol_definitions.get(name)
+        self.admitted.get(name)?.hol.as_ref()
     }
 
     /// Evaluate a closed ACL2 expression in the common partial Lisp machine
@@ -883,9 +900,7 @@ impl Acl2Session {
     /// table) — infallible, used by the `#lang` switch reset.
     pub fn reset(&mut self) {
         self.defs = Defs::new();
-        self.admissions = BTreeMap::new();
-        self.definitions = BTreeMap::new();
-        self.hol_definitions = BTreeMap::new();
+        self.admitted = BTreeMap::new();
         self.operational = HostSession::new(SurfaceDialect::Acl2Core, FUEL as usize);
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
@@ -1100,9 +1115,10 @@ impl Acl2Session {
             })?;
         self.install(&definition.core)?;
         self.operational = operational;
-        self.try_admit_deep_defun(&definition, &admission);
-        self.definitions.insert(name.clone(), definition);
-        self.admissions.insert(name.clone(), admission);
+        let admitted = AdmittedDefinition::new(definition, admission);
+        let hol = self.try_admit_deep_defun(&admitted);
+        self.admitted
+            .insert(name.clone(), Acl2AdmittedDefinition { admitted, hol });
         Ok(name)
     }
 
@@ -1111,16 +1127,17 @@ impl Acl2Session {
     /// Failure is intentionally non-fatal: the value semantics supports a
     /// wider language, while any later deep theorem mentioning the omitted
     /// function will be rejected during translation.
-    fn try_admit_deep_defun(&mut self, definition: &Acl2Definition, admission: &Acl2Admission) {
-        if let Ok(evidence) =
-            Acl2HolReplay::new(self.deep.env()).replay_termination(definition, admission)
-        {
-            self.hol_definitions
-                .insert(definition.core.name.clone(), evidence.definition);
-            let cache = shadow_cache(&evidence.environment).unwrap_or_default();
-            self.deep = KernelAcl2Session::new(evidence.environment);
-            self.deep_cache = Mutex::new(cache);
-        }
+    fn try_admit_deep_defun(
+        &mut self,
+        admitted: &AdmittedDefinition<Acl2Definition, Acl2Admission>,
+    ) -> Option<Acl2HolDefinition> {
+        let evidence = Acl2HolReplay::new(self.deep.env())
+            .replay_termination(&admitted.definition, &admitted.certificate)
+            .ok()?;
+        let cache = shadow_cache(&evidence.environment).unwrap_or_default();
+        self.deep = KernelAcl2Session::new(evidence.environment);
+        self.deep_cache = Mutex::new(cache);
+        Some(evidence.definition)
     }
 
     /// Install an admissible lowered definition as an assumed equation.

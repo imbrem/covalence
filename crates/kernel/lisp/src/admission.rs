@@ -468,6 +468,19 @@ pub struct AdmittedDefinition<D, C> {
     pub certificate: C,
 }
 
+impl<D, C> AdmittedDefinition<D, C> {
+    pub fn new(definition: D, certificate: C) -> Self {
+        Self {
+            definition,
+            certificate,
+        }
+    }
+
+    pub fn into_parts(self) -> (D, C) {
+        (self.definition, self.certificate)
+    }
+}
+
 /// Host-side inspection/checking policy.
 ///
 /// This may reject malformed witnesses early, but its result remains plain

@@ -69,6 +69,12 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   respective runtimes. Their quote-family reader abbreviations share one
   scanner, parameterized by Scheme versus ACL2 case, string, character, radix,
   block-comment, and sharp-dot policy.
+- Each accepted ACL2 `defun` now has one `Acl2AdmittedDefinition` record:
+  source provenance and common lowered core are paired with the checked
+  structural certificate through the generic `AdmittedDefinition` API, plus
+  an optional conservative HOL replay. Compatibility accessors are views of
+  this record rather than three independently mutable maps. Universal
+  `MayEval` adequacy remains a separate, explicit obligation.
 - Plain, Scheme, and ACL2 readers can lower directly through the shared
   `SExprSyntax` constructor capability. Forsp quotation now uses that same
   fold into the free inductive backend instead of maintaining its own list

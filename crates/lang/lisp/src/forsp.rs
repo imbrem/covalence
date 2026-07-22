@@ -26,6 +26,7 @@ use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::frontend::CoreAtom;
+use crate::reader::lower_with;
 
 pub use covalence_kernel_lisp::LispIo as ForspIo;
 
@@ -736,17 +737,17 @@ impl ForspFrontend {
     }
 
     pub fn quote(&self, form: &SExpr) -> Datum<CoreAtom> {
-        match form {
-            SExpr::Atom(Atom::Symbol(text)) => Int::from_str(text).map_or_else(
-                |_| Datum::Atom(CoreAtom::symbol(text.as_bytes())),
-                |integer| Datum::Atom(CoreAtom::Integer(integer)),
-            ),
-            SExpr::Atom(Atom::Str { format, bytes }) => Datum::Atom(CoreAtom::String {
-                format: format.to_string(),
-                bytes: bytes.to_vec(),
-            }),
-            SExpr::List(items) => Datum::list(items.iter().map(|item| self.quote(item))),
-        }
+        lower_with(&Free::new(), form, &|atom| {
+            Ok(match atom {
+                Atom::Symbol(text) => Int::from_str(text)
+                    .map_or_else(|_| CoreAtom::symbol(text.as_bytes()), CoreAtom::Integer),
+                Atom::Str { format, bytes } => CoreAtom::String {
+                    format: format.to_string(),
+                    bytes: bytes.to_vec(),
+                },
+            })
+        })
+        .unwrap_or_else(|never: Infallible| match never {})
     }
 
     fn lower_sequence(&self, items: &[SExpr]) -> Result<ForspCode, ForspError> {

@@ -65,6 +65,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   respective runtimes. Their quote-family reader abbreviations share one
   scanner, parameterized by Scheme versus ACL2 case, string, character, radix,
   block-comment, and sharp-dot policy.
+- Plain, Scheme, and ACL2 readers can lower directly through the shared
+  `SExprSyntax` constructor capability. Forsp quotation now uses that same
+  fold into the free inductive backend instead of maintaining its own list
+  recursion.
 
 The narrow regression commands are:
 

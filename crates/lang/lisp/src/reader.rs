@@ -35,6 +35,72 @@ where
     }
 }
 
+/// Read plain S-expression syntax directly into an abstract value backend.
+///
+/// Parsing remains theorem-neutral. This function only removes the frontend's
+/// dependency on the parser's concrete tree representation: Scheme, ACL2, and
+/// other Lisp clients can select their atom payload and reuse the same
+/// `nil`/`cons` construction path.
+pub fn read_with<A>(
+    api: &A,
+    src: &str,
+    atom: &impl Fn(&covalence_sexp::Atom) -> Result<A::Payload, A::Error>,
+) -> Result<Vec<A::Value>, ReadIntoError<A::Error>>
+where
+    A: SExprSyntax + ?Sized,
+{
+    lower_all(api, read(src)?, atom)
+}
+
+/// Read Scheme syntax directly into an abstract S-expression backend.
+pub fn read_scheme_with<A>(
+    api: &A,
+    src: &str,
+    atom: &impl Fn(&covalence_sexp::Atom) -> Result<A::Payload, A::Error>,
+) -> Result<Vec<A::Value>, ReadIntoError<A::Error>>
+where
+    A: SExprSyntax + ?Sized,
+{
+    lower_all(api, read_scheme(src)?, atom)
+}
+
+/// Read ACL2 book syntax directly into an abstract S-expression backend.
+pub fn read_book_with<A>(
+    api: &A,
+    src: &str,
+    atom: &impl Fn(&covalence_sexp::Atom) -> Result<A::Payload, A::Error>,
+) -> Result<Vec<A::Value>, ReadIntoError<A::Error>>
+where
+    A: SExprSyntax + ?Sized,
+{
+    lower_all(api, read_book(src)?, atom)
+}
+
+fn lower_all<A>(
+    api: &A,
+    forms: Vec<SExpr>,
+    atom: &impl Fn(&covalence_sexp::Atom) -> Result<A::Payload, A::Error>,
+) -> Result<Vec<A::Value>, ReadIntoError<A::Error>>
+where
+    A: SExprSyntax + ?Sized,
+{
+    forms
+        .iter()
+        .map(|form| lower_with(api, form, atom).map_err(ReadIntoError::Backend))
+        .collect()
+}
+
+/// Failure while parsing and lowering source into an abstract backend.
+#[derive(Debug, thiserror::Error)]
+pub enum ReadIntoError<E> {
+    /// Surface syntax could not be parsed.
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    /// The selected S-expression backend rejected construction.
+    #[error("S-expression backend rejected input: {0}")]
+    Backend(E),
+}
+
 /// Parse `src` into a sequence of top-level S-expressions.
 pub fn read(src: &str) -> Result<Vec<SExpr>, ParseError> {
     parse(src)
@@ -418,6 +484,8 @@ pub enum ReadError {
 
 #[cfg(test)]
 mod tests {
+    use core::convert::Infallible;
+
     use covalence_sexpr_api::{Free, FreeSExpr};
 
     use super::*;
@@ -443,6 +511,36 @@ mod tests {
                     Box::new(FreeSExpr::Nil),
                 )),
             )
+        );
+    }
+
+    #[test]
+    fn dialect_readers_construct_the_same_abstract_backend() {
+        let backend = Free::<String>::new();
+        let payload = |atom: &covalence_sexp::Atom| {
+            Ok::<_, Infallible>(match atom {
+                covalence_sexp::Atom::Symbol(value) => value.to_string(),
+                covalence_sexp::Atom::Str { bytes, .. } => {
+                    String::from_utf8_lossy(bytes).into_owned()
+                }
+            })
+        };
+        let scheme = read_scheme_with(&backend, "'MixedCase", &payload).unwrap();
+        let acl2 = read_book_with(&backend, "'MixedCase", &payload).unwrap();
+
+        assert_eq!(
+            scheme,
+            vec![FreeSExpr::list([
+                FreeSExpr::Atom("quote".into()),
+                FreeSExpr::Atom("MixedCase".into()),
+            ])]
+        );
+        assert_eq!(
+            acl2,
+            vec![FreeSExpr::list([
+                FreeSExpr::Atom("quote".into()),
+                FreeSExpr::Atom("mixedcase".into()),
+            ])]
         );
     }
 

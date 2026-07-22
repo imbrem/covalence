@@ -170,6 +170,9 @@ fn scheme_recursion_works() {
     assert_eq!(s.eval_cell("(lat? '(a b c))").unwrap(), "t");
     assert_eq!(s.eval_cell("(null? '(a))").unwrap(), "nil");
     assert_eq!(s.eval_cell("(null? '())").unwrap(), "t");
+    assert_eq!(s.eval_cell("(eq? '(a (b)) '(a (b)))").unwrap(), "t");
+    assert_eq!(s.eval_cell("(eq? '(a (b)) '(a (c)))").unwrap(), "nil");
+    assert_eq!(s.eval_cell("(eq? '(a) 'a)").unwrap(), "nil");
 }
 
 #[test]

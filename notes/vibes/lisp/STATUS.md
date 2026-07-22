@@ -54,8 +54,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   and `data/inductive` stack-value representations.
 - The HOL frontend has equational and relational adapters. Concrete checked
   executions can cross into HOL without treating host evaluation as theorem
-  authority. `null?` and Scheme `not` use exact equality with `nil`, rather
-  than conflating every non-cons atom with the false value.
+  authority. Ground S-expression equality is structural and proof-producing:
+  it recursively uses the shared carved constructors' injectivity and
+  distinctness theorems. `null?` and Scheme `not` therefore use exact equality
+  with `nil`, rather than conflating every non-cons atom with the false value.
 - ACL2 has readers, event/world handling, book linking, a checked derivation
   path, corpus reporting, and concrete operational evidence through the common
   Lisp runtime. Scheme lowering and ACL2 event-time macros now consume the

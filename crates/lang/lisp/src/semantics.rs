@@ -109,6 +109,28 @@ fn eqf_intro(not_proposition: Thm) -> Result<Thm, HolError> {
         .map_err(kernel_err)
 }
 
+fn not_from_eq_false(equation_to_false: Thm) -> Result<Thm, HolError> {
+    let (proposition, false_literal) = equation_to_false
+        .concl()
+        .as_eq()
+        .ok_or_else(|| HolError::Kernel("expected an equation to false".into()))?;
+    if false_literal.as_bool() != Some(false) {
+        return Err(HolError::Kernel("expected a false right-hand side".into()));
+    }
+    let proposition = proposition.clone();
+    let contradiction = covalence_hol_eval::fal_from_lit(
+        equation_to_false
+            .eq_mp(Thm::assume(proposition.clone()).map_err(kernel_err)?)
+            .map_err(kernel_err)?,
+    )
+    .map_err(kernel_err)?;
+    contradiction
+        .imp_intro(&proposition)
+        .map_err(kernel_err)?
+        .not_intro()
+        .map_err(kernel_err)
+}
+
 /// The value-kind of a normal form, for printing (mirrors the big-step
 /// evaluator's `ValueKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +141,11 @@ pub enum ValueKind {
     Bool,
     /// A kernel `int` literal (an arithmetic result).
     Int,
+}
+
+enum DataEquality {
+    Equal(Thm),
+    Distinct(Thm),
 }
 
 // ============================================================================
@@ -933,13 +960,10 @@ impl LispSemantics {
         if let Some((alpha, c, x, y)) = self.as_cond(t) {
             return self.step_cond(&alpha, &c, &x, &y).map(Some);
         }
-        // A decidable S-expression equality leaf. Compound equality remains
-        // relational, but reflexivity, atom equality, and nil/cons
-        // distinctness are kernel-derived here.
+        // Ground S-expression equality is decided from constructor freeness.
         if let Some((a, b)) = self.as_eq_redex(t)
-            && (a == b
-                || (self.as_atom(&a).is_some() && self.as_atom(&b).is_some())
-                || (self.is_nil_cons_pair(&a, &b)))
+            && self.data_constructor(&a).is_some()
+            && self.data_constructor(&b).is_some()
         {
             return self.eval_eq_leaf(&a, &b).map(Some);
         }
@@ -1196,132 +1220,163 @@ impl LispSemantics {
         Ok(LispStep { to, thm: lifted })
     }
 
-    /// Decide a supported S-expression equality leaf.
-    ///
-    /// Both the equal and distinct cases use only sound, hypothesis-free
-    /// derived facts: `⊢ (atom b₁ = atom b₂) = (b₁ = b₂)` (the carved `atom`
-    /// injectivity `(atom b₁ = atom b₂) ⟹ (b₁ = b₂)` and the congruence
-    /// converse, combined by `deduct_antisym`), chained with the decided blob
-    /// equality `⊢ (b₁ = b₂) = T|F` (from `reduce_consts`).
+    /// Decide equality of two ground S-expression values from the carved
+    /// constructors' proved injectivity and distinctness laws.
     fn eval_eq_leaf(&self, a: &Term, b: &Term) -> Result<LispStep, HolError> {
-        if a == b {
-            let thm = Thm::refl(a.clone())
-                .map_err(kernel_err)?
-                .eqt_intro()
-                .map_err(kernel_err)?;
-            let to = self.rhs(&thm)?;
-            return Ok(LispStep { to, thm });
-        }
-        if self.is_nil_cons_pair(a, b) {
-            let not_equal = self.prove_nil_ne_cons(a, b)?;
-            let thm = eqf_intro(not_equal)?;
-            let to = self.rhs(&thm)?;
-            return Ok(LispStep { to, thm });
-        }
-        let b1 = self
-            .as_atom(a)
-            .ok_or_else(|| HolError::Stuck("eq? left operand is not an atom".into()))?;
-        let b2 = self
-            .as_atom(b)
-            .ok_or_else(|| HolError::Stuck("eq? right operand is not an atom".into()))?;
-        // Decide the underlying blob equality `⊢ (b₁ = b₂) = T|F`.
-        let blob_eq = b1.clone().equals(b2.clone()).map_err(kernel_err)?;
-        let blob_thm = blob_eq.reduce_consts().map_err(kernel_err)?;
-        let decided = self.rhs(&blob_thm)?;
-        let thm = match decided.as_bool() {
-            // Equal atoms: `⊢ atom b = atom b` (refl), then `⊢ (…) = T`
-            // (`eqt_intro`). (Injectivity self-simplifies `b = b` to `T`, so the
-            // general iff route degenerates here — this direct form is cleaner.)
-            Some(true) => Thm::refl(a.clone())
-                .map_err(kernel_err)?
-                .eqt_intro()
-                .map_err(kernel_err)?,
-            // Distinct atoms: `⊢ (atom b₁ = atom b₂) = (b₁ = b₂)` via injectivity
-            // + congruence, then chain the decided disequality `= F`.
-            Some(false) => self
-                .atom_eq_iff_blob(a, b, &b1, &b2)?
-                .trans(blob_thm)
-                .map_err(kernel_err)?,
-            None => {
-                return Err(HolError::Kernel(
-                    "eq?: blob equality did not decide to a literal".into(),
-                ));
-            }
+        let thm = match self.prove_data_equality(a, b)? {
+            DataEquality::Equal(equality) => equality.eqt_intro().map_err(kernel_err)?,
+            DataEquality::Distinct(distinct) => eqf_intro(distinct)?,
         };
         let to = self.rhs(&thm)?;
         Ok(LispStep { to, thm })
     }
 
-    fn is_nil_cons_pair(&self, left: &Term, right: &Term) -> bool {
-        (*left == self.cs.snil && self.as_scons(right).is_some())
-            || (*right == self.cs.snil && self.as_scons(left).is_some())
-    }
-
-    fn prove_nil_ne_cons(&self, left: &Term, right: &Term) -> Result<Thm, HolError> {
-        let equality = left.clone().equals(right.clone()).map_err(kernel_err)?;
-        let assumed = Thm::assume(equality.clone()).map_err(kernel_err)?;
-        let congruence = assumed.cong_arg(self.l.consp.clone()).map_err(kernel_err)?;
-        let law = |value: &Term| {
-            if *value == self.cs.snil {
-                self.l.consp_nil().map_err(kernel_err)
-            } else if let Some((head, tail)) = self.as_scons(value) {
-                self.l.consp_scons(&head, &tail).map_err(kernel_err)
-            } else {
-                Err(HolError::Stuck("expected nil or cons value".into()))
-            }
-        };
-        let left_law = law(left)?;
-        let right_law = law(right)?;
-        let unequal_bools = left_law
-            .sym()
-            .map_err(kernel_err)?
-            .trans(congruence)
-            .map_err(kernel_err)?
-            .trans(right_law)
-            .map_err(kernel_err)?;
-        let true_to_false = if unequal_bools
-            .concl()
-            .as_eq()
-            .is_some_and(|(lhs, _)| lhs.as_bool() == Some(true))
-        {
-            unequal_bools
+    fn data_constructor(&self, value: &Term) -> Option<(usize, Vec<Term>)> {
+        if let Some(payload) = self.as_atom(value) {
+            Some((0, vec![payload]))
+        } else if *value == self.cs.snil {
+            Some((1, Vec::new()))
         } else {
-            unequal_bools.sym().map_err(kernel_err)?
-        };
-        let contradiction = covalence_hol_eval::fal_from_lit(
-            true_to_false
-                .eq_mp(covalence_init::init::logic::truth())
-                .map_err(kernel_err)?,
-        )
-        .map_err(kernel_err)?;
-        contradiction
-            .imp_intro(&equality)
-            .map_err(kernel_err)?
-            .not_intro()
-            .map_err(kernel_err)
+            self.as_scons(value)
+                .map(|(head, tail)| (2, vec![head, tail]))
+        }
     }
 
-    /// `⊢ (atom b₁ = atom b₂) = (b₁ = b₂)` — `atom` injectivity (forward) and
-    /// congruence (backward) combined by [`Thm::deduct_antisym`]. Genuine
-    /// (hypothesis-free): both directions discharge their assumptions.
-    fn atom_eq_iff_blob(&self, a: &Term, b: &Term, b1: &Term, b2: &Term) -> Result<Thm, HolError> {
-        let atom_eq = a.clone().equals(b.clone()).map_err(kernel_err)?;
-        let blob_eq = b1.clone().equals(b2.clone()).map_err(kernel_err)?;
-        // Forward: {atom b₁ = atom b₂} ⊢ (b₁ = b₂) — injectivity + MP.
-        let inj = self.cs.inj_atom(b1, b2).map_err(kernel_err)?;
-        let fwd = inj
-            .imp_elim(Thm::assume(atom_eq.clone()).map_err(kernel_err)?)
+    fn prove_data_equality(&self, left: &Term, right: &Term) -> Result<DataEquality, HolError> {
+        if left == right {
+            return Ok(DataEquality::Equal(
+                Thm::refl(left.clone()).map_err(kernel_err)?,
+            ));
+        }
+        let (left_tag, left_args) = self
+            .data_constructor(left)
+            .ok_or_else(|| HolError::Stuck("left operand is not S-expression data".into()))?;
+        let (right_tag, right_args) = self
+            .data_constructor(right)
+            .ok_or_else(|| HolError::Stuck("right operand is not S-expression data".into()))?;
+        if left_tag != right_tag {
+            let implication = self
+                .cs
+                .distinct(left_tag, right_tag, &left_args, &right_args)
+                .map_err(kernel_err)?;
+            return Ok(DataEquality::Distinct(
+                implication.not_intro().map_err(kernel_err)?,
+            ));
+        }
+        match left_tag {
+            0 => self.prove_atom_equality(left, right, &left_args[0], &right_args[0]),
+            1 => unreachable!("distinct nil terms are impossible"),
+            2 => self.prove_cons_equality(left, right, &left_args, &right_args),
+            _ => unreachable!(),
+        }
+    }
+
+    fn prove_atom_equality(
+        &self,
+        left: &Term,
+        right: &Term,
+        left_payload: &Term,
+        right_payload: &Term,
+    ) -> Result<DataEquality, HolError> {
+        let payload_eq = left_payload
+            .clone()
+            .equals(right_payload.clone())
             .map_err(kernel_err)?;
-        // Backward: {b₁ = b₂} ⊢ (atom b₁ = atom b₂) — congruence under `atom`.
-        let bwd = Thm::assume(blob_eq)
+        let decided = payload_eq.reduce_consts().map_err(kernel_err)?;
+        if self.rhs(&decided)?.as_bool() == Some(true) {
+            return Ok(DataEquality::Equal(
+                decided
+                    .eqt_elim()
+                    .map_err(kernel_err)?
+                    .cong_arg(self.cs.atom.clone())
+                    .map_err(kernel_err)?,
+            ));
+        }
+        let payload_ne = not_from_eq_false(decided)?;
+        let equality = left.clone().equals(right.clone()).map_err(kernel_err)?;
+        let payload_equality = self
+            .cs
+            .inj_atom(left_payload, right_payload)
             .map_err(kernel_err)?
-            .cong_arg(self.cs.atom.clone())
+            .imp_elim(Thm::assume(equality.clone()).map_err(kernel_err)?)
             .map_err(kernel_err)?;
-        // deduct_antisym(fwd, bwd) : ⊢ (b₁ = b₂) = (atom b₁ = atom b₂); flip.
-        fwd.deduct_antisym(bwd)
+        let contradiction = payload_ne.not_elim(payload_equality).map_err(kernel_err)?;
+        Ok(DataEquality::Distinct(
+            contradiction
+                .imp_intro(&equality)
+                .map_err(kernel_err)?
+                .not_intro()
+                .map_err(kernel_err)?,
+        ))
+    }
+
+    fn prove_cons_equality(
+        &self,
+        left: &Term,
+        right: &Term,
+        left_args: &[Term],
+        right_args: &[Term],
+    ) -> Result<DataEquality, HolError> {
+        let head = self.prove_data_equality(&left_args[0], &right_args[0])?;
+        let tail = self.prove_data_equality(&left_args[1], &right_args[1])?;
+        let (head_eq, tail_eq) = match (head, tail) {
+            (DataEquality::Distinct(child_ne), _) => {
+                return self.lift_cons_disequality(left, right, left_args, right_args, 0, child_ne);
+            }
+            (_, DataEquality::Distinct(child_ne)) => {
+                return self.lift_cons_disequality(left, right, left_args, right_args, 1, child_ne);
+            }
+            (DataEquality::Equal(head_eq), DataEquality::Equal(tail_eq)) => (head_eq, tail_eq),
+        };
+        let first = head_eq
+            .cong_arg(self.cs.scons.clone())
             .map_err(kernel_err)?
-            .sym()
-            .map_err(kernel_err)
+            .cong_fn(left_args[1].clone())
+            .map_err(kernel_err)?;
+        let second = tail_eq
+            .cong_arg(
+                self.cs
+                    .scons
+                    .clone()
+                    .apply(right_args[0].clone())
+                    .map_err(kernel_err)?,
+            )
+            .map_err(kernel_err)?;
+        Ok(DataEquality::Equal(
+            first.trans(second).map_err(kernel_err)?,
+        ))
+    }
+
+    fn lift_cons_disequality(
+        &self,
+        left: &Term,
+        right: &Term,
+        left_args: &[Term],
+        right_args: &[Term],
+        position: usize,
+        child_ne: Thm,
+    ) -> Result<DataEquality, HolError> {
+        let equality = left.clone().equals(right.clone()).map_err(kernel_err)?;
+        let child_equality = self
+            .cs
+            .inj_scons_at(
+                position,
+                &left_args[0],
+                &left_args[1],
+                &right_args[0],
+                &right_args[1],
+            )
+            .map_err(kernel_err)?
+            .imp_elim(Thm::assume(equality.clone()).map_err(kernel_err)?)
+            .map_err(kernel_err)?;
+        let contradiction = child_ne.not_elim(child_equality).map_err(kernel_err)?;
+        Ok(DataEquality::Distinct(
+            contradiction
+                .imp_intro(&equality)
+                .map_err(kernel_err)?
+                .not_intro()
+                .map_err(kernel_err)?,
+        ))
     }
 
     /// Match an integer-op redex `int.<op> a b` (the compiled `(+ a b)` /

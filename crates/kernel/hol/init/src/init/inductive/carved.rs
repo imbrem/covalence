@@ -832,7 +832,7 @@ impl CarvedSExpr {
 
     /// `⊢ (scons h t = scons h2 t2) ⟹ xₖ = yₖ` at position `k` (0 = head,
     /// 1 = tail) — **recursive-position injectivity**, by the projection.
-    fn inj_scons_at(&self, k: usize, h: &Term, t: &Term, h2: &Term, t2: &Term) -> Result<Thm> {
+    pub fn inj_scons_at(&self, k: usize, h: &Term, t: &Term, h2: &Term, t2: &Term) -> Result<Thm> {
         let lhs = self.scons.clone().apply(h.clone())?.apply(t.clone())?;
         let rhs = self.scons.clone().apply(h2.clone())?.apply(t2.clone())?;
         let eq = lhs.equals(rhs)?;
@@ -891,7 +891,7 @@ impl CarvedSExpr {
     }
 
     /// `⊢ (Cᵢ x⃗ = Cⱼ y⃗) ⟹ F` for `i ≠ j`.
-    fn distinct(&self, i: usize, j: usize, xs: &[Term], ys: &[Term]) -> Result<Thm> {
+    pub fn distinct(&self, i: usize, j: usize, xs: &[Term], ys: &[Term]) -> Result<Thm> {
         if i == j {
             return Err(Error::ConnectiveRule(
                 "carved distinct: constructor indices must differ".into(),

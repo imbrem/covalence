@@ -745,7 +745,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 37906,
+      "words": 37897,
       "updated": 0
     },
     {
@@ -11266,7 +11266,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/open_work.rs",
-      "words": 16,
+      "words": 15,
       "updated": 0
     },
     {
@@ -11428,7 +11428,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1855,
+      "words": 1910,
       "updated": 0
     },
     {
@@ -11797,7 +11797,7 @@
       "title": "dialects.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/dialects.rs",
-      "words": 393,
+      "words": 396,
       "updated": 0
     },
     {
@@ -16000,7 +16000,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 37906,
+      "words": 37897,
       "updated": 0
     },
     {
@@ -16117,7 +16117,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3859,
+      "words": 3849,
       "updated": 0
     },
     {
@@ -17278,7 +17278,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 102,
+      "words": 104,
       "updated": 0
     },
     {
@@ -19384,8 +19384,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 581,
-      "updated": 1784677703
+      "words": 600,
+      "updated": 1784678114
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -23081,15 +23081,6 @@
       "id": "todo:lang.lisp.defun-return-type-is-a-3-way-guess-parameters-are-always-sexpr",
       "kind": "todo",
       "title": "defun return type is a 3-way guess; parameters are always sexpr",
-      "status": "minor",
-      "path": "crates/lang/lisp/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lang.lisp.eq-is-atoms-only",
-      "kind": "todo",
-      "title": "eq? is atoms-only: Both operands must reduce to atom b values; the",
       "status": "minor",
       "path": "crates/lang/lisp/open_work.rs",
       "words": 0,
@@ -37508,8 +37499,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "bd7c44107772728bdb5459fd38815eb67cd2cb60",
-      "committedAt": 1784677703
+      "commit": "bfdd716cab3984b54e59f2cd578be9e8f641029c",
+      "committedAt": 1784678114
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

@@ -43,16 +43,47 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, LeafKind, carved};
 use covalence_init::init::lisp::Lisp as KernelLisp;
 use covalence_init::{Term, Type};
 use covalence_sexp::{AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SExp, SExpr};
+use covalence_sexpr_api::{
+    SExprF, SExprSyntax as BackendSExprSyntax, SExprView as BackendSExprView,
+};
 use covalence_types::Int;
 
 use crate::hol::HolError;
 use crate::int_backend::IntBackend;
+
+// TODO(cov:lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open, minor): Migrate the remaining carrier consumers from `covalence_sexp::AbstractSExpr` to `covalence_sexpr_api::{SExprSyntax, SExprView}`, move parser-specific adapters to the language boundary, and delete the legacy value trait.
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
 }
 fn kernel_err(e: impl core::fmt::Display) -> HolError {
     HolError::Kernel(e.to_string())
+}
+
+fn syntax_atom<C>(carrier: &C, payload: PayloadOwned) -> Result<Term, HolError>
+where
+    C: AbstractSExpr<Value = Term, Error = HolError>,
+{
+    match payload {
+        PayloadOwned::Sym(bytes) => AbstractSExpr::atom(carrier, PayloadLit::Sym(&bytes)),
+        PayloadOwned::Int(integer) => AbstractSExpr::atom(carrier, PayloadLit::Int(&integer)),
+        _ => Err(HolError::Stuck("unsupported S-expression payload".into())),
+    }
+}
+
+fn syntax_view<C>(carrier: &C, value: &Term) -> Result<SExprF<PayloadOwned, Term>, HolError>
+where
+    C: AbstractSExpr<Value = Term, Error = HolError>,
+{
+    if let Some(payload) = AbstractSExpr::as_atom(carrier, value) {
+        Ok(SExprF::Atom(payload))
+    } else if AbstractSExpr::is_nil(carrier, value) {
+        Ok(SExprF::Nil)
+    } else if let Some((head, tail)) = AbstractSExpr::as_cons(carrier, value) {
+        Ok(SExprF::Cons { head, tail })
+    } else {
+        Err(HolError::Stuck("term is not S-expression data".into()))
+    }
 }
 
 /// A kernel-term S-expression carrier: the value algebra *plus* the proved
@@ -491,6 +522,30 @@ impl AbstractSExpr for CarvedCarrier {
     }
 }
 
+impl BackendSExprSyntax for CarvedCarrier {
+    type Payload = PayloadOwned;
+    type Value = Term;
+    type Error = HolError;
+
+    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
+        syntax_atom(self, payload)
+    }
+
+    fn nil(&self) -> Self::Value {
+        AbstractSExpr::nil(self)
+    }
+
+    fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
+        AbstractSExpr::cons(self, head, tail)
+    }
+}
+
+impl BackendSExprView for CarvedCarrier {
+    fn view(&self, value: &Self::Value) -> Result<SExprF<Self::Payload, Self::Value>, Self::Error> {
+        syntax_view(self, value)
+    }
+}
+
 impl KernelSExpr for CarvedCarrier {
     fn tau(&self) -> Type {
         self.cs.tau.clone()
@@ -678,28 +733,52 @@ impl AbstractSExpr for Acl2Carrier {
             SExp::Atom(covalence_sexp::Atom::Symbol(s)) => {
                 let s = s.as_str();
                 if let Ok(n) = s.parse::<Int>() {
-                    return self.atom(PayloadLit::Int(&n));
+                    return AbstractSExpr::atom(self, PayloadLit::Int(&n));
                 }
                 if s.eq_ignore_ascii_case("nil") {
-                    return Ok(self.nil());
+                    return Ok(AbstractSExpr::nil(self));
                 }
                 if s.eq_ignore_ascii_case("t") {
                     return Ok(self.t());
                 }
-                self.atom(PayloadLit::Sym(s.as_bytes()))
+                AbstractSExpr::atom(self, PayloadLit::Sym(s.as_bytes()))
             }
             SExp::Atom(covalence_sexp::Atom::Str { .. }) => Err(HolError::Stuck(
                 "ACL2 datum: string literals are not ACL2 objects".into(),
             )),
             SExp::List(items) => {
-                let mut acc = self.nil();
+                let mut acc = AbstractSExpr::nil(self);
                 for it in items.iter().rev() {
                     let h = self.quote(it)?;
-                    acc = self.cons(h, acc)?;
+                    acc = AbstractSExpr::cons(self, h, acc)?;
                 }
                 Ok(acc)
             }
         }
+    }
+}
+
+impl BackendSExprSyntax for Acl2Carrier {
+    type Payload = PayloadOwned;
+    type Value = Term;
+    type Error = HolError;
+
+    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
+        syntax_atom(self, payload)
+    }
+
+    fn nil(&self) -> Self::Value {
+        AbstractSExpr::nil(self)
+    }
+
+    fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
+        AbstractSExpr::cons(self, head, tail)
+    }
+}
+
+impl BackendSExprView for Acl2Carrier {
+    fn view(&self, value: &Self::Value) -> Result<SExprF<Self::Payload, Self::Value>, Self::Error> {
+        syntax_view(self, value)
     }
 }
 

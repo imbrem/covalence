@@ -39,10 +39,12 @@ use covalence_init::{Term, Type};
 use covalence_lisp::carrier::{Acl2Carrier, CarvedCarrier, KernelSExpr, acl2_payload_ty};
 use covalence_lisp::hol::HolError;
 use covalence_lisp::int_backend::{IntBackend, IntVariant, NatVariant};
+use covalence_lisp::reader::{read_book_with, read_scheme_with};
 use covalence_sexp::abstract_sexpr::{
     AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SurfaceSExpr,
 };
 use covalence_sexp::{SExpr, parse, prettyprint};
+use covalence_sexpr_api::{ProperList, SExprF, SExprView as BackendSExprView};
 use covalence_types::Int;
 
 // ============================================================================
@@ -92,6 +94,38 @@ fn sector_nat_carrier() -> CarvedCarrier {
     let nil = Term::app(cs.atom.clone(), mk_blob(b"nil".to_vec()));
     let be: Arc<dyn IntBackend + Send + Sync> = Arc::new(NatVariant::new(cs.tau.clone(), t, nil));
     CarvedCarrier::with_int(be).expect("with_int")
+}
+
+fn symbol_payload(atom: &covalence_sexp::Atom) -> Result<PayloadOwned, HolError> {
+    Ok(match atom {
+        covalence_sexp::Atom::Symbol(symbol) => PayloadOwned::Sym(symbol.as_bytes().to_vec()),
+        covalence_sexp::Atom::Str { bytes, .. } => PayloadOwned::Sym(bytes.to_vec()),
+    })
+}
+
+#[test]
+fn dialect_readers_target_kernel_inductive_carriers() {
+    let scheme_carrier = CarvedCarrier::sector().expect("carved carrier");
+    let scheme = read_scheme_with(&scheme_carrier, "'MixedCase", &symbol_payload)
+        .expect("read Scheme into carved data");
+    let scheme_items = ProperList::as_list(&scheme_carrier, &scheme[0])
+        .expect("observe Scheme datum")
+        .expect("quote expansion is proper");
+    assert!(matches!(
+        BackendSExprView::view(&scheme_carrier, &scheme_items[1]).unwrap(),
+        SExprF::Atom(PayloadOwned::Sym(bytes)) if bytes == b"MixedCase"
+    ));
+
+    let acl2_carrier = Acl2Carrier::new().expect("ACL2 carrier");
+    let acl2 = read_book_with(&acl2_carrier, "'MixedCase", &symbol_payload)
+        .expect("read ACL2 into ACL2 data");
+    let acl2_items = ProperList::as_list(&acl2_carrier, &acl2[0])
+        .expect("observe ACL2 datum")
+        .expect("quote expansion is proper");
+    assert!(matches!(
+        BackendSExprView::view(&acl2_carrier, &acl2_items[1]).unwrap(),
+        SExprF::Atom(PayloadOwned::Sym(bytes)) if bytes == b"mixedcase"
+    ));
 }
 
 // ============================================================================

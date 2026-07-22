@@ -68,7 +68,9 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 - Plain, Scheme, and ACL2 readers can lower directly through the shared
   `SExprSyntax` constructor capability. Forsp quotation now uses that same
   fold into the free inductive backend instead of maintaining its own list
-  recursion.
+  recursion. The carved HOL and ACL2 carriers implement the same constructor
+  and one-layer view capabilities, providing a tested migration path away
+  from the older parser-owned `AbstractSExpr` trait.
 
 The narrow regression commands are:
 

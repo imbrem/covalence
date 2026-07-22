@@ -11266,7 +11266,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/open_work.rs",
-      "words": 15,
+      "words": 14,
       "updated": 0
     },
     {
@@ -11320,7 +11320,7 @@
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/carrier.rs",
-      "words": 790,
+      "words": 869,
       "updated": 0
     },
     {
@@ -11788,7 +11788,7 @@
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/carrier.rs",
-      "words": 456,
+      "words": 490,
       "updated": 0
     },
     {
@@ -17278,7 +17278,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 108,
+      "words": 110,
       "updated": 0
     },
     {
@@ -19384,7 +19384,7 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 634,
+      "words": 660,
       "updated": 1784678917
     },
     {
@@ -23053,9 +23053,9 @@
     {
       "id": "todo:lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open",
       "kind": "todo",
-      "title": "Abstract S-expr API — slice 1 landed, slices 2–5 open",
+      "title": "Migrate the remaining carrier consumers from covalencesexp::AbstractSExpr to covalencesexprapi::{SExprSyntax, SExprView}, move parser-specific adapters to the language boundary, and delete the legacy value trait.",
       "status": "minor",
-      "path": "crates/lang/lisp/open_work.rs",
+      "path": "crates/lang/lisp/src/carrier.rs",
       "words": 0,
       "updated": 0
     },

@@ -3,7 +3,6 @@
 //! Migrated from the former Markdown registry. Move markers beside the relevant
 //! implementation as the area is touched; `bun run todos` provides the index.
 
-// TODO(cov:lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open, minor): Abstract S-expr API — slice 1 landed, slices 2–5 open
 // TODO(cov:lang.lisp.acl2-slice-src-acl2-rs-open-ends, minor): ACL2 slice (src/acl2.rs) — open ends: (design + roadmap in
 // TODO(cov:lang.lisp.relation-rs-reduction-relation-next-phase-clauses, minor): relation.rs reduction relation — next-phase clauses: The Step/Reduces
 // TODO(cov:lang.lisp.relational-recursion-more-langs, minor): Relational recursion / more #langs: The lisp/sector dialects are the

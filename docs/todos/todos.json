@@ -2988,10 +2988,10 @@
       "id": "lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open",
       "kind": "TODO",
       "severity": "minor",
-      "summary": "Abstract S-expr API — slice 1 landed, slices 2–5 open",
+      "summary": "Migrate the remaining carrier consumers from covalencesexp::AbstractSExpr to covalencesexprapi::{SExprSyntax, SExprView}, move parser-specific adapters to the language boundary, and delete the legacy value trait.",
       "structured": true,
-      "path": "crates/lang/lisp/open_work.rs",
-      "line": 6,
+      "path": "crates/lang/lisp/src/carrier.rs",
+      "line": 54,
       "crate": "covalence-lisp"
     },
     {
@@ -3001,7 +3001,7 @@
       "summary": "ACL2 slice (src/acl2.rs) — open ends: (design + roadmap in",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 7,
+      "line": 6,
       "crate": "covalence-lisp"
     },
     {
@@ -3011,7 +3011,7 @@
       "summary": "carved → sexpr rename pending: The code still uses the carved jargon",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 13,
+      "line": 12,
       "crate": "covalence-lisp"
     },
     {
@@ -3021,7 +3021,7 @@
       "summary": "defun return type is a 3-way guess; parameters are always sexpr",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 10,
+      "line": 9,
       "crate": "covalence-lisp"
     },
     {
@@ -3031,7 +3031,7 @@
       "summary": "Forward references default to sexpr… → sexpr: A call to a not-yet-defined",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 12,
+      "line": 11,
       "crate": "covalence-lisp"
     },
     {
@@ -3041,7 +3041,7 @@
       "summary": "Predicate/eq? values are bool literals, data values are sexpr: See",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 14,
+      "line": 13,
       "crate": "covalence-lisp"
     },
     {
@@ -3051,7 +3051,7 @@
       "summary": "relation.rs reduction relation — next-phase clauses: The Step/Reduces",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 8,
+      "line": 7,
       "crate": "covalence-lisp"
     },
     {
@@ -3061,7 +3061,7 @@
       "summary": "Relational recursion / more #langs: The lisp/sector dialects are the",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 9,
+      "line": 8,
       "crate": "covalence-lisp"
     },
     {
@@ -3071,7 +3071,7 @@
       "summary": "Value-semantics integers are typed int terms, not sexpr data: Great",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 11,
+      "line": 10,
       "crate": "covalence-lisp"
     },
     {

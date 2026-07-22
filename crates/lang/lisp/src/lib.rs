@@ -1,32 +1,23 @@
-//! The **covalence `/lisp` demo** — a clear Lisp whose reductions are kernel
-//! theorems.
+//! Reusable Lisp frontends and proof-producing HOL realizations.
 //!
-//! Layers:
+//! The stable waist is [`kernel_api`]: backend-neutral syntax, definitions,
+//! environments, partial CEK execution, finite `MayEval` witnesses, and
+//! admission capabilities. This crate supplies concrete readers and dialects:
 //!
-//! - [`Lisp`] — the surface trait. It fixes the Forth-style atom-resolution
-//!   order (dictionary → numeral → symbol) as three methods
-//!   ([`resolve_symbol`](Lisp::resolve_symbol) /
-//!   [`resolve_number`](Lisp::resolve_number) /
-//!   [`resolve_string`](Lisp::resolve_string)) plus an
-//!   [`eval`](Lisp::eval) entry point, and provides a default
-//!   [`lower`](Lisp::lower) folding a parsed [`SExpr`] into a
-//!   [`Term`](Lisp::Term) via those three. Kernel-agnostic.
+//! - [`frontend`] lowers Scheme, Sector, and ACL2 surface forms to the common
+//!   core;
+//! - [`carrier`] realizes Lisp data through the shared abstract S-expression
+//!   API;
+//! - [`relation`] proves `Reduces input value`; its exact `int ⊕ bytes`
+//!   backend is the default [`session::Lang::Lisp`];
+//! - [`semantics`] retains the older equational Scheme backend for recursive
+//!   definitions while partial higher-order proof semantics are developed;
+//! - [`acl2`] layers checked worlds, admission, derivations, and theorem
+//!   transport over the common Lisp core.
 //!
-//! - [`reader`] — a thin wrapper over [`covalence_sexp::parse`].
-//!
-//! - [`hol`] (feature `hol`) — the concrete kernel instance:
-//!   [`hol::LispHol`] implements [`Lisp`] by lowering S-expressions to carved
-//!   `sexpr` kernel [`covalence_init::Term`]s, and [`hol::SymbolicStrategy`]
-//!   is a [`covalence_repl_core::ReductionStrategy`] proving reductions like
-//!   `⊢ (car (cons a b)) = a` by composing the carved carrier's computation
-//!   laws — no new trusted kernel rules.
-//!
-//! The REPL only ever prints a value read off a genuine kernel theorem: the
-//! reduction path returns `Result<Thm, _>` and the printed term is the
-//! theorem's right-hand side. See `notes/vibes/lisp/initial-ideas/` for the
-//! design, and the generated open-work index for deferred work (notably the aspirational
-//! `Reduces` *relation*, of which the shipped `⊢ input = output` is the
-//! deterministic special case).
+//! Parsing, lowering, search, and execution may propose witnesses. Only the
+//! HOL kernel can produce theorem authority, and rendered proof-mode values
+//! are read from checked theorem conclusions.
 
 #![forbid(unsafe_code)]
 

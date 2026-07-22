@@ -45,7 +45,7 @@ use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one, read_scheme_one};
-use crate::relation::{Dialect, IntFlavour, LispRel};
+use crate::relation::{Dialect, LispRel};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 
 /// The dialect a [`Session`] evaluates in, chosen by the `#lang` directive.
@@ -57,9 +57,9 @@ use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 /// recursion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Lang {
-    /// **Default.** The relational semantics with the integer dialect
-    /// (`SectorInt(Int)`): McCarthy primitives + integer arithmetic. Numerals
-    /// lower to `(int n)`. No `defun` recursion yet.
+    /// **Default.** The relational semantics over exact `int ⊕ bytes`
+    /// S-expression atoms: McCarthy primitives + integer arithmetic, including
+    /// numerals nested in quoted data. No `defun` recursion yet.
     #[default]
     Lisp,
     /// The equational value semantics: primitives + `cond`/`lambda`/`defun`
@@ -106,7 +106,7 @@ impl Lang {
     /// semantics).
     fn dialect(self) -> Option<Dialect> {
         match self {
-            Lang::Lisp => Some(Dialect::SectorInt(IntFlavour::Int)),
+            Lang::Lisp => Some(Dialect::ExactIntSymbol),
             Lang::Sector => Some(Dialect::Sector),
             Lang::Scheme | Lang::Acl2 => None,
         }
@@ -395,9 +395,9 @@ impl Session {
     }
 
     /// Render an outcome's value to Little-Schemer text — **off the value term
-    /// only** (the theorem's RHS). Relational dialects render `(int n)` values
-    /// as decimals via [`LispRel::render_value`]; [`Scheme`](Lang::Scheme) uses
-    /// the value semantics' `bool`/`sexpr` printers.
+    /// only** (the theorem's RHS). Relational dialects render their integer
+    /// atoms as decimals via [`LispRel::render_value`]; [`Scheme`](Lang::Scheme)
+    /// uses the value semantics' `bool`/`sexpr` printers.
     pub fn render(&self, out: &Outcome) -> String {
         if let Ok(rel) = self.rel() {
             return rel.render_value(&out.value);
@@ -581,7 +581,8 @@ Chapter 2 (recursion via kernel hypotheses):
                    f = (lambda (x) E), which rides the result theorem as a
                    hypothesis (never an axiom)
 Dialects (select with `#lang`; switching RESETS the session):
-  lisp             DEFAULT — relational semantics with integers on
+  lisp             DEFAULT — relational semantics with exact integer-or-bytes
+                   atoms (including numerals nested in quoted data)
                    (car/cdr/cons/atom?/consp/null?/eq?/cond + `+ - * <= =`);
                    `(+ 2 2)` => 4. Value is `|- Reduces input value`.
   scheme           equational value semantics with `defun`/`lambda` recursion

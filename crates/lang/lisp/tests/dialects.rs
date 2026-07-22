@@ -67,19 +67,28 @@ fn lisp_nested_arithmetic() {
 fn nested_reduces_theorem_is_genuine() {
     // The nested reduction's theorem IS `⊢ Reduces input value` for the
     // compiled input — checked against an independently built relation.
-    use covalence_lisp::relation::{Dialect, IntFlavour, LispRel};
+    use covalence_lisp::relation::{Dialect, LispRel};
     let s = Session::new().unwrap();
     let form = read_one("(+ 1 (+ 2 3))").unwrap();
     let out = s.reduce(&form).unwrap();
     assert!(out.thm.hyps().is_empty());
 
-    let rel = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
+    let rel = LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap();
     let input = rel.compile_surface(&form).unwrap();
     assert_eq!(
         out.thm.concl(),
         &rel.reduces_prop(&input, &out.value).unwrap()
     );
     assert_eq!(rel.render_value(&out.value), "6");
+}
+
+#[test]
+fn lisp_integers_are_ordinary_nested_data() {
+    let s = Session::new().unwrap();
+    assert_eq!(eval(&s, "(quote (1 two (3)))"), "(1 two (3))");
+    assert_eq!(eval(&s, "(integer? (car (quote (1 two))))"), "t");
+    assert_eq!(eval(&s, "(integer? (car (cdr (quote (1 two)))))"), "()");
+    assert_eq!(eval(&s, "(+ (car (quote (40))) 2)"), "42");
 }
 
 #[test]

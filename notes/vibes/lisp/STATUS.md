@@ -58,6 +58,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   it recursively uses the shared carved constructors' injectivity and
   distinctness theorems. `null?` and Scheme `not` therefore use exact equality
   with `nil`, rather than conflating every non-cons atom with the false value.
+  The default `#lang lisp` selects the relational exact-datum backend, so
+  integers inhabit the `int ⊕ bytes` atom payload and remain ordinary data
+  under quotation, projection, predicates, and arithmetic. The older
+  auxiliary-injection backend remains available for backend comparisons.
 - ACL2 has readers, event/world handling, book linking, a checked derivation
   path, corpus reporting, and concrete operational evidence through the common
   Lisp runtime. Scheme lowering and ACL2 event-time macros now consume the

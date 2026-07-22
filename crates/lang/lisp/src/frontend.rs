@@ -11,6 +11,7 @@ use core::convert::Infallible;
 use core::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 
+use covalence_kernel_lisp::sexpr::Free;
 use covalence_kernel_lisp::{
     ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
     Definition as LispDefinition, DefinitionGroup, ExecutionError, HostConfiguration,
@@ -24,6 +25,7 @@ use covalence_types::Int;
 use crate::quasiquote::{
     Quasiquote, QuasiquoteError, QuasiquoteItem, analyze as analyze_quasiquote,
 };
+use crate::reader::lower_with;
 
 /// Default exact atom specialization used by the current frontends.
 pub type CoreAtom = LispAtom<Int>;
@@ -136,16 +138,10 @@ impl Frontend {
 
     /// Quote parsed data into the direct inductive representation.
     pub fn quote(&self, form: &SExpr) -> Result<Datum<CoreAtom>, LowerError> {
-        Ok(match form {
-            SExpr::Atom(atom) => Datum::Atom(self.datum_atom(atom)),
-            SExpr::List(items) => {
-                let values = items
-                    .iter()
-                    .map(|item| self.quote(item))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Datum::list(values)
-            }
-        })
+        Ok(
+            lower_with(&Free::new(), form, &|atom| Ok(self.datum_atom(atom)))
+                .unwrap_or_else(|never: Infallible| match never {}),
+        )
     }
 
     /// Lower `(define name (lambda (parameters...) body))` or

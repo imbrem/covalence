@@ -11347,7 +11347,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 2242,
+      "words": 2238,
       "updated": 0
     },
     {
@@ -19385,7 +19385,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
       "words": 634,
-      "updated": 1784678666
+      "updated": 1784678917
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37499,8 +37499,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "a58d26372b7ec04feb51fd6bd4fef61308e5419b",
-      "committedAt": 1784678666
+      "commit": "46e627c76ab277e0e6f1d6f7049ff4cc86921c55",
+      "committedAt": 1784678917
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

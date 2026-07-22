@@ -83,26 +83,20 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
 /// Constructor/view structure comes from `kernel/lisp/sexpr`; this layer owns
 /// only surface policies such as numeral interpretation and ACL2's canonical
 /// `nil`/`t` spellings.
-pub trait LispDatum:
-    BackendSExprView<Payload = DatumPayload, Value = Term, Error = HolError>
+pub trait LispDatum: BackendSExprView
+where
+    Self::Value: Clone,
 {
-    fn numeral_policy(&self) -> DatumNumerals {
-        DatumNumerals::Symbols
-    }
+    /// Interpret one parsed atom according to the surface dialect.
+    fn lower_atom(&self, atom: &covalence_sexp::Atom) -> Result<Self::Value, Self::Error>;
 
-    fn quote(&self, data: &SExpr) -> Result<Term, HolError> {
+    /// Render one decoded carrier payload. Returning `None` rejects payloads
+    /// that have no surface representation in this dialect.
+    fn render_payload(&self, payload: Self::Payload) -> Option<SExpr>;
+
+    fn quote(&self, data: &SExpr) -> Result<Self::Value, Self::Error> {
         match data {
-            SExp::Atom(covalence_sexp::Atom::Symbol(symbol)) => {
-                if self.numeral_policy() == DatumNumerals::Integers
-                    && let Ok(integer) = symbol.parse::<Int>()
-                {
-                    return BackendSExprSyntax::atom(self, DatumPayload::Integer(integer));
-                }
-                BackendSExprSyntax::atom(self, DatumPayload::Symbol(symbol.as_bytes().to_vec()))
-            }
-            SExp::Atom(covalence_sexp::Atom::Str { bytes, .. }) => {
-                BackendSExprSyntax::atom(self, DatumPayload::Symbol(bytes.to_vec()))
-            }
+            SExp::Atom(atom) => self.lower_atom(atom),
             SExp::List(items) => {
                 let mut result = BackendSExprSyntax::nil(self);
                 for item in items.iter().rev() {
@@ -113,13 +107,9 @@ pub trait LispDatum:
         }
     }
 
-    fn render(&self, value: &Term) -> Option<SExpr> {
+    fn render(&self, value: &Self::Value) -> Option<SExpr> {
         match BackendSExprView::view(self, value).ok()? {
-            SExprF::Atom(DatumPayload::Integer(integer)) => Some(SExp::symbol(integer.to_string())),
-            SExprF::Atom(DatumPayload::Symbol(bytes)) => Some(match String::from_utf8(bytes) {
-                Ok(symbol) => SExp::symbol(symbol),
-                Err(error) => SExp::string("b", error.into_bytes()),
-            }),
+            SExprF::Atom(payload) => self.render_payload(payload),
             SExprF::Nil => Some(SExp::List(Vec::new())),
             SExprF::Cons { .. } => {
                 let mut items = Vec::new();
@@ -580,8 +570,30 @@ impl BackendSExprView for CarvedCarrier {
 }
 
 impl LispDatum for CarvedCarrier {
-    fn numeral_policy(&self) -> DatumNumerals {
-        self.quote_policy
+    fn lower_atom(&self, atom: &covalence_sexp::Atom) -> Result<Term, HolError> {
+        let payload = match atom {
+            covalence_sexp::Atom::Symbol(symbol) => {
+                if self.quote_policy == DatumNumerals::Integers
+                    && let Ok(integer) = symbol.parse::<Int>()
+                {
+                    DatumPayload::Integer(integer)
+                } else {
+                    DatumPayload::Symbol(symbol.as_bytes().to_vec())
+                }
+            }
+            covalence_sexp::Atom::Str { bytes, .. } => DatumPayload::Symbol(bytes.to_vec()),
+        };
+        BackendSExprSyntax::atom(self, payload)
+    }
+
+    fn render_payload(&self, payload: DatumPayload) -> Option<SExpr> {
+        Some(match payload {
+            DatumPayload::Integer(integer) => SExp::symbol(integer.to_string()),
+            DatumPayload::Symbol(bytes) => match String::from_utf8(bytes) {
+                Ok(symbol) => SExp::symbol(symbol),
+                Err(error) => SExp::string("b", error.into_bytes()),
+            },
+        })
     }
 }
 
@@ -765,13 +777,9 @@ impl BackendSExprView for Acl2Carrier {
 }
 
 impl LispDatum for Acl2Carrier {
-    fn numeral_policy(&self) -> DatumNumerals {
-        DatumNumerals::Integers
-    }
-
-    fn quote(&self, data: &SExpr) -> Result<Term, HolError> {
-        match data {
-            SExp::Atom(covalence_sexp::Atom::Symbol(symbol)) => {
+    fn lower_atom(&self, atom: &covalence_sexp::Atom) -> Result<Term, HolError> {
+        match atom {
+            covalence_sexp::Atom::Symbol(symbol) => {
                 if let Ok(integer) = symbol.parse::<Int>() {
                     return BackendSExprSyntax::atom(self, DatumPayload::Integer(integer));
                 }
@@ -783,17 +791,20 @@ impl LispDatum for Acl2Carrier {
                 }
                 BackendSExprSyntax::atom(self, DatumPayload::Symbol(symbol.as_bytes().to_vec()))
             }
-            SExp::Atom(covalence_sexp::Atom::Str { .. }) => Err(HolError::Stuck(
+            covalence_sexp::Atom::Str { .. } => Err(HolError::Stuck(
                 "ACL2 datum: string literals are not ACL2 objects".into(),
             )),
-            SExp::List(items) => {
-                let mut result = BackendSExprSyntax::nil(self);
-                for item in items.iter().rev() {
-                    result = BackendSExprSyntax::cons(self, LispDatum::quote(self, item)?, result)?;
-                }
-                Ok(result)
-            }
         }
+    }
+
+    fn render_payload(&self, payload: DatumPayload) -> Option<SExpr> {
+        Some(match payload {
+            DatumPayload::Integer(integer) => SExp::symbol(integer.to_string()),
+            DatumPayload::Symbol(bytes) => match String::from_utf8(bytes) {
+                Ok(symbol) => SExp::symbol(symbol),
+                Err(error) => SExp::string("b", error.into_bytes()),
+            },
+        })
     }
 }
 

@@ -1,7 +1,7 @@
 //! The **HOL backend** (`hol` feature): the concrete kernel instance of the
 //! Lisp surface + the symbolic reduction strategy.
 //!
-//! - [`LispHol`] implements [`crate::LispDatumSyntax`], lowering S-expressions to carved
+//! - [`LispHol`] implements [`crate::carrier::LispDatum`], lowering S-expressions to carved
 //!   `sexpr` kernel [`Term`]s (atoms via `atom (mk_blob …)`, lists via the
 //!   carved `scons`/`snil`) — the same untyped Lisp value the kernel-side
 //!   `sexpr_parse` reader produces, and the same realization
@@ -22,15 +22,14 @@
 //! operators) is future work.
 
 use covalence_hol_eval::EvalThm as Thm;
-use covalence_hol_eval::mk_blob;
 use covalence_init::Term;
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::init::lisp::{Lisp as KernelLisp, lisp};
 
 use covalence_repl_core::ReductionStrategy;
-use covalence_sexpr_api::SExprSyntax;
+use covalence_sexpr_api::{SExprSyntax, SExprView};
 
-use crate::LispDatumSyntax;
+use crate::carrier::{CarvedCarrier, DatumPayload, LispDatum};
 
 /// Errors from the HOL backend.
 #[derive(Debug, thiserror::Error)]
@@ -71,10 +70,8 @@ impl LispHol {
         carved().map_err(theory_err)
     }
 
-    /// `atom <bytes>` — the carved `atom` constructor applied to a bytes
-    /// literal (via [`mk_blob`], the designated facade).
-    fn atom_term(&self, bytes: Vec<u8>) -> Result<Term, HolError> {
-        Ok(Term::app(self.carved()?.atom.clone(), mk_blob(bytes)))
+    fn carrier(&self) -> Result<CarvedCarrier, HolError> {
+        Ok(CarvedCarrier::over(self.carved()?))
     }
 
     /// Prove one symbolic reduction of an operator term.
@@ -84,12 +81,12 @@ impl LispHol {
 }
 
 impl SExprSyntax for LispHol {
-    type Payload = Vec<u8>;
+    type Payload = DatumPayload;
     type Value = Term;
     type Error = HolError;
 
     fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
-        self.atom_term(payload)
+        SExprSyntax::atom(&self.carrier()?, payload)
     }
 
     fn nil(&self) -> Self::Value {
@@ -105,28 +102,22 @@ impl SExprSyntax for LispHol {
     }
 }
 
-impl LispDatumSyntax for LispHol {
-    fn symbol_payload(&self, name: &str) -> Result<Self::Payload, Self::Error> {
-        Ok(name.as_bytes().to_vec())
+impl SExprView for LispHol {
+    fn view(
+        &self,
+        value: &Self::Value,
+    ) -> Result<covalence_sexpr_api::SExprF<Self::Payload, Self::Value>, Self::Error> {
+        SExprView::view(&self.carrier()?, value)
+    }
+}
+
+impl LispDatum for LispHol {
+    fn lower_atom(&self, atom: &covalence_sexp::Atom) -> Result<Term, HolError> {
+        self.carrier()?.lower_atom(atom)
     }
 
-    fn number_payload(&self, text: &str) -> Option<Result<Self::Payload, Self::Error>> {
-        // Numerals are the ASCII decimal digit run, atomized like any other
-        // token — matching `sexpr_parse`'s uninterpreted-byte-run atoms. We
-        // only treat all-ASCII-digit tokens as numerals; everything else
-        // falls through to `symbol_payload` (same atom either way, so the
-        // distinction is cosmetic today — see source-local TODO markers).
-        if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
-            Some(Ok(text.as_bytes().to_vec()))
-        } else {
-            None
-        }
-    }
-
-    fn string_payload(&self, _format: &str, bytes: &[u8]) -> Result<Self::Payload, Self::Error> {
-        // Raw bytes, unquoted/unescaped (the untyped landing collapses the
-        // string/symbol distinction; see source-local TODO markers).
-        Ok(bytes.to_vec())
+    fn render_payload(&self, payload: DatumPayload) -> Option<covalence_sexp::SExpr> {
+        self.carrier().ok()?.render_payload(payload)
     }
 }
 
@@ -189,9 +180,13 @@ mod tests {
     fn surface_data_lowers_through_shared_sexpr_constructors() {
         let backend = LispHol;
         let parsed = crate::reader::read_one("(alpha 12)").unwrap();
-        let lowered = backend.lower_syntax(&parsed).unwrap();
-        let alpha = backend.atom_term(b"alpha".to_vec()).unwrap();
-        let twelve = backend.atom_term(b"12".to_vec()).unwrap();
+        let lowered = backend.quote(&parsed).unwrap();
+        let alpha = backend
+            .quote(&crate::reader::read_one("alpha").unwrap())
+            .unwrap();
+        let twelve = backend
+            .quote(&crate::reader::read_one("12").unwrap())
+            .unwrap();
         let expected = backend
             .cons(
                 alpha,
@@ -213,10 +208,10 @@ mod tests {
 
         // <atom x>, <atom y> — carved `sexpr` atoms via the Lisp lowering.
         let x = backend
-            .atom(backend.symbol_payload("x").unwrap())
+            .quote(&crate::reader::read_one("x").unwrap())
             .expect("atom x");
         let y = backend
-            .atom(backend.symbol_payload("y").unwrap())
+            .quote(&crate::reader::read_one("y").unwrap())
             .expect("atom y");
 
         // The redex `car (cons x y)` = App(car, App(App(cons, x), y)).
@@ -243,10 +238,10 @@ mod tests {
         let backend = LispHol;
         let l = lisp().expect("lisp theory");
         let x = backend
-            .atom(backend.symbol_payload("x").unwrap())
+            .quote(&crate::reader::read_one("x").unwrap())
             .expect("atom x");
         let y = backend
-            .atom(backend.symbol_payload("y").unwrap())
+            .quote(&crate::reader::read_one("y").unwrap())
             .expect("atom y");
         let cons_xy = Term::app(Term::app(l.cons().clone(), x.clone()), y.clone());
         let redex = Term::app(l.cdr().clone(), cons_xy);
@@ -263,7 +258,7 @@ mod tests {
     fn stuck_on_non_redex() {
         let backend = LispHol;
         let x = backend
-            .atom(backend.symbol_payload("x").unwrap())
+            .quote(&crate::reader::read_one("x").unwrap())
             .expect("atom x");
         assert!(matches!(
             SymbolicStrategy.reduce(&x),

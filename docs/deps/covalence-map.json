@@ -11320,7 +11320,7 @@
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/carrier.rs",
-      "words": 884,
+      "words": 895,
       "updated": 0
     },
     {
@@ -11356,7 +11356,7 @@
       "title": "hol.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/hol.rs",
-      "words": 274,
+      "words": 269,
       "updated": 0
     },
     {
@@ -11374,7 +11374,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 101,
+      "words": 69,
       "updated": 0
     },
     {
@@ -17269,7 +17269,7 @@
       "title": "STATUS.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 126,
+      "words": 127,
       "updated": 0
     },
     {
@@ -19375,8 +19375,8 @@
       "title": "Lisp implementation snapshot",
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 801,
-      "updated": 1784681099
+      "words": 806,
+      "updated": 1784681359
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -37491,8 +37491,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "927ae77b7bf8f4c88ca035dec5e719f9eabc3d30",
-      "committedAt": 1784681099
+      "commit": "2c7fcdf817b72fbea77c60ced0bea62c475bd5db",
+      "committedAt": 1784681359
     },
     {
       "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",

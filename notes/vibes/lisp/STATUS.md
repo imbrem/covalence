@@ -76,10 +76,11 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   and one-layer view capabilities. Surface numeral and ACL2 canonicalization
   live in the higher `LispDatum` codec; the duplicate parser-owned
   `AbstractSExpr` trait has been removed.
-- The obsolete language-local `Lisp` trait has also been removed. `LispHol`
-  now implements `SExprSyntax` plus the narrowly layered `LispDatumSyntax`;
-  symbolic theorem production remains a separate strategy. The kernel's
-  `LispSyntax` name is reserved for executable core-expression construction.
+- The obsolete language-local `Lisp` trait has also been removed. `LispHol`,
+  the carved carriers, and ACL2 now share the bidirectional `LispDatum` codec
+  over `SExprSyntax`/`SExprView`; symbolic theorem production remains a
+  separate strategy. The kernel's `LispSyntax` name is reserved for executable
+  core-expression construction.
 - The equational HOL compiler eliminates constant-condition branches before
   type checking, so Scheme `cond` with a final true clause supports recursive
   integer results without forcing its unreachable fallback into `sexpr`.

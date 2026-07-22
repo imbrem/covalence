@@ -298,6 +298,30 @@ impl LispSemantics {
         self.compile_core_h(expression, Hint::Data)
     }
 
+    /// Compile a common-core expression at a caller-selected HOL result type.
+    ///
+    /// This is the recursive-definition staging seam: the selected type is
+    /// used both for truth-literal interpretation and as a checked postcondition.
+    pub(crate) fn compile_core_expected(
+        &self,
+        expression: &FrontendExpr,
+        expected: &Type,
+    ) -> Result<Term, HolError> {
+        let hint = if *expected == Type::bool() {
+            Hint::Bool
+        } else {
+            Hint::Data
+        };
+        let term = self.compile_core_h(expression, hint)?;
+        let actual = term.type_of().map_err(kernel_err)?;
+        if &actual != expected {
+            return Err(HolError::Stuck(format!(
+                "definition body has result type {actual}, expected {expected}"
+            )));
+        }
+        Ok(term)
+    }
+
     fn compile_core_h(&self, expression: &FrontendExpr, hint: Hint) -> Result<Term, HolError> {
         use covalence_kernel_lisp::CoreExpr;
         match expression {

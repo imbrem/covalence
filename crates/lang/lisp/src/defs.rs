@@ -114,6 +114,18 @@ impl Defs {
     }
 }
 
+/// HOL result carrier selected for an equational Lisp definition.
+///
+/// This is a compatibility boundary for the current split HOL backend, not a
+/// restriction on the untyped common Lisp core. The partial host and
+/// inductive runtimes continue to use one first-class value domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefinitionResult {
+    Bool,
+    Datum,
+    Integer,
+}
+
 /// Build a [`LispDef`] from a name, its parameter names, and its compiled
 /// body term (a term over the free `sexpr` variables `params` plus the
 /// recursive head `name`).
@@ -172,32 +184,21 @@ pub fn build_def_with_ret(
 /// first-class sum carrier, the result carrier is inferred by trying those
 /// three cases. Every attempt stages its recursive head in an immutable
 /// [`Defs`] snapshot; the caller receives a new environment only on success.
+// TODO(cov:lang.lisp.defun-return-type-is-a-3-way-guess-parameters-are-always-sexpr, minor): Add source-level result constraints or a unified datum carrier so unannotated `install_core_definition` need not probe Bool/Datum/Integer; typed callers should use `install_core_definition_as` meanwhile.
 pub fn install_core_definition(
     definitions: &Defs,
     definition: &Definition<String, FrontendExpr>,
 ) -> Result<Defs, HolError> {
-    let base = LispSemantics::new()?;
     let attempts = [
-        ("bool", Type::bool(), mk_bool(false)),
-        ("sexpr", base.tau(), base.tau_nil()),
-        ("int", Type::int(), mk_int(0i128)),
+        DefinitionResult::Bool,
+        DefinitionResult::Datum,
+        DefinitionResult::Integer,
     ];
     let mut failures = Vec::with_capacity(attempts.len());
-    for (label, result_type, placeholder_body) in attempts {
-        let placeholder = build_def_with_ret(
-            &definition.name,
-            &definition.parameters,
-            placeholder_body,
-            &result_type,
-        )?;
-        let staged = definitions.with(placeholder);
-        let semantics = LispSemantics::with_defs(staged)?;
-        match semantics
-            .compile_core(&definition.body)
-            .and_then(|body| build_def(&definition.name, &definition.parameters, body))
-        {
-            Ok(compiled) => return Ok(definitions.with(compiled)),
-            Err(error) => failures.push(format!("{label}: {error}")),
+    for result in attempts {
+        match install_core_definition_as(definitions, definition, result) {
+            Ok(updated) => return Ok(updated),
+            Err(error) => failures.push(format!("{result:?}: {error}")),
         }
     }
     Err(HolError::Stuck(format!(
@@ -205,6 +206,36 @@ pub fn install_core_definition(
         definition.name,
         failures.join("; ")
     )))
+}
+
+/// Compile and transactionally install a definition at an explicit HOL
+/// result carrier.
+///
+/// The recursive head and compiled body are checked against the same type;
+/// failure leaves `definitions` untouched.
+pub fn install_core_definition_as(
+    definitions: &Defs,
+    definition: &Definition<String, FrontendExpr>,
+    result: DefinitionResult,
+) -> Result<Defs, HolError> {
+    let base = LispSemantics::new()?;
+    let (result_type, placeholder_body) = match result {
+        DefinitionResult::Bool => (Type::bool(), mk_bool(false)),
+        DefinitionResult::Datum => (base.tau(), base.tau_nil()),
+        DefinitionResult::Integer => (Type::int(), mk_int(0i128)),
+    };
+    let placeholder = build_def_with_ret(
+        &definition.name,
+        &definition.parameters,
+        placeholder_body,
+        &result_type,
+    )?;
+    let staged = definitions.with(placeholder);
+    let semantics = LispSemantics::with_defs(staged)?;
+    let body = semantics.compile_core_expected(&definition.body, &result_type)?;
+    let compiled =
+        build_def_with_ret(&definition.name, &definition.parameters, body, &result_type)?;
+    Ok(definitions.with(compiled))
 }
 
 /// `sexpr → … → ret` with `n` `sexpr` arrows (n = 0 ⇒ just `ret`).
@@ -223,4 +254,66 @@ pub fn mk_eq_term(a: &Term, b: &Term, elem_ty: &Type) -> Term {
         Term::app(Term::eq_op(elem_ty.clone()), a.clone()),
         b.clone(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::{Frontend, SurfaceDialect};
+    use crate::reader::read_scheme_one;
+
+    fn definition(source: &str) -> Definition<String, FrontendExpr> {
+        let form = read_scheme_one(source).expect("definition parses");
+        Frontend::new(SurfaceDialect::Scheme)
+            .lower_definition(&form)
+            .expect("definition lowers")
+            .expect("definition form")
+    }
+
+    fn result_type(definition: &LispDef) -> Type {
+        let tau = LispSemantics::new().unwrap().tau();
+        let mut application = definition.head.clone();
+        for _ in &definition.params {
+            application = Term::app(application, Term::free("__argument", tau.clone()));
+        }
+        application.type_of().expect("definition head is typed")
+    }
+
+    #[test]
+    fn explicit_result_carriers_are_preserved() {
+        for (source, carrier, expected) in [
+            (
+                "(define truth (lambda (x) t))",
+                DefinitionResult::Bool,
+                Type::bool(),
+            ),
+            (
+                "(define identity (lambda (x) x))",
+                DefinitionResult::Datum,
+                LispSemantics::new().unwrap().tau(),
+            ),
+            (
+                "(define one (lambda (x) 1))",
+                DefinitionResult::Integer,
+                Type::int(),
+            ),
+        ] {
+            let definition = definition(source);
+            let installed = install_core_definition_as(&Defs::new(), &definition, carrier).unwrap();
+            assert_eq!(
+                result_type(installed.get(&definition.name).unwrap()),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_result_mismatch_is_transactional() {
+        let definitions = Defs::new();
+        let definition = definition("(define one (lambda (x) 1))");
+        assert!(
+            install_core_definition_as(&definitions, &definition, DefinitionResult::Datum).is_err()
+        );
+        assert!(definitions.is_empty());
+    }
 }

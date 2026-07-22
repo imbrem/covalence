@@ -75,6 +75,10 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
 - The equational HOL compiler eliminates constant-condition branches before
   type checking, so Scheme `cond` with a final true clause supports recursive
   integer results without forcing its unreachable fallback into `sexpr`.
+- Equational definitions expose `DefinitionResult` and
+  `install_core_definition_as`: typed ACL2/Scheme clients can select and
+  transactionally verify Bool, Datum, or Integer results. Unannotated source
+  remains a compatibility inference layer over that checked API.
 
 The narrow regression commands are:
 

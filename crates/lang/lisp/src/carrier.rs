@@ -2,7 +2,7 @@
 //! (`hol` feature) — the Layer-2 adapters of
 //! `notes/vibes/lisp/abstract-sexpr-api.md` (§1.1, slice 1).
 //!
-//! [`KernelSExpr`] extends [`AbstractSExpr`] (values = kernel [`Term`]s) with
+//! [`KernelSExpr`] extends [`SExprView`](BackendSExprView) (values = kernel [`Term`]s) with
 //! the **proved structural laws** of a carved carrier: projections, atom
 //! injectivity, structural induction. Everything here is *delegation to
 //! already-proved theorems* on the wrapped theory — the traits mint nothing.
@@ -42,7 +42,7 @@ use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, LeafKind, carved};
 use covalence_init::init::lisp::Lisp as KernelLisp;
 use covalence_init::{Term, Type};
-use covalence_sexp::{AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SExp, SExpr};
+use covalence_sexp::{SExp, SExpr};
 use covalence_sexpr_api::{
     SExprF, SExprSyntax as BackendSExprSyntax, SExprView as BackendSExprView,
 };
@@ -51,7 +51,24 @@ use covalence_types::Int;
 use crate::hol::HolError;
 use crate::int_backend::IntBackend;
 
-// TODO(cov:lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open, minor): Migrate the remaining carrier consumers from `covalence_sexp::AbstractSExpr` to `covalence_sexpr_api::{SExprSyntax, SExprView}`, move parser-specific adapters to the language boundary, and delete the legacy value trait.
+/// Atom payload shared by proof-producing Lisp datum carriers.
+///
+/// String literals are interpreted by each surface dialect before reaching
+/// this layer; the logical carriers currently distinguish exact integers from
+/// uninterpreted symbol bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DatumPayload {
+    Symbol(Vec<u8>),
+    Integer(Int),
+}
+
+/// How a surface codec interprets numeral-shaped symbols in quoted data.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DatumNumerals {
+    #[default]
+    Symbols,
+    Integers,
+}
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -60,29 +77,65 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
     HolError::Kernel(e.to_string())
 }
 
-fn syntax_atom<C>(carrier: &C, payload: PayloadOwned) -> Result<Term, HolError>
-where
-    C: AbstractSExpr<Value = Term, Error = HolError>,
+/// Language-layer codec between parsed proper-list syntax and a logical Lisp
+/// datum carrier.
+///
+/// Constructor/view structure comes from `kernel/lisp/sexpr`; this layer owns
+/// only surface policies such as numeral interpretation and ACL2's canonical
+/// `nil`/`t` spellings.
+pub trait LispDatum:
+    BackendSExprView<Payload = DatumPayload, Value = Term, Error = HolError>
 {
-    match payload {
-        PayloadOwned::Sym(bytes) => AbstractSExpr::atom(carrier, PayloadLit::Sym(&bytes)),
-        PayloadOwned::Int(integer) => AbstractSExpr::atom(carrier, PayloadLit::Int(&integer)),
-        _ => Err(HolError::Stuck("unsupported S-expression payload".into())),
+    fn numeral_policy(&self) -> DatumNumerals {
+        DatumNumerals::Symbols
     }
-}
 
-fn syntax_view<C>(carrier: &C, value: &Term) -> Result<SExprF<PayloadOwned, Term>, HolError>
-where
-    C: AbstractSExpr<Value = Term, Error = HolError>,
-{
-    if let Some(payload) = AbstractSExpr::as_atom(carrier, value) {
-        Ok(SExprF::Atom(payload))
-    } else if AbstractSExpr::is_nil(carrier, value) {
-        Ok(SExprF::Nil)
-    } else if let Some((head, tail)) = AbstractSExpr::as_cons(carrier, value) {
-        Ok(SExprF::Cons { head, tail })
-    } else {
-        Err(HolError::Stuck("term is not S-expression data".into()))
+    fn quote(&self, data: &SExpr) -> Result<Term, HolError> {
+        match data {
+            SExp::Atom(covalence_sexp::Atom::Symbol(symbol)) => {
+                if self.numeral_policy() == DatumNumerals::Integers
+                    && let Ok(integer) = symbol.parse::<Int>()
+                {
+                    return BackendSExprSyntax::atom(self, DatumPayload::Integer(integer));
+                }
+                BackendSExprSyntax::atom(self, DatumPayload::Symbol(symbol.as_bytes().to_vec()))
+            }
+            SExp::Atom(covalence_sexp::Atom::Str { bytes, .. }) => {
+                BackendSExprSyntax::atom(self, DatumPayload::Symbol(bytes.to_vec()))
+            }
+            SExp::List(items) => {
+                let mut result = BackendSExprSyntax::nil(self);
+                for item in items.iter().rev() {
+                    result = BackendSExprSyntax::cons(self, self.quote(item)?, result)?;
+                }
+                Ok(result)
+            }
+        }
+    }
+
+    fn render(&self, value: &Term) -> Option<SExpr> {
+        match BackendSExprView::view(self, value).ok()? {
+            SExprF::Atom(DatumPayload::Integer(integer)) => Some(SExp::symbol(integer.to_string())),
+            SExprF::Atom(DatumPayload::Symbol(bytes)) => Some(match String::from_utf8(bytes) {
+                Ok(symbol) => SExp::symbol(symbol),
+                Err(error) => SExp::string("b", error.into_bytes()),
+            }),
+            SExprF::Nil => Some(SExp::List(Vec::new())),
+            SExprF::Cons { .. } => {
+                let mut items = Vec::new();
+                let mut cursor = value.clone();
+                loop {
+                    match BackendSExprView::view(self, &cursor).ok()? {
+                        SExprF::Nil => return Some(SExp::List(items)),
+                        SExprF::Cons { head, tail } => {
+                            items.push(self.render(&head)?);
+                            cursor = tail;
+                        }
+                        SExprF::Atom(_) => return None,
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -92,7 +145,9 @@ where
 /// Every method returning a [`Thm`] is pure delegation to theorems already
 /// proved in `covalence-init` — implementations introduce no postulates and
 /// no new trusted rules.
-pub trait KernelSExpr: AbstractSExpr<Value = Term> {
+pub trait KernelSExpr:
+    BackendSExprView<Payload = DatumPayload, Value = Term, Error = HolError>
+{
     /// The carrier type (`sexpr`, or ACL2's `A`).
     fn tau(&self) -> Type;
 
@@ -311,7 +366,7 @@ impl ExactDatumTheory {
 // CarvedCarrier — any carved instance (+ optional int-injection backend)
 // ============================================================================
 
-/// An [`AbstractSExpr`]/[`KernelSExpr`] adapter over a carved
+/// An [`SExprView`](BackendSExprView)/[`KernelSExpr`] adapter over a carved
 /// [`CarvedSExpr`] instance.
 ///
 /// Payload handling is driven by the instance's payload type:
@@ -327,7 +382,7 @@ impl ExactDatumTheory {
 pub struct CarvedCarrier {
     cs: &'static CarvedSExpr,
     int: Option<Arc<dyn IntBackend + Send + Sync>>,
-    quote_policy: NumeralPolicy,
+    quote_policy: DatumNumerals,
     payload_layout: PayloadLayout,
 }
 
@@ -346,7 +401,7 @@ impl CarvedCarrier {
 
     /// The process-global `bytes`-payload carve with an [`IntBackend`]
     /// (the `sector+int` / value-semantics data configurations). The quote
-    /// policy stays [`NumeralPolicy::Sym`] — today's dialects quote
+    /// policy stays [`DatumNumerals::Symbols`] — today's dialects quote
     /// numerals-in-data as uninterpreted symbol atoms even when integer
     /// *expressions* are on; opt in to `Int` quoting explicitly via
     /// [`with_quote_policy`](Self::with_quote_policy).
@@ -363,7 +418,7 @@ impl CarvedCarrier {
         CarvedCarrier {
             cs,
             int: None,
-            quote_policy: NumeralPolicy::Sym,
+            quote_policy: DatumNumerals::Symbols,
             payload_layout: PayloadLayout::Direct,
         }
     }
@@ -384,13 +439,13 @@ impl CarvedCarrier {
         Ok(Self {
             cs,
             int: Some(int),
-            quote_policy: NumeralPolicy::Int,
+            quote_policy: DatumNumerals::Integers,
             payload_layout: PayloadLayout::IntOrSymbol,
         })
     }
 
-    /// Override the [`quote`](AbstractSExpr::quote) numeral policy.
-    pub fn with_quote_policy(mut self, policy: NumeralPolicy) -> Self {
+    /// Override the [`quote`](LispDatum::quote) numeral policy.
+    pub fn with_quote_policy(mut self, policy: DatumNumerals) -> Self {
         self.quote_policy = policy;
         self
     }
@@ -410,9 +465,8 @@ impl CarvedCarrier {
 
     /// The decoded bytes of a `bytes`-payload atom value.
     pub fn atom_bytes(&self, v: &Term) -> Option<Vec<u8>> {
-        match self.as_atom(v)? {
-            PayloadOwned::Sym(bytes) => Some(bytes),
-            PayloadOwned::Int(_) => None,
+        match BackendSExprView::view(self, v).ok()? {
+            SExprF::Atom(DatumPayload::Symbol(bytes)) => Some(bytes),
             _ => None,
         }
     }
@@ -424,30 +478,17 @@ impl CarvedCarrier {
     }
 }
 
-impl AbstractSExpr for CarvedCarrier {
+impl BackendSExprSyntax for CarvedCarrier {
+    type Payload = DatumPayload;
     type Value = Term;
     type Error = HolError;
 
-    fn nil(&self) -> Term {
-        self.cs.snil.clone()
-    }
-
-    fn cons(&self, h: Term, t: Term) -> Result<Term, HolError> {
-        self.cs
-            .scons
-            .clone()
-            .apply(h)
-            .map_err(kernel_err)?
-            .apply(t)
-            .map_err(kernel_err)
-    }
-
-    fn atom(&self, p: PayloadLit<'_>) -> Result<Term, HolError> {
-        match p {
-            PayloadLit::Sym(b) => {
+    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
+        match payload {
+            DatumPayload::Symbol(bytes) => {
                 if self.payload_layout == PayloadLayout::IntOrSymbol {
                     let payload = defs::inr(Type::int(), Type::bytes())
-                        .apply(mk_blob(b.to_vec()))
+                        .apply(mk_blob(bytes))
                         .map_err(kernel_err)?;
                     return self.cs.atom.clone().apply(payload).map_err(kernel_err);
                 }
@@ -460,89 +501,87 @@ impl AbstractSExpr for CarvedCarrier {
                 self.cs
                     .atom
                     .clone()
-                    .apply(mk_blob(b.to_vec()))
+                    .apply(mk_blob(bytes))
                     .map_err(kernel_err)
             }
-            PayloadLit::Int(n) => {
+            DatumPayload::Integer(integer) => {
                 if let Some(be) = self.int.as_deref() {
-                    return be.lit(n);
+                    return be.lit(&integer);
                 }
                 if self.cs.payload == Type::int() {
                     return self
                         .cs
                         .atom
                         .clone()
-                        .apply(mk_int(n.clone()))
+                        .apply(mk_int(integer))
                         .map_err(kernel_err);
                 }
                 Err(HolError::Stuck(
                     "this dialect has no integer atoms (`sector`: numerals stay symbols)".into(),
                 ))
             }
-            // `PayloadLit` is non_exhaustive: a future payload kind is an
-            // honest per-dialect error until this carrier supports it.
-            _ => Err(HolError::Stuck(
-                "unsupported atom payload kind for this carrier".into(),
-            )),
         }
-    }
-
-    fn as_cons(&self, v: &Term) -> Option<(Term, Term)> {
-        let (inner, t) = v.as_app()?;
-        let (op, h) = inner.as_app()?;
-        (*op == self.cs.scons).then(|| (h.clone(), t.clone()))
-    }
-
-    fn as_atom(&self, v: &Term) -> Option<PayloadOwned> {
-        if let Some(n) = self.as_int_lit(v) {
-            return Some(PayloadOwned::Int(n));
-        }
-        let p = self.as_atom_term(v)?;
-        if self.payload_layout == PayloadLayout::IntOrSymbol
-            && let Some((injection, bytes)) = p.as_app()
-            && *injection == defs::inr(Type::int(), Type::bytes())
-        {
-            return as_blob(bytes).map(|bytes| PayloadOwned::Sym(bytes.to_vec()));
-        }
-        if self.cs.payload == Type::bytes() {
-            return as_blob(&p).map(|b| PayloadOwned::Sym(b.to_vec()));
-        }
-        if self.cs.payload == Type::int() {
-            return as_int(&p).map(PayloadOwned::Int);
-        }
-        None
-    }
-
-    fn is_nil(&self, v: &Term) -> bool {
-        *v == self.cs.snil
-    }
-
-    fn numeral_policy(&self) -> NumeralPolicy {
-        self.quote_policy
-    }
-}
-
-impl BackendSExprSyntax for CarvedCarrier {
-    type Payload = PayloadOwned;
-    type Value = Term;
-    type Error = HolError;
-
-    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
-        syntax_atom(self, payload)
     }
 
     fn nil(&self) -> Self::Value {
-        AbstractSExpr::nil(self)
+        self.cs.snil.clone()
     }
 
     fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
-        AbstractSExpr::cons(self, head, tail)
+        self.cs
+            .scons
+            .clone()
+            .apply(head)
+            .map_err(kernel_err)?
+            .apply(tail)
+            .map_err(kernel_err)
     }
 }
 
 impl BackendSExprView for CarvedCarrier {
     fn view(&self, value: &Self::Value) -> Result<SExprF<Self::Payload, Self::Value>, Self::Error> {
-        syntax_view(self, value)
+        if *value == self.cs.snil {
+            return Ok(SExprF::Nil);
+        }
+        if let Some((inner, tail)) = value.as_app()
+            && let Some((operator, head)) = inner.as_app()
+            && *operator == self.cs.scons
+        {
+            return Ok(SExprF::Cons {
+                head: head.clone(),
+                tail: tail.clone(),
+            });
+        }
+        if let Some(integer) = self.as_int_lit(value) {
+            return Ok(SExprF::Atom(DatumPayload::Integer(integer)));
+        }
+        let payload = self
+            .as_atom_term(value)
+            .ok_or_else(|| HolError::Stuck("term is not carved S-expression data".into()))?;
+        if self.payload_layout == PayloadLayout::IntOrSymbol
+            && let Some((injection, bytes)) = payload.as_app()
+            && *injection == defs::inr(Type::int(), Type::bytes())
+            && let Some(bytes) = as_blob(bytes)
+        {
+            return Ok(SExprF::Atom(DatumPayload::Symbol(bytes.to_vec())));
+        }
+        if self.cs.payload == Type::bytes()
+            && let Some(bytes) = as_blob(&payload)
+        {
+            return Ok(SExprF::Atom(DatumPayload::Symbol(bytes.to_vec())));
+        }
+        if self.cs.payload == Type::int()
+            && let Some(integer) = as_int(&payload)
+        {
+            return Ok(SExprF::Atom(DatumPayload::Integer(integer)));
+        }
+        Err(HolError::Stuck("unsupported carved atom payload".into()))
+    }
+}
+
+impl LispDatum for CarvedCarrier {
+    fn numeral_policy(&self) -> DatumNumerals {
+        self.quote_policy
     }
 }
 
@@ -560,7 +599,7 @@ impl KernelSExpr for CarvedCarrier {
     }
 
     fn proj(&self, take_cdr: bool, v: &Term) -> Result<Thm, HolError> {
-        if let Some((h, t)) = self.as_cons(v) {
+        if let Ok(SExprF::Cons { head: h, tail: t }) = BackendSExprView::view(self, v) {
             return self.cs.proj_scons(take_cdr, &h, &t).map_err(kernel_err);
         }
         if let Some(b) = self.as_atom_term(v) {
@@ -569,7 +608,7 @@ impl KernelSExpr for CarvedCarrier {
                 .proj_leaf(take_cdr, LeafKind::Atom(&b))
                 .map_err(kernel_err);
         }
-        if self.is_nil(v) {
+        if matches!(BackendSExprView::view(self, v), Ok(SExprF::Nil)) {
             return self
                 .cs
                 .proj_leaf(take_cdr, LeafKind::Nil)
@@ -593,13 +632,13 @@ impl KernelSExpr for CarvedCarrier {
 // Acl2Carrier — the ACL2 object universe (payload = coprod int bytes)
 // ============================================================================
 
-/// An [`AbstractSExpr`]/[`KernelSExpr`] adapter over the ACL2 carrier `A`.
+/// An [`SExprView`](BackendSExprView)/[`KernelSExpr`] adapter over the ACL2 carrier `A`.
 ///
 /// Values follow the S1 conventions: integers are `aint i` (genuine payload
 /// with the proved `init/int` theory behind it), symbols are `asym ⌜s⌝`,
 /// `nil` is the leaf `anil`, and the canonical true value is the defined
 /// constant `t` (= `asym "T"` by its defining equation), which
-/// [`as_atom`](AbstractSExpr::as_atom) observes as the symbol payload `"T"`.
+/// [`view`](BackendSExprView::view) observes as the symbol payload `"T"`.
 #[derive(Clone, Copy)]
 pub struct Acl2Carrier {
     a: &'static Acl2,
@@ -625,7 +664,7 @@ impl Acl2Carrier {
 
     /// The **payload term** of an `aatom l` value (the datatype-constructor
     /// form; the derived `aint i` / `asym s` forms are *not* matched here —
-    /// they observe via [`as_atom`](AbstractSExpr::as_atom)).
+    /// they observe via [`view`](BackendSExprView::view)).
     pub fn as_aatom_term(&self, v: &Term) -> Option<Term> {
         let (op, l) = v.as_app()?;
         (*op == self.a.atom).then(|| l.clone())
@@ -644,141 +683,117 @@ impl Acl2Carrier {
     }
 }
 
-impl AbstractSExpr for Acl2Carrier {
+impl BackendSExprSyntax for Acl2Carrier {
+    type Payload = DatumPayload;
     type Value = Term;
     type Error = HolError;
 
-    fn nil(&self) -> Term {
-        self.a.nil.clone()
-    }
-
-    fn cons(&self, h: Term, t: Term) -> Result<Term, HolError> {
-        self.a
-            .cons
-            .clone()
-            .apply(h)
-            .map_err(kernel_err)?
-            .apply(t)
-            .map_err(kernel_err)
-    }
-
-    fn atom(&self, p: PayloadLit<'_>) -> Result<Term, HolError> {
-        match p {
-            PayloadLit::Sym(b) => {
+    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
+        match payload {
+            DatumPayload::Symbol(bytes) => {
                 // Representation contract: never `asym "NIL"` — it would be
                 // a junk value distinct from `anil`.
-                if b.eq_ignore_ascii_case(b"nil") {
+                if bytes.eq_ignore_ascii_case(b"nil") {
                     return Err(HolError::Stuck(
                         "ACL2 representation contract: `nil` is the leaf `anil`, never \
                          `asym \"NIL\"` — use `nil()`"
                             .into(),
                     ));
                 }
-                self.a.asym_lit(b).map_err(kernel_err)
+                self.a.asym_lit(&bytes).map_err(kernel_err)
             }
-            PayloadLit::Int(n) => self.a.aint_at(&mk_int(n.clone())).map_err(kernel_err),
-            // `PayloadLit` is non_exhaustive: a future payload kind is an
-            // honest per-dialect error until this carrier supports it.
-            _ => Err(HolError::Stuck(
-                "unsupported atom payload kind for the ACL2 carrier".into(),
-            )),
+            DatumPayload::Integer(integer) => self.a.aint_at(&mk_int(integer)).map_err(kernel_err),
         }
-    }
-
-    fn as_cons(&self, v: &Term) -> Option<(Term, Term)> {
-        let (inner, t) = v.as_app()?;
-        let (op, h) = inner.as_app()?;
-        (*op == self.a.cons).then(|| (h.clone(), t.clone()))
-    }
-
-    fn as_atom(&self, v: &Term) -> Option<PayloadOwned> {
-        // The canonical `t` constant (= `asym "T"` by its defining equation).
-        if *v == self.pr.t {
-            return Some(PayloadOwned::Sym(b"T".to_vec()));
-        }
-        if let Some(i) = self.as_aint_arg(v) {
-            return as_int(&i).map(PayloadOwned::Int);
-        }
-        if let Some(s) = self.as_asym_arg(v) {
-            return as_blob(&s).map(|b| PayloadOwned::Sym(b.to_vec()));
-        }
-        // The raw datatype-constructor form `aatom (inl i | inr s)`.
-        if let Some(l) = self.as_aatom_term(v)
-            && let Some((f, x)) = l.as_app()
-        {
-            if *f == defs::inl(Type::int(), Type::bytes()) {
-                return as_int(x).map(PayloadOwned::Int);
-            }
-            if *f == defs::inr(Type::int(), Type::bytes()) {
-                return as_blob(x).map(|b| PayloadOwned::Sym(b.to_vec()));
-            }
-        }
-        None
-    }
-
-    fn is_nil(&self, v: &Term) -> bool {
-        *v == self.a.nil
-    }
-
-    fn numeral_policy(&self) -> NumeralPolicy {
-        NumeralPolicy::Int
-    }
-
-    /// ACL2's datum discipline (mirrors the dialect's quoted-datum fold):
-    /// numerals → `aint`, `nil`/`t` (any case) → the canonical `anil` / `t`,
-    /// other symbols → `asym` of the bytes as written, proper lists →
-    /// `acons` chains. String literals are not ACL2 objects — a clean error.
-    fn quote(&self, data: &SExpr) -> Result<Term, HolError> {
-        match data {
-            SExp::Atom(covalence_sexp::Atom::Symbol(s)) => {
-                let s = s.as_str();
-                if let Ok(n) = s.parse::<Int>() {
-                    return AbstractSExpr::atom(self, PayloadLit::Int(&n));
-                }
-                if s.eq_ignore_ascii_case("nil") {
-                    return Ok(AbstractSExpr::nil(self));
-                }
-                if s.eq_ignore_ascii_case("t") {
-                    return Ok(self.t());
-                }
-                AbstractSExpr::atom(self, PayloadLit::Sym(s.as_bytes()))
-            }
-            SExp::Atom(covalence_sexp::Atom::Str { .. }) => Err(HolError::Stuck(
-                "ACL2 datum: string literals are not ACL2 objects".into(),
-            )),
-            SExp::List(items) => {
-                let mut acc = AbstractSExpr::nil(self);
-                for it in items.iter().rev() {
-                    let h = self.quote(it)?;
-                    acc = AbstractSExpr::cons(self, h, acc)?;
-                }
-                Ok(acc)
-            }
-        }
-    }
-}
-
-impl BackendSExprSyntax for Acl2Carrier {
-    type Payload = PayloadOwned;
-    type Value = Term;
-    type Error = HolError;
-
-    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
-        syntax_atom(self, payload)
     }
 
     fn nil(&self) -> Self::Value {
-        AbstractSExpr::nil(self)
+        self.a.nil.clone()
     }
 
     fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
-        AbstractSExpr::cons(self, head, tail)
+        self.a
+            .cons
+            .clone()
+            .apply(head)
+            .map_err(kernel_err)?
+            .apply(tail)
+            .map_err(kernel_err)
     }
 }
 
 impl BackendSExprView for Acl2Carrier {
     fn view(&self, value: &Self::Value) -> Result<SExprF<Self::Payload, Self::Value>, Self::Error> {
-        syntax_view(self, value)
+        if *value == self.a.nil {
+            return Ok(SExprF::Nil);
+        }
+        if let Some((inner, tail)) = value.as_app()
+            && let Some((operator, head)) = inner.as_app()
+            && *operator == self.a.cons
+        {
+            return Ok(SExprF::Cons {
+                head: head.clone(),
+                tail: tail.clone(),
+            });
+        }
+        // The canonical `t` constant (= `asym "T"` by its defining equation).
+        if *value == self.pr.t {
+            return Ok(SExprF::Atom(DatumPayload::Symbol(b"T".to_vec())));
+        }
+        if let Some(integer) = self.as_aint_arg(value).and_then(|term| as_int(&term)) {
+            return Ok(SExprF::Atom(DatumPayload::Integer(integer)));
+        }
+        if let Some(bytes) = self.as_asym_arg(value).and_then(|term| as_blob(&term)) {
+            return Ok(SExprF::Atom(DatumPayload::Symbol(bytes.to_vec())));
+        }
+        // The raw datatype-constructor form `aatom (inl i | inr s)`.
+        if let Some(l) = self.as_aatom_term(value)
+            && let Some((f, x)) = l.as_app()
+        {
+            if *f == defs::inl(Type::int(), Type::bytes())
+                && let Some(integer) = as_int(x)
+            {
+                return Ok(SExprF::Atom(DatumPayload::Integer(integer)));
+            }
+            if *f == defs::inr(Type::int(), Type::bytes())
+                && let Some(bytes) = as_blob(x)
+            {
+                return Ok(SExprF::Atom(DatumPayload::Symbol(bytes.to_vec())));
+            }
+        }
+        Err(HolError::Stuck("term is not ACL2 S-expression data".into()))
+    }
+}
+
+impl LispDatum for Acl2Carrier {
+    fn numeral_policy(&self) -> DatumNumerals {
+        DatumNumerals::Integers
+    }
+
+    fn quote(&self, data: &SExpr) -> Result<Term, HolError> {
+        match data {
+            SExp::Atom(covalence_sexp::Atom::Symbol(symbol)) => {
+                if let Ok(integer) = symbol.parse::<Int>() {
+                    return BackendSExprSyntax::atom(self, DatumPayload::Integer(integer));
+                }
+                if symbol.eq_ignore_ascii_case("nil") {
+                    return Ok(BackendSExprSyntax::nil(self));
+                }
+                if symbol.eq_ignore_ascii_case("t") {
+                    return Ok(self.t());
+                }
+                BackendSExprSyntax::atom(self, DatumPayload::Symbol(symbol.as_bytes().to_vec()))
+            }
+            SExp::Atom(covalence_sexp::Atom::Str { .. }) => Err(HolError::Stuck(
+                "ACL2 datum: string literals are not ACL2 objects".into(),
+            )),
+            SExp::List(items) => {
+                let mut result = BackendSExprSyntax::nil(self);
+                for item in items.iter().rev() {
+                    result = BackendSExprSyntax::cons(self, LispDatum::quote(self, item)?, result)?;
+                }
+                Ok(result)
+            }
+        }
     }
 }
 
@@ -796,10 +811,10 @@ impl KernelSExpr for Acl2Carrier {
     }
 
     fn proj(&self, take_cdr: bool, v: &Term) -> Result<Thm, HolError> {
-        if let Some((h, t)) = self.as_cons(v) {
+        if let Ok(SExprF::Cons { head: h, tail: t }) = BackendSExprView::view(self, v) {
             return self.a.cs.proj_scons(take_cdr, &h, &t).map_err(kernel_err);
         }
-        if self.is_nil(v) {
+        if matches!(BackendSExprView::view(self, v), Ok(SExprF::Nil)) {
             return self
                 .a
                 .cs

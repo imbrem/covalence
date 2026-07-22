@@ -349,7 +349,7 @@ impl CarvedSExpr {
     /// payload *values*, only the type, so any payload works.
     ///
     /// Public so downstream carriers (e.g. the `covalence-lisp`
-    /// `AbstractSExpr` adapters) can instantiate further sexpr-shaped
+    /// `SExprSyntax` adapters) can instantiate further sexpr-shaped
     /// carriers — the "same proofs at another payload" seam. Each call mints
     /// fresh identity (a fresh subtype + `Def`s): build **once per instance**
     /// and cache it (an initializer calling this directly, never through

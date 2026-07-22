@@ -10,11 +10,22 @@ at = "2026-07-19T00:00:00+01:00"
 source = "legacy"
 agent = "claude"
 harness = "claude"
+
+[[contributions]]
+role = "editor"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-22T00:00:00+01:00"
+source = "lisp-sexpr-trait-consolidation"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
 # Abstract S-expressions + abstract reductions — a reusable-API design (agent-authored)
 
-Status: **design only** (no code lands with this note). Campaign directive: the
+Status: **historical design**. The current implementation uses the smaller
+`covalence-sexpr-api::{SExprSyntax, SExprView}` waist, with parser policy in
+`covalence-lisp::carrier::LispDatum`; the parser-owned `AbstractSExpr` proposed
+below was implemented and then removed as a duplicate. Campaign directive: the
 Lisp dialects (relational `lisp`/`sector`, value-semantics `scheme`, `acl2`,
 future `forsp`/`forth`) should share **one S-expression abstraction** and **one
 reduction abstraction** instead of four parallel encodings.

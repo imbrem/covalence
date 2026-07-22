@@ -292,7 +292,6 @@ digraph deps {
   "serve" -> "shell";
   "serve" -> "store";
   "sexp" -> "parse";
-  "sexp" -> "types";
   "sexpr-api" -> "inductive";
   "sexpr-parsing" -> "kernel-data";
   "sexpr-parsing" -> "logic-api";

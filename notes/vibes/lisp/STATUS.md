@@ -69,8 +69,9 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   `SExprSyntax` constructor capability. Forsp quotation now uses that same
   fold into the free inductive backend instead of maintaining its own list
   recursion. The carved HOL and ACL2 carriers implement the same constructor
-  and one-layer view capabilities, providing a tested migration path away
-  from the older parser-owned `AbstractSExpr` trait.
+  and one-layer view capabilities. Surface numeral and ACL2 canonicalization
+  live in the higher `LispDatum` codec; the duplicate parser-owned
+  `AbstractSExpr` trait has been removed.
 
 The narrow regression commands are:
 

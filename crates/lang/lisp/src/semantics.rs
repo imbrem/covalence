@@ -70,9 +70,9 @@ use covalence_repl_core::{Fuel, Reduction, Repr, RunToValue, Semantics, StepCert
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
-use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit};
+use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
 
-use crate::carrier::CarvedCarrier;
+use crate::carrier::{CarvedCarrier, DatumPayload, LispDatum};
 use crate::defs::Defs;
 use crate::frontend::{CoreAtom, FrontendExpr, Primitive, SurfaceDialect};
 use crate::hol::HolError;
@@ -431,9 +431,11 @@ impl LispSemantics {
             Datum::Atom(CoreAtom::Symbol(symbol)) if symbol == b"t" && hint == Hint::Bool => {
                 Ok(covalence_hol_eval::mk_bool(true))
             }
-            Datum::Atom(CoreAtom::Symbol(symbol)) => self.carrier.atom(PayloadLit::Sym(symbol)),
+            Datum::Atom(CoreAtom::Symbol(symbol)) => {
+                SExprSyntax::atom(&self.carrier, DatumPayload::Symbol(symbol.clone()))
+            }
             Datum::Atom(CoreAtom::String { bytes, .. }) => {
-                self.carrier.atom(PayloadLit::Sym(bytes))
+                SExprSyntax::atom(&self.carrier, DatumPayload::Symbol(bytes.clone()))
             }
             Datum::Atom(CoreAtom::Integer(integer)) => {
                 if hint == Hint::Bool {
@@ -905,7 +907,7 @@ impl LispSemantics {
     fn data(&self, e: &SExpr) -> Result<Term, HolError> {
         // The carrier's `quote` fold (numerals-in-data stay symbol atoms —
         // the quote policy is `Sym` regardless of the integer backend).
-        self.carrier.quote(e)
+        LispDatum::quote(&self.carrier, e)
     }
 
     fn atom_data(&self, a: &Atom) -> Result<Term, HolError> {
@@ -913,7 +915,7 @@ impl LispSemantics {
             Atom::Symbol(s) => s.as_bytes(),
             Atom::Str { bytes, .. } => bytes,
         };
-        self.carrier.atom(PayloadLit::Sym(bytes))
+        SExprSyntax::atom(&self.carrier, DatumPayload::Symbol(bytes.to_vec()))
     }
 
     // ---- value classification -------------------------------------------
@@ -1607,7 +1609,10 @@ impl LispSemantics {
     }
 
     pub(crate) fn as_scons(&self, v: &Term) -> Option<(Term, Term)> {
-        self.carrier.as_cons(v)
+        match SExprView::view(&self.carrier, v).ok()? {
+            SExprF::Cons { head, tail } => Some((head, tail)),
+            _ => None,
+        }
     }
 
     pub(crate) fn as_atom(&self, v: &Term) -> Option<Term> {
@@ -1615,7 +1620,7 @@ impl LispSemantics {
     }
 
     pub(crate) fn is_snil(&self, v: &Term) -> bool {
-        self.carrier.is_nil(v)
+        matches!(SExprView::view(&self.carrier, v), Ok(SExprF::Nil))
     }
 
     pub(crate) fn atom_bytes(&self, v: &Term) -> Option<Vec<u8>> {

@@ -57,18 +57,17 @@ use covalence_kernel_lisp::{
     TraceSoundness,
 };
 use covalence_sexp::{Atom, SExpr};
+use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
 use covalence_types::Int;
 use std::sync::Arc;
 
-use covalence_core::subst;
-use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
-
-use crate::carrier::{Acl2Carrier, CarvedCarrier, exact_datum_carved};
+use crate::carrier::{Acl2Carrier, CarvedCarrier, DatumPayload, LispDatum, exact_datum_carved};
 use crate::frontend::{
     CoreAtom, FrontendConfiguration, FrontendExpr, FrontendValue, Primitive, SurfaceDialect,
 };
 use crate::hol::HolError;
 use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
+use covalence_core::subst;
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -158,31 +157,38 @@ enum RelationCarrier {
 }
 
 impl RelationCarrier {
-    fn atom(&self, payload: PayloadLit<'_>) -> Result<Term, HolError> {
+    fn atom(&self, payload: DatumPayload) -> Result<Term, HolError> {
         match self {
-            Self::Carved(carrier) => carrier.atom(payload),
-            Self::Acl2(carrier) => carrier.atom(payload),
+            Self::Carved(carrier) => SExprSyntax::atom(carrier, payload),
+            Self::Acl2(carrier) => SExprSyntax::atom(carrier, payload),
         }
     }
 
     fn quote(&self, datum: &SExpr) -> Result<Term, HolError> {
         match self {
-            Self::Carved(carrier) => carrier.quote(datum),
-            Self::Acl2(carrier) => carrier.quote(datum),
+            Self::Carved(carrier) => LispDatum::quote(carrier, datum),
+            Self::Acl2(carrier) => LispDatum::quote(carrier, datum),
         }
     }
 
     fn as_cons(&self, value: &Term) -> Option<(Term, Term)> {
-        match self {
-            Self::Carved(carrier) => carrier.as_cons(value),
-            Self::Acl2(carrier) => carrier.as_cons(value),
+        match self.view(value).ok()? {
+            SExprF::Cons { head, tail } => Some((head, tail)),
+            _ => None,
         }
     }
 
-    fn as_atom(&self, value: &Term) -> Option<PayloadOwned> {
+    fn as_atom(&self, value: &Term) -> Option<DatumPayload> {
+        match self.view(value).ok()? {
+            SExprF::Atom(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    fn view(&self, value: &Term) -> Result<SExprF<DatumPayload, Term>, HolError> {
         match self {
-            Self::Carved(carrier) => carrier.as_atom(value),
-            Self::Acl2(carrier) => carrier.as_atom(value),
+            Self::Carved(carrier) => SExprView::view(carrier, value),
+            Self::Acl2(carrier) => SExprView::view(carrier, value),
         }
     }
 
@@ -194,10 +200,7 @@ impl RelationCarrier {
     }
 
     fn is_nil(&self, value: &Term) -> bool {
-        match self {
-            Self::Carved(carrier) => carrier.is_nil(value),
-            Self::Acl2(carrier) => carrier.is_nil(value),
-        }
+        matches!(self.view(value), Ok(SExprF::Nil))
     }
 
     fn is_acl2(&self) -> bool {
@@ -337,7 +340,7 @@ impl LispRel {
     /// `sector` (no integer backend) and — in the `nat` flavour — for `n < 0`.
     pub fn int_lit(&self, n: &Int) -> Result<Term, HolError> {
         if self.carrier.is_acl2() {
-            return self.carrier.atom(PayloadLit::Int(n));
+            return self.carrier.atom(DatumPayload::Integer(n.clone()));
         }
         self.int_be
             .as_ref()
@@ -395,7 +398,7 @@ impl LispRel {
     /// `atom "s"` — a symbol atom.
     pub fn sym(&self, s: &str) -> Term {
         self.carrier
-            .atom(PayloadLit::Sym(s.as_bytes()))
+            .atom(DatumPayload::Symbol(s.as_bytes().to_vec()))
             .expect("configured relational carrier accepts symbols")
     }
     /// `atom? x`.
@@ -1718,9 +1721,11 @@ impl LispRel {
     fn compile_core_datum(&self, datum: &Datum<CoreAtom>) -> Result<Term, HolError> {
         match datum {
             Datum::Nil => Ok(self.cs.snil.clone()),
-            Datum::Atom(CoreAtom::Symbol(symbol)) => self.carrier.atom(PayloadLit::Sym(symbol)),
+            Datum::Atom(CoreAtom::Symbol(symbol)) => {
+                self.carrier.atom(DatumPayload::Symbol(symbol.clone()))
+            }
             Datum::Atom(CoreAtom::String { bytes, .. }) => {
-                self.carrier.atom(PayloadLit::Sym(bytes))
+                self.carrier.atom(DatumPayload::Symbol(bytes.clone()))
             }
             Datum::Atom(CoreAtom::Integer(integer)) => self.int_lit(integer),
             Datum::Cons(head, tail) => {
@@ -1821,7 +1826,7 @@ impl LispRel {
             Atom::Symbol(s) => s.as_bytes(),
             Atom::Str { bytes, .. } => bytes,
         };
-        self.carrier.atom(PayloadLit::Sym(bytes))
+        self.carrier.atom(DatumPayload::Symbol(bytes.to_vec()))
     }
 
     /// `quote` payload → nested `scons`/`atom`/`snil` data (the carrier's
@@ -2004,9 +2009,8 @@ impl LispRel {
         }
         if let Some(payload) = self.carrier.as_atom(v) {
             return match payload {
-                PayloadOwned::Sym(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                PayloadOwned::Int(integer) => integer.to_string(),
-                _ => format!("{v}"),
+                DatumPayload::Symbol(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                DatumPayload::Integer(integer) => integer.to_string(),
             };
         }
         if self.as_scons(v).is_some() {

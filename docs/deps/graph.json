@@ -925,10 +925,6 @@
       "to": "covalence-parse"
     },
     {
-      "from": "covalence-sexp",
-      "to": "covalence-types"
-    },
-    {
       "from": "covalence-sexpr-api",
       "to": "covalence-inductive"
     },

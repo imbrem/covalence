@@ -7,7 +7,7 @@
 //!   renders identically through the free surface instance, the carved
 //!   `sexpr` carrier (with and without an integer backend), the ACL2
 //!   carrier, and a **fresh third carved instance** at another payload —
-//!   written once against `AbstractSExpr`, no per-dialect copies.
+//!   written once against `SExprSyntax`/`SExprView`, no per-dialect copies.
 //! - **Structural laws are genuine theorems**: `proj` / `inj_atom` /
 //!   `induct` outputs are asserted `hyps().is_empty()` **and** equal to
 //!   independently built conclusions (the shared check() style) — pure
@@ -36,15 +36,15 @@ use covalence_init::init::eq::beta_expand;
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::{Term, Type};
-use covalence_lisp::carrier::{Acl2Carrier, CarvedCarrier, KernelSExpr, acl2_payload_ty};
+use covalence_lisp::carrier::{
+    Acl2Carrier, CarvedCarrier, DatumNumerals, DatumPayload, KernelSExpr, LispDatum,
+    acl2_payload_ty,
+};
 use covalence_lisp::hol::HolError;
 use covalence_lisp::int_backend::{IntBackend, IntVariant, NatVariant};
 use covalence_lisp::reader::{read_book_with, read_scheme_with};
-use covalence_sexp::abstract_sexpr::{
-    AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SurfaceSExpr,
-};
 use covalence_sexp::{SExpr, parse, prettyprint};
-use covalence_sexpr_api::{ProperList, SExprF, SExprView as BackendSExprView};
+use covalence_sexpr_api::{ProperList, SExprF, SExprSyntax, SExprView};
 use covalence_types::Int;
 
 // ============================================================================
@@ -76,7 +76,7 @@ fn int_cell() -> &'static CarvedSExpr {
 }
 
 fn icell_carrier() -> CarvedCarrier {
-    CarvedCarrier::over(int_cell()).with_quote_policy(NumeralPolicy::Int)
+    CarvedCarrier::over(int_cell()).with_quote_policy(DatumNumerals::Integers)
 }
 
 /// The `sector+int` configuration: the flagship carve + the signed backend.
@@ -96,10 +96,10 @@ fn sector_nat_carrier() -> CarvedCarrier {
     CarvedCarrier::with_int(be).expect("with_int")
 }
 
-fn symbol_payload(atom: &covalence_sexp::Atom) -> Result<PayloadOwned, HolError> {
+fn symbol_payload(atom: &covalence_sexp::Atom) -> Result<DatumPayload, HolError> {
     Ok(match atom {
-        covalence_sexp::Atom::Symbol(symbol) => PayloadOwned::Sym(symbol.as_bytes().to_vec()),
-        covalence_sexp::Atom::Str { bytes, .. } => PayloadOwned::Sym(bytes.to_vec()),
+        covalence_sexp::Atom::Symbol(symbol) => DatumPayload::Symbol(symbol.as_bytes().to_vec()),
+        covalence_sexp::Atom::Str { bytes, .. } => DatumPayload::Symbol(bytes.to_vec()),
     })
 }
 
@@ -112,8 +112,8 @@ fn dialect_readers_target_kernel_inductive_carriers() {
         .expect("observe Scheme datum")
         .expect("quote expansion is proper");
     assert!(matches!(
-        BackendSExprView::view(&scheme_carrier, &scheme_items[1]).unwrap(),
-        SExprF::Atom(PayloadOwned::Sym(bytes)) if bytes == b"MixedCase"
+        SExprView::view(&scheme_carrier, &scheme_items[1]).unwrap(),
+        SExprF::Atom(DatumPayload::Symbol(bytes)) if bytes == b"MixedCase"
     ));
 
     let acl2_carrier = Acl2Carrier::new().expect("ACL2 carrier");
@@ -123,8 +123,8 @@ fn dialect_readers_target_kernel_inductive_carriers() {
         .expect("observe ACL2 datum")
         .expect("quote expansion is proper");
     assert!(matches!(
-        BackendSExprView::view(&acl2_carrier, &acl2_items[1]).unwrap(),
-        SExprF::Atom(PayloadOwned::Sym(bytes)) if bytes == b"mixedcase"
+        SExprView::view(&acl2_carrier, &acl2_items[1]).unwrap(),
+        SExprF::Atom(DatumPayload::Symbol(bytes)) if bytes == b"mixedcase"
     ));
 }
 
@@ -133,7 +133,7 @@ fn dialect_readers_target_kernel_inductive_carriers() {
 // ============================================================================
 
 /// Quote `src`, render it back, and assert the pretty-printed text.
-fn roundtrip<C: AbstractSExpr>(c: &C, src: &str, want: &str)
+fn roundtrip<C: LispDatum>(c: &C, src: &str, want: &str)
 where
     C::Error: std::fmt::Debug,
 {
@@ -141,6 +141,23 @@ where
     let v = c.quote(&data).expect("quote");
     let back = c.render(&v).expect("datum must render");
     assert_eq!(pp(&back), want, "round-trip mismatch for {src:?}");
+}
+
+fn observed<C: SExprView<Payload = DatumPayload>>(
+    carrier: &C,
+    value: &C::Value,
+) -> Option<DatumPayload> {
+    match carrier.view(value).ok()? {
+        SExprF::Atom(payload) => Some(payload),
+        _ => None,
+    }
+}
+
+fn observed_cons<C: SExprView>(carrier: &C, value: &C::Value) -> Option<(C::Value, C::Value)> {
+    match carrier.view(value).ok()? {
+        SExprF::Cons { head, tail } => Some((head, tail)),
+        _ => None,
+    }
 }
 
 /// The structural-law suite (§3.3): exact-statement `proj` and `inj_atom`
@@ -161,11 +178,11 @@ where
     let pair = c.cons(x.clone(), nil.clone()).expect("cons");
 
     // Observers (syntactic; negative controls across shapes).
-    assert_eq!(c.as_cons(&pair), Some((x.clone(), nil.clone())));
-    assert!(c.as_cons(&x).is_none());
-    assert!(c.is_nil(&nil));
-    assert!(!c.is_nil(&pair));
-    assert!(c.as_atom(&pair).is_none());
+    assert_eq!(observed_cons(c, &pair), Some((x.clone(), nil.clone())));
+    assert!(observed_cons(c, &x).is_none());
+    assert!(matches!(c.view(&nil), Ok(SExprF::Nil)));
+    assert!(!matches!(c.view(&pair), Ok(SExprF::Nil)));
+    assert!(observed(c, &pair).is_none());
 
     // ⊢ car (cons x nil) = x  /  ⊢ cdr (cons x nil) = nil.
     let car_pair = c.proj(false, &pair).expect("car law");
@@ -215,7 +232,7 @@ where
 /// and `induct` must conclude exactly `⊢ ∀s. (λs. s = s) s`, hyp-free.
 fn induct_suite<C>(c: &C, payload: &Type, atom_of: &dyn Fn(&Term) -> Term)
 where
-    C: KernelSExpr<Error = HolError>,
+    C: KernelSExpr<Error = HolError> + LispDatum,
 {
     let tau = c.tau();
     let motive = {
@@ -261,12 +278,10 @@ where
 /// quoted input so callers can pin the *per-dialect* statements.
 fn second_element<C>(c: &C, data: &SExpr) -> Result<(Thm, Term), HolError>
 where
-    C: KernelSExpr<Error = HolError>,
+    C: KernelSExpr<Error = HolError> + LispDatum,
 {
     let v = c.quote(data)?;
-    let (_, tail) = c
-        .as_cons(&v)
-        .ok_or_else(|| HolError::Stuck("not a cons".into()))?;
+    let (_, tail) = observed_cons(c, &v).ok_or_else(|| HolError::Stuck("not a cons".into()))?;
     let cdr_thm = c.proj(true, &v)?; // ⊢ cdr v = tail
     let car_thm = c.proj(false, &tail)?; // ⊢ car tail = second
     let composed = cdr_thm
@@ -281,7 +296,7 @@ where
 /// `⊢ car (cdr (quote data)) = expected`, and the value renders as `want`.
 fn check_second<C>(c: &C, src: &str, expected_second: &Term, want: &str, what: &str)
 where
-    C: KernelSExpr<Error = HolError>,
+    C: KernelSExpr<Error = HolError> + LispDatum,
 {
     let data = one(src);
     let (thm, v) = second_element(c, &data).expect(what);
@@ -304,7 +319,6 @@ where
 
 #[test]
 fn roundtrip_all_carriers() {
-    let surface = SurfaceSExpr::new();
     let sector = CarvedCarrier::sector().expect("sector");
     let sector_int = sector_int_carrier();
     let acl2 = Acl2Carrier::new().expect("acl2");
@@ -317,7 +331,6 @@ fn roundtrip_all_carriers() {
         ("(a b c)", "(a b c)"),
         ("(a (b c) () d)", "(a (b c) () d)"),
     ] {
-        roundtrip(&surface, src, want);
         roundtrip(&sector, src, want);
         roundtrip(&sector_int, src, want);
         roundtrip(&acl2, src, want);
@@ -329,28 +342,31 @@ fn roundtrip_all_carriers() {
     for c in [&sector, &sector_int] {
         roundtrip(c, "(1 2 3)", "(1 2 3)");
         assert_eq!(
-            c.as_atom(&c.quote(&one("7")).expect("quote")),
-            Some(PayloadOwned::Sym(b"7".to_vec())),
+            observed(c, &c.quote(&one("7")).expect("quote")),
+            Some(DatumPayload::Symbol(b"7".to_vec())),
             "carved data numerals stay symbol atoms"
         );
     }
     roundtrip(&acl2, "(1 2 3)", "(1 2 3)");
     assert_eq!(
-        acl2.as_atom(&acl2.quote(&one("7")).expect("quote")),
-        Some(PayloadOwned::Int(int(7))),
+        observed(&acl2, &acl2.quote(&one("7")).expect("quote")),
+        Some(DatumPayload::Integer(int(7))),
         "ACL2 data numerals are genuine integer payload"
     );
     roundtrip(&icell, "(1 2 3)", "(1 2 3)");
     assert_eq!(
-        icell.as_atom(&icell.quote(&one("7")).expect("quote")),
-        Some(PayloadOwned::Int(int(7))),
+        observed(&icell, &icell.quote(&one("7")).expect("quote")),
+        Some(DatumPayload::Integer(int(7))),
         "int-payload cell numerals are genuine integer payload"
     );
 
     // ACL2 canonicalization pinned: `nil`/`t` (any case) → `anil` / the
     // canonical `t` (observing as the symbol payload `"T"`).
     roundtrip(&acl2, "(x nil t)", "(x () T)");
-    assert!(acl2.is_nil(&acl2.quote(&one("NIL")).expect("quote")));
+    assert!(matches!(
+        acl2.view(&acl2.quote(&one("NIL")).expect("quote")),
+        Ok(SExprF::Nil)
+    ));
     assert_eq!(acl2.quote(&one("t")).expect("quote"), acl2.t());
 }
 
@@ -405,8 +421,8 @@ fn structural_laws_third_carrier_int_payload() {
 #[test]
 fn acl2_proj_at_derived_payload_forms() {
     let c = Acl2Carrier::new().expect("acl2");
-    let two = c.atom(PayloadLit::Int(&int(2))).expect("aint 2");
-    let sym = c.atom(PayloadLit::Sym(b"x")).expect("asym x");
+    let two = c.atom(DatumPayload::Integer(int(2))).expect("aint 2");
+    let sym = c.atom(DatumPayload::Symbol(b"x".to_vec())).expect("asym x");
     for (v, what) in [(&two, "cdr (aint 2)"), (&sym, "cdr (asym x)")] {
         // ⊢ cdr v = anil — stated about the DERIVED form (via its defining
         // unfold + the leaf default), hypothesis-free.
@@ -434,16 +450,18 @@ fn retarget_second_element_across_dialects() {
     // …the ACL2 carrier (different carrier type, different atom encoding,
     // same rendered value)…
     let acl2 = Acl2Carrier::new().expect("acl2");
-    let b_asym = acl2.atom(PayloadLit::Sym(b"b")).expect("asym b");
+    let b_asym = acl2
+        .atom(DatumPayload::Symbol(b"b".to_vec()))
+        .expect("asym b");
     check_second(&acl2, "(a b c)", &b_asym, "b", "acl2 second");
 
     // …and the fresh int-payload carrier (numerals now genuine payload).
     let icell = icell_carrier();
-    let two_atom = icell.atom(PayloadLit::Int(&int(2))).expect("atom 2");
+    let two_atom = icell.atom(DatumPayload::Integer(int(2))).expect("atom 2");
     check_second(&icell, "(1 2 3)", &two_atom, "2", "icell second");
 
     // ACL2 numerals retarget too: second of `(1 2 3)` is `aint 2`.
-    let two_aint = acl2.atom(PayloadLit::Int(&int(2))).expect("aint 2");
+    let two_aint = acl2.atom(DatumPayload::Integer(int(2))).expect("aint 2");
     check_second(&acl2, "(1 2 3)", &two_aint, "2", "acl2 int second");
 
     // The statements genuinely differ: distinct carrier types, distinct
@@ -460,30 +478,42 @@ fn retarget_second_element_across_dialects() {
 fn negative_controls() {
     // `sector` has no integer atoms — `atom(Int)` is a clean error.
     let sector = CarvedCarrier::sector().expect("sector");
-    assert!(sector.atom(PayloadLit::Int(&int(2))).is_err());
+    assert!(sector.atom(DatumPayload::Integer(int(2))).is_err());
 
     // `sector+int` builds `(int 2)` and observes it back; `sector`'s
     // observers do NOT see it as an atom (no backend installed).
     let sector_int = sector_int_carrier();
-    let two = sector_int.atom(PayloadLit::Int(&int(2))).expect("(int 2)");
-    assert_eq!(sector_int.as_atom(&two), Some(PayloadOwned::Int(int(2))));
-    assert_eq!(sector.as_atom(&two), None);
+    let two = sector_int
+        .atom(DatumPayload::Integer(int(2)))
+        .expect("(int 2)");
+    assert_eq!(
+        observed(&sector_int, &two),
+        Some(DatumPayload::Integer(int(2)))
+    );
+    assert_eq!(observed(&sector, &two), None);
 
     // The `nat` flavour rejects negative literals; the signed one accepts.
     let nat = sector_nat_carrier();
-    assert!(nat.atom(PayloadLit::Int(&int(-1))).is_err());
+    assert!(nat.atom(DatumPayload::Integer(int(-1))).is_err());
     let m1 = sector_int
-        .atom(PayloadLit::Int(&int(-1)))
+        .atom(DatumPayload::Integer(int(-1)))
         .expect("(int -1)");
-    assert_eq!(sector_int.as_atom(&m1), Some(PayloadOwned::Int(int(-1))));
+    assert_eq!(
+        observed(&sector_int, &m1),
+        Some(DatumPayload::Integer(int(-1)))
+    );
 
     // ACL2 representation contract: never `asym "NIL"`.
     let acl2 = Acl2Carrier::new().expect("acl2");
-    assert!(acl2.atom(PayloadLit::Sym(b"NIL")).is_err());
-    assert!(acl2.atom(PayloadLit::Sym(b"nil")).is_err());
+    assert!(acl2.atom(DatumPayload::Symbol(b"NIL".to_vec())).is_err());
+    assert!(acl2.atom(DatumPayload::Symbol(b"nil".to_vec())).is_err());
     // …and string literals are not ACL2 objects.
     assert!(acl2.quote(&one("\"s\"")).is_err());
 
     // The int-payload cell has no symbol atoms.
-    assert!(icell_carrier().atom(PayloadLit::Sym(b"a")).is_err());
+    assert!(
+        icell_carrier()
+            .atom(DatumPayload::Symbol(b"a".to_vec()))
+            .is_err()
+    );
 }

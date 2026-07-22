@@ -22,10 +22,9 @@ use covalence_lisp::acl2::{
     Acl2Outcome, Acl2Session, Acl2ValueKind, replay_acl2_append_execution,
     replay_acl2_append_existence, replay_acl2_append_graph_adequacy,
 };
-use covalence_lisp::carrier::Acl2Carrier;
+use covalence_lisp::carrier::{Acl2Carrier, LispDatum};
 use covalence_lisp::frontend::CoreAtom;
 use covalence_lisp::reader::read_one;
-use covalence_sexp::AbstractSExpr;
 
 fn session() -> Acl2Session {
     Acl2Session::new().expect("session")

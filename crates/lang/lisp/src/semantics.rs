@@ -19,7 +19,7 @@
 //! `sexpr`; `if` / `cond` → the kernel `cond`; `lambda` → an abstraction; and a
 //! call `(f args)` to a user [`defun`](crate::defs) → the def's free-variable
 //! head applied to compiled args). This is the "data → operator application"
-//! bridge the plain [`crate::Lisp::lower`] does not build.
+//! bridge the structural [`crate::LispDatumSyntax::lower_syntax`] does not build.
 //!
 //! Two redexes are non-congruential:
 //! - **`eq?`** on two atom values decides the HOL equation `atom b₁ = atom b₂`

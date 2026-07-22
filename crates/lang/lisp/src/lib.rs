@@ -77,7 +77,7 @@ pub use covalence_kernel_lisp as kernel_api;
 /// a parser/lowerer needs only this trait. Existing [`Lisp`] implementations
 /// remain source-compatible while adapters migrate them to this narrower
 /// vocabulary.
-pub trait LispSyntax: SExprSyntax {
+pub trait LispDatumSyntax: SExprSyntax {
     fn symbol_payload(&self, name: &str) -> Result<Self::Payload, Self::Error>;
 
     fn number_payload(&self, text: &str) -> Option<Result<Self::Payload, Self::Error>>;
@@ -96,73 +96,5 @@ pub trait LispSyntax: SExprSyntax {
 
     fn lower_syntax(&self, sexpr: &SExpr) -> Result<Self::Value, Self::Error> {
         reader::lower_with(self, sexpr, &|atom| self.resolve_payload(atom))
-    }
-}
-
-/// The clear-Lisp surface: Forth-style atom resolution + an eval entry.
-///
-/// Atom resolution is a fixed three-step fallthrough (dictionary → numeral →
-/// bare symbol), each a method here; the default [`lower`](Lisp::lower) folds
-/// a parsed [`SExpr`] tree into a [`Term`](Lisp::Term) by applying it at
-/// every atom and building lists via [`nil`](Lisp::nil) / [`cons`](Lisp::cons).
-pub trait Lisp {
-    /// The lowered term type (a kernel term, or a small AST).
-    type Term;
-    /// A lowering failure (e.g. an unbuildable kernel term).
-    type Error;
-
-    /// Step 1: a symbol found in the dictionary, or a bare symbol atom.
-    ///
-    /// The minimal instance treats every non-numeral atom as a bare symbol;
-    /// a richer dialect looks the head up in a `defun` dictionary first.
-    fn resolve_symbol(&self, name: &str) -> Result<Self::Term, Self::Error>;
-
-    /// Step 2: a numeral, if `text` is one under this dialect's numeral
-    /// policy. `None` falls through to [`resolve_symbol`](Lisp::resolve_symbol).
-    fn resolve_number(&self, text: &str) -> Option<Result<Self::Term, Self::Error>>;
-
-    /// A string / bytes literal atom (`"..."`, `b"..."`, `json"..."`, …).
-    fn resolve_string(&self, format: &str, bytes: &[u8]) -> Result<Self::Term, Self::Error>;
-
-    /// The empty list `()`.
-    fn nil(&self) -> Result<Self::Term, Self::Error>;
-
-    /// `cons head tail` — prepend `head` onto the list `tail`.
-    fn cons(&self, head: Self::Term, tail: Self::Term) -> Result<Self::Term, Self::Error>;
-
-    /// Evaluate a lowered term to its result form.
-    fn eval(&self, term: &Self::Term) -> Result<Self::Eval, Self::EvalError>;
-
-    /// The evaluation result (for the kernel instance, a reduction theorem).
-    type Eval;
-    /// An evaluation failure.
-    type EvalError;
-
-    /// Resolve one atom via the Forth fallthrough: numeral, then symbol.
-    fn resolve_atom(&self, atom: &covalence_sexp::Atom) -> Result<Self::Term, Self::Error> {
-        match atom {
-            covalence_sexp::Atom::Symbol(s) => match self.resolve_number(s) {
-                Some(r) => r,
-                None => self.resolve_symbol(s),
-            },
-            covalence_sexp::Atom::Str { format, bytes } => self.resolve_string(format, bytes),
-        }
-    }
-
-    /// Fold a parsed [`SExpr`] into a [`Term`](Lisp::Term): atoms resolve via
-    /// [`resolve_atom`](Lisp::resolve_atom), lists build a `cons`-spine ending
-    /// in [`nil`](Lisp::nil).
-    fn lower(&self, sexpr: &SExpr) -> Result<Self::Term, Self::Error> {
-        match sexpr {
-            SExpr::Atom(a) => self.resolve_atom(a),
-            SExpr::List(items) => {
-                let mut acc = self.nil()?;
-                for it in items.iter().rev() {
-                    let head = self.lower(it)?;
-                    acc = self.cons(head, acc)?;
-                }
-                Ok(acc)
-            }
-        }
     }
 }

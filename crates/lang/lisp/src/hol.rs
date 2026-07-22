@@ -1,7 +1,7 @@
 //! The **HOL backend** (`hol` feature): the concrete kernel instance of the
 //! Lisp surface + the symbolic reduction strategy.
 //!
-//! - [`LispHol`] implements [`crate::Lisp`], lowering S-expressions to carved
+//! - [`LispHol`] implements [`crate::LispDatumSyntax`], lowering S-expressions to carved
 //!   `sexpr` kernel [`Term`]s (atoms via `atom (mk_blob …)`, lists via the
 //!   carved `scons`/`snil`) — the same untyped Lisp value the kernel-side
 //!   `sexpr_parse` reader produces, and the same realization
@@ -28,8 +28,9 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::init::lisp::{Lisp as KernelLisp, lisp};
 
 use covalence_repl_core::ReductionStrategy;
+use covalence_sexpr_api::SExprSyntax;
 
-use crate::Lisp;
+use crate::LispDatumSyntax;
 
 /// Errors from the HOL backend.
 #[derive(Debug, thiserror::Error)]
@@ -72,53 +73,60 @@ impl LispHol {
 
     /// `atom <bytes>` — the carved `atom` constructor applied to a bytes
     /// literal (via [`mk_blob`], the designated facade).
-    fn atom(&self, bytes: Vec<u8>) -> Result<Term, HolError> {
+    fn atom_term(&self, bytes: Vec<u8>) -> Result<Term, HolError> {
         Ok(Term::app(self.carved()?.atom.clone(), mk_blob(bytes)))
+    }
+
+    /// Prove one symbolic reduction of an operator term.
+    pub fn eval(&self, term: &Term) -> Result<Thm, HolError> {
+        SymbolicStrategy.reduce(term)
     }
 }
 
-impl Lisp for LispHol {
-    type Term = Term;
+impl SExprSyntax for LispHol {
+    type Payload = Vec<u8>;
+    type Value = Term;
     type Error = HolError;
-    type Eval = Thm;
-    type EvalError = HolError;
 
-    fn resolve_symbol(&self, name: &str) -> Result<Term, HolError> {
-        // Every symbol is a bare atom of its UTF-8 bytes (matching
-        // `sexpr_parse`). A dictionary lookup would go here first.
-        self.atom(name.as_bytes().to_vec())
+    fn atom(&self, payload: Self::Payload) -> Result<Self::Value, Self::Error> {
+        self.atom_term(payload)
     }
 
-    fn resolve_number(&self, text: &str) -> Option<Result<Term, HolError>> {
+    fn nil(&self) -> Self::Value {
+        self.carved()
+            .expect("process-global carved theory")
+            .snil
+            .clone()
+    }
+
+    fn cons(&self, head: Self::Value, tail: Self::Value) -> Result<Self::Value, Self::Error> {
+        let c = self.carved()?;
+        Ok(Term::app(Term::app(c.scons.clone(), head), tail))
+    }
+}
+
+impl LispDatumSyntax for LispHol {
+    fn symbol_payload(&self, name: &str) -> Result<Self::Payload, Self::Error> {
+        Ok(name.as_bytes().to_vec())
+    }
+
+    fn number_payload(&self, text: &str) -> Option<Result<Self::Payload, Self::Error>> {
         // Numerals are the ASCII decimal digit run, atomized like any other
         // token — matching `sexpr_parse`'s uninterpreted-byte-run atoms. We
         // only treat all-ASCII-digit tokens as numerals; everything else
-        // falls through to `resolve_symbol` (same atom either way, so the
+        // falls through to `symbol_payload` (same atom either way, so the
         // distinction is cosmetic today — see source-local TODO markers).
         if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
-            Some(self.atom(text.as_bytes().to_vec()))
+            Some(Ok(text.as_bytes().to_vec()))
         } else {
             None
         }
     }
 
-    fn resolve_string(&self, _format: &str, bytes: &[u8]) -> Result<Term, HolError> {
+    fn string_payload(&self, _format: &str, bytes: &[u8]) -> Result<Self::Payload, Self::Error> {
         // Raw bytes, unquoted/unescaped (the untyped landing collapses the
         // string/symbol distinction; see source-local TODO markers).
-        self.atom(bytes.to_vec())
-    }
-
-    fn nil(&self) -> Result<Term, HolError> {
-        Ok(self.carved()?.snil.clone())
-    }
-
-    fn cons(&self, head: Term, tail: Term) -> Result<Term, HolError> {
-        let c = self.carved()?;
-        Ok(Term::app(Term::app(c.scons.clone(), head), tail))
-    }
-
-    fn eval(&self, term: &Term) -> Result<Thm, HolError> {
-        SymbolicStrategy.reduce(term)
+        Ok(bytes.to_vec())
     }
 }
 
@@ -177,6 +185,22 @@ impl ReductionStrategy for SymbolicStrategy {
 mod tests {
     use super::*;
 
+    #[test]
+    fn surface_data_lowers_through_shared_sexpr_constructors() {
+        let backend = LispHol;
+        let parsed = crate::reader::read_one("(alpha 12)").unwrap();
+        let lowered = backend.lower_syntax(&parsed).unwrap();
+        let alpha = backend.atom_term(b"alpha".to_vec()).unwrap();
+        let twelve = backend.atom_term(b"12".to_vec()).unwrap();
+        let expected = backend
+            .cons(
+                alpha,
+                backend.cons(twelve, SExprSyntax::nil(&backend)).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(lowered, expected);
+    }
+
     /// The de-risking proof: build the operator application `car (cons x y)`
     /// over two atom terms, run the symbolic strategy, and check the returned
     /// `Thm` is hyps-free with conclusion `car (cons x y) = x`. This is a
@@ -188,8 +212,12 @@ mod tests {
         let l = lisp().expect("lisp theory");
 
         // <atom x>, <atom y> — carved `sexpr` atoms via the Lisp lowering.
-        let x = backend.resolve_symbol("x").expect("atom x");
-        let y = backend.resolve_symbol("y").expect("atom y");
+        let x = backend
+            .atom(backend.symbol_payload("x").unwrap())
+            .expect("atom x");
+        let y = backend
+            .atom(backend.symbol_payload("y").unwrap())
+            .expect("atom y");
 
         // The redex `car (cons x y)` = App(car, App(App(cons, x), y)).
         let cons_xy = Term::app(Term::app(l.cons().clone(), x.clone()), y.clone());
@@ -214,8 +242,12 @@ mod tests {
     fn cdr_cons_reduces_to_tail() {
         let backend = LispHol;
         let l = lisp().expect("lisp theory");
-        let x = backend.resolve_symbol("x").expect("atom x");
-        let y = backend.resolve_symbol("y").expect("atom y");
+        let x = backend
+            .atom(backend.symbol_payload("x").unwrap())
+            .expect("atom x");
+        let y = backend
+            .atom(backend.symbol_payload("y").unwrap())
+            .expect("atom y");
         let cons_xy = Term::app(Term::app(l.cons().clone(), x.clone()), y.clone());
         let redex = Term::app(l.cdr().clone(), cons_xy);
         let thm = SymbolicStrategy
@@ -230,7 +262,9 @@ mod tests {
     #[test]
     fn stuck_on_non_redex() {
         let backend = LispHol;
-        let x = backend.resolve_symbol("x").expect("atom x");
+        let x = backend
+            .atom(backend.symbol_payload("x").unwrap())
+            .expect("atom x");
         assert!(matches!(
             SymbolicStrategy.reduce(&x),
             Err(HolError::Stuck(_))

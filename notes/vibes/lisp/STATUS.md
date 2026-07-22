@@ -72,6 +72,9 @@ boundaries, not planned features. Stable TODO markers remain the work queue.
   and one-layer view capabilities. Surface numeral and ACL2 canonicalization
   live in the higher `LispDatum` codec; the duplicate parser-owned
   `AbstractSExpr` trait has been removed.
+- The equational HOL compiler eliminates constant-condition branches before
+  type checking, so Scheme `cond` with a final true clause supports recursive
+  integer results without forcing its unreachable fallback into `sexpr`.
 
 The narrow regression commands are:
 

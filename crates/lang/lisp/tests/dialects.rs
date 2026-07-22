@@ -86,9 +86,9 @@ fn nested_reduces_theorem_is_genuine() {
 fn lisp_comparisons() {
     let s = Session::new().unwrap();
     assert_eq!(eval(&s, "(<= 2 5)"), "t");
-    assert_eq!(eval(&s, "(<= 5 2)"), "nil");
+    assert_eq!(eval(&s, "(<= 5 2)"), "()");
     assert_eq!(eval(&s, "(= 4 4)"), "t");
-    assert_eq!(eval(&s, "(= 4 5)"), "nil");
+    assert_eq!(eval(&s, "(= 4 5)"), "()");
 }
 
 #[test]

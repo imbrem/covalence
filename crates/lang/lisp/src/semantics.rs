@@ -315,6 +315,10 @@ impl LispSemantics {
                 consequent,
                 alternative,
             } => {
+                if let CoreExpr::Truth(value) = condition.as_ref() {
+                    return self
+                        .compile_core_h(if *value { consequent } else { alternative }, hint);
+                }
                 let compiled_condition = self.compile_core_h(condition, Hint::Bool)?;
                 let condition_ty = compiled_condition.type_of().map_err(kernel_err)?;
                 if condition_ty != Type::bool() {

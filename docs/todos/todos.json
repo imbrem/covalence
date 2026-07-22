@@ -3331,7 +3331,7 @@
       "summary": "Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 376,
+      "line": 380,
       "crate": "covalence-lisp"
     },
     {
@@ -3341,7 +3341,7 @@
       "summary": "Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 412,
+      "line": 416,
       "crate": "covalence-lisp"
     },
     {
@@ -3351,7 +3351,7 @@
       "summary": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 577,
+      "line": 581,
       "crate": "covalence-lisp"
     },
     {
@@ -3361,7 +3361,7 @@
       "summary": "Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 329,
+      "line": 333,
       "crate": "covalence-lisp"
     },
     {
@@ -3371,7 +3371,7 @@
       "summary": "Represent variadic closures in the equational HOL backend using the shared inductive proper-list carrier, without assuming total application.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 341,
+      "line": 345,
       "crate": "covalence-lisp"
     },
     {
@@ -3381,7 +3381,7 @@
       "summary": "Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 400,
+      "line": 404,
       "crate": "covalence-lisp"
     },
     {
